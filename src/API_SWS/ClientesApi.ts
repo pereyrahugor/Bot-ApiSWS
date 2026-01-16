@@ -157,10 +157,23 @@ function parseDomicilioString(domicilioStr: string) {
   let provincia = 'Cordoba';
   let pais = 'Argentina';
   const cp = '';
+  // Regex para detectar formato "Calle Altura Resto" (ej: Colon 1540 Centro Cordoba)
+  // Busca: Texto (calle) + Espacio + Número (altura) + Espacio opcional + Texto (resto)
+  const regexDireccion = /^(.+?)\s+(\d+)(?:\s+(.*))?$/;
+
   if (domicilioStr && domicilioStr.includes(',')) {
     const partes = domicilioStr.split(',').map(p => p.trim());
     // Calle y número
-    calle = partes[0] || '';
+    // Intentar separar número si está pegado en la primera parte
+    const parte1 = partes[0] || '';
+    const match1 = parte1.match(regexDireccion);
+    if (match1) {
+        calle = match1[1].trim();
+        puerta = match1[2].trim();
+    } else {
+        calle = parte1;
+    }
+
     // Ciudad/localidad
     ciudad = partes.length > 1 ? partes[1] : '';
     // Provincia y país (ej: 'Córdoba Capital')
@@ -168,25 +181,47 @@ function parseDomicilioString(domicilioStr: string) {
       // Si contiene 'Capital', es ciudad, si no, provincia
       if (/capital/i.test(partes[2])) {
         provincia = 'Cordoba';
-        ciudad = partes[2];
+        // Si no habíamos seteado ciudad o era redundante, ajustamos
+        if (!ciudad) ciudad = partes[2];
       } else {
         provincia = partes[2];
       }
     }
   } else {
-    calle = domicilioStr;
+    // Caso sin comas: intentar parsear "Calle Altura Resto"
+    const match = domicilioStr.match(regexDireccion);
+    if (match) {
+        calle = match[1].trim();
+        puerta = match[2].trim();
+        const resto = match[3] ? match[3].trim() : '';
+        
+        // Heurística simple para el resto:
+        // Si menciona Cordoba o Capital, asumirlo como ciudad
+        if (/cordoba|capital/i.test(resto)) {
+            ciudad = resto;
+        } else {
+            // Si no parece ciudad, lo ponemos en observaciones o barrio si existiera campo
+            observaciones = resto;
+            // Default ciudad si no se detectó
+            if (!ciudad) ciudad = 'Cordoba Capital'; 
+        }
+    } else {
+        // Fallback: todo a calle si no se detecta número
+        calle = domicilioStr;
+    }
   }
-  // Si el string contiene país
+  // Si el string contiene país explícito
   if (/argentina/i.test(domicilioStr)) {
     pais = 'Argentina';
   }
+  
   return {
     provincia,
     pais,
     ciudad,
     calle,
-    puerta: '',
-    observaciones: '',
+    puerta,
+    observaciones,
     piso: '',
     depto: '',
     torre: '',
