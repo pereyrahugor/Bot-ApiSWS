@@ -48,7 +48,8 @@ GET /Repartos/BusquedaClientesCercanosResultJson?address=Av.%20Colón%201234,%20
 ## Notas
 
 - El sistema convierte automáticamente la dirección a coordenadas
-- Si no se encuentran resultados, el radio se incrementa automáticamente hasta 2500m
+- Radio inicial: 500 metros
+- Si no se encuentran resultados, el radio se incrementa automáticamente de 250m en 250m hasta un máximo de 2500m
 - La dirección debe incluir calle, número y ciudad
 
 ## Códigos de Error

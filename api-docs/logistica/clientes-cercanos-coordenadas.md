@@ -84,8 +84,10 @@ GET /Repartos/ObtenerClientesCercanosP orCoordenadas?latitud=-31.4201&longitud=-
 ## Notas
 
 - Los resultados se ordenan por distancia (más cercanos primero)
-- El radio máximo recomendado es 2500 metros
-- Si no hay resultados, considerar aumentar el radio de búsqueda
+- Radio inicial recomendado: 500 metros
+- Radio máximo recomendado: 2500 metros
+- Si no hay resultados, considerar aumentar el radio de búsqueda de 250m en 250m
+- Cuando se usa desde el bot, el radio se incrementa automáticamente de 250m en 250m hasta 2500m si no hay resultados
 
 ## Códigos de Error
 
