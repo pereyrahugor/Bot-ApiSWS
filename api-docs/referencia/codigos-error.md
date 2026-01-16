@@ -1,89 +1,53 @@
 # Códigos de Error
 
-Referencia completa de códigos de error de la API.
+Referencia completa de códigos de error de la API SWS.
 
 ## Códigos Generales
 
-| Código | Descripción | Solución |
-|--------|-------------|----------|
-| 0 | Operación exitosa | - |
-| 1 | Error general | Verificar parámetros y reintentar |
-| 401 | Token inválido o expirado | Renovar token de autenticación |
-| 403 | Acceso denegado | Verificar permisos del usuario |
-| 404 | Recurso no encontrado | Verificar ID del recurso |
-| 500 | Error interno del servidor | Contactar soporte técnico |
+| Código | Descripción | Significado / Solución |
+|--------|-------------|-------------------------|
+| 0 | Operación exitosa | La solicitud se procesó correctamente. |
+| 1 | Error de lógica | Error en el servidor o parámetros incorrectos. Ver campo `message`. |
+| 401 | No autorizado | Token inválido, expirado o falta el header `CURRENTTOKENVALUE`. |
+| 404 | No encontrado | El endpoint o recurso solicitado no existe. |
 
-## Códigos Específicos por Módulo
+## Errores Comunes del Sistema
 
-### Autenticación
+Basado en la tecnología del servidor (.NET), existen mensajes de error recurrentes que indican problemas específicos en la solicitud:
 
-| Código | Descripción |
-|--------|-------------|
-| 1 | Credenciales inválidas |
-| 2 | Usuario bloqueado |
-| 3 | Error del servidor |
+### "Referencia a objeto no establecida como instancia de un objeto"
+Este es el error más común cuando se utiliza la API.
+- **Causa**: Faltan parámetros obligatorios en el cuerpo del JSON (Request Body) o están mal escritos.
+- **Solución**: Verificar que todos los campos requeridos por el endpoint estén presentes y coincidan exactamente en nombre (case-sensitive en algunos casos).
 
-### Clientes
+### "Error al obtener Token. Error: Error de usuario y/o contraseña"
+- **Causa**: Las credenciales enviadas a `/api/Session/GetToken` no son válidas.
+- **Solución**: Verificar `username` y `password`.
 
-| Código | Descripción |
-|--------|-------------|
-| 1 | Cliente no encontrado |
-| 2 | DNI/CUIT ya existe |
-| 3 | Datos incompletos |
+### "El centro de distribución del incidente es diferente al del cliente seleccionado"
+- **Causa**: Al crear un ticket o incidente, el `centroDistribucion_id` no coincide con el asignado al cliente.
+- **Solución**: Consultar primero los datos del cliente para obtener su ID de centro de distribución correcto.
 
-### Logística
+## Comportamientos Especiales
 
-| Código | Descripción |
-|--------|-------------|
-| 1 | No se pudo geocodificar la dirección |
-| 2 | No se encontraron clientes cercanos |
+### Búsqueda sin resultados
+En endpoints de búsqueda (como Búsqueda Rápida de Clientes), si ningún dato coincide con los criterios enviados:
+- El sistema **devuelve todos los clientes** en lugar de una lista vacía. 
+- Se recomienda procesar los resultados para verificar si la correspondencia es la esperada.
 
-### Facturación
+### Formato de Fechas
+Las fechas en las respuestas no son strings estándar, sino objetos serializados:
+`"fechaIngreso": "/Date(1577847600000)/"`
+El número representa el timestamp en milisegundos.
 
-| Código | Descripción |
-|--------|-------------|
-| 1 | Factura no encontrada |
-| 2 | Error al generar PDF |
-
-## Manejo de Errores
-
-### Ejemplo de Respuesta de Error
-
-```json
-{
-  "error": 1,
-  "message": "Descripción del error",
-  "details": "Información adicional",
-  "code": "ERR_CLIENTE_NOT_FOUND"
-}
-```
-
-### Buenas Prácticas
-
-1. **Siempre verificar el campo `error`** en la respuesta
-2. **Implementar reintentos** para errores temporales (500, 503)
-3. **Renovar token automáticamente** ante error 401
-4. **Loguear errores** para debugging
-5. **Mostrar mensajes amigables** al usuario final
-
-### Ejemplo de Manejo
+## Manejo de Errores Sugerido
 
 ```javascript
-async function handleApiCall(apiFunction) {
-  try {
-    const response = await apiFunction();
-    
-    if (response.error === 0) {
-      return response.data;
-    } else if (response.error === 401) {
-      await renewToken();
-      return handleApiCall(apiFunction); // Reintentar
+if (response.error !== 0) {
+    if (response.message.includes("Referencia a objeto no establecida")) {
+        console.error("Error: Revisar estructura del JSON enviado.");
     } else {
-      throw new Error(response.message);
+        console.error("Error en API:", response.message);
     }
-  } catch (error) {
-    console.error('Error en API:', error);
-    throw error;
-  }
 }
 ```

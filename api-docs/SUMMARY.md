@@ -13,6 +13,7 @@
 * [Búsqueda Rápida](clientes/busqueda-rapida.md)
 * [Obtener Datos del Cliente](clientes/obtener-datos.md)
 * [Obtener Sucursales](clientes/obtener-sucursales.md)
+* [Obtener Saldos del Cliente](clientes/obtener-saldos.md)
 * [Crear Nuevo Cliente](clientes/crear-cliente.md)
 * [Agregar Contacto](clientes/agregar-contacto.md)
 * [Credenciales de Autogestión](clientes/credenciales-autogestion.md)
@@ -32,6 +33,7 @@
 * [Recibos de Pago](facturacion/recibos-pago.md)
 * [Resumen de Cuenta](facturacion/resumen-cuenta.md)
 * [Reenviar Factura por Mail](facturacion/reenviar-factura.md)
+* [Link de Mercado Pago](facturacion/obtener-link-mp.md)
 
 ## Movimientos y Entregas
 * [Remitos de Entrega](movimientos/remitos-entrega.md)
@@ -47,7 +49,7 @@
 * [Crear Ticket](incidentes/crear-ticket.md)
 
 ## Archivos
-* [Descargar Archivo](archivos/descargar-archivo.md)
+* [Descarga de Archivos](archivos/descargar-archivo.md)
 
 ## Referencia
 * [Códigos de Error](referencia/codigos-error.md)

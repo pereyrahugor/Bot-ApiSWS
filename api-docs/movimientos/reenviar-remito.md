@@ -1,6 +1,6 @@
 # Reenviar Remito por Mail
 
-Reenvía un remito por email.
+Reenvía por correo electrónico un remito específico a la dirección asociada al cliente.
 
 ## Endpoint
 
@@ -19,13 +19,13 @@ POST /Facturacion/EnviarRemitoPorMail
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| remitoId | number | ID del remito | Sí |
+| remitoId | number | ID único del remito | Sí |
 
 ## Ejemplo de Request
 
 ```json
 {
-  "remitoId": 2001
+  "remitoId": 227194
 }
 ```
 
@@ -33,7 +33,18 @@ POST /Facturacion/EnviarRemitoPorMail
 
 ```json
 {
-  "error": 0,
-  "message": "Remito enviado exitosamente"
+  "error": 0
 }
 ```
+
+## Códigos de Error
+
+| Código | Descripción |
+|--------|-------------|
+| 0 | Operación exitosa |
+| 1 | Error - Referencia a objeto no establecida (usualmente remito inexistente) |
+
+## Ver También
+
+- [Remitos de Entrega](remitos-entrega.md)
+- [Reenviar Factura](../facturacion/reenviar-factura.md)

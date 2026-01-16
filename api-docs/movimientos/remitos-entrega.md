@@ -1,6 +1,6 @@
 # Remitos de Entrega
 
-Obtiene los remitos de entrega de un cliente.
+Obtiene los consumos (ventas) de un cliente en un rango de fechas determinado, permitiendo filtrar por estado de facturación.
 
 ## Endpoint
 
@@ -19,18 +19,18 @@ POST /Movimientos/ObtenerVentasPorCliente
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| cliente_id | number | ID del cliente | Sí |
-| fechaDesde | string | Fecha desde (DD/MM/YYYY) | Sí |
-| fechaHasta | string | Fecha hasta (DD/MM/YYYY) | Sí |
-| consumosSinFacturar | boolean | Solo sin facturar | No |
+| cliente_id | number | ID del cliente a consultar | Sí |
+| fechaDesde | string | Fecha de inicio (dd/MM/yyyy) | Sí |
+| fechaHasta | string | Fecha de fin (dd/MM/yyyy) | Sí |
+| consumosSinFacturar | boolean | Si es true, filtra consumos con factura. Si es false, sin factura. | No |
 
 ## Ejemplo de Request
 
 ```json
 {
-  "cliente_id": 208,
-  "fechaDesde": "01/01/2026",
-  "fechaHasta": "31/01/2026",
+  "cliente_id": 8,
+  "fechaDesde": "07/04/2025",
+  "fechaHasta": "26/09/2025",
   "consumosSinFacturar": false
 }
 ```
@@ -39,27 +39,76 @@ POST /Movimientos/ObtenerVentasPorCliente
 
 ```json
 {
-  "error": 0,
-  "data": [
+  "ventas": [
     {
-      "remito_id": 2001,
-      "numero": "R-0001-00002001",
-      "fecha": "15/01/2026",
-      "items": [
+      "id": 11013,
+      "fechaVenta": "/Date(1755800760000)/",
+      "montoTotalVenta": 0,
+      "hojaRuta_id": 20179,
+      "clienteEntrega_id": 8,
+      "factura_id": null,
+      "remito_id": 10606,
+      "nroRemito": "00055",
+      "nroRemitoFisico": null,
+      "clienteEntrega": "Correo Argentino",
+      "archivoRemitoPdf": "8_20179.pdf",
+      "fueEditada": false,
+      "visita_id": 20212,
+      "nombreRepartoEntrega": "1234",
+      "Articulos": [
         {
-          "producto": "Bidón 20L",
-          "cantidad": 4,
-          "precio": 850.00
+          "id": 11038,
+          "articulo_id": 1,
+          "precioUnitario": 0,
+          "cantidad": 3,
+          "codigoInterno": "1",
+          "nombreArticulo": "Bidon x 20 lts",
+          "esImputacionAbono": false,
+          "factura_id": null,
+          "leyenda": null,
+          "facturaDeItem_id": null,
+          "porcentajeDescuentoManual": 0,
+          "porcentajeDescuentoPorCantidad": 0,
+          "porcentajeDescuentoVenta": 0,
+          "precioUnitarioOriginal": 0,
+          "tipoItem_id": 2
         }
-      ],
-      "total": 3400.00,
-      "facturado": true
+      ]
     }
-  ]
+  ],
+  "error": 0
 }
 ```
+
+## Campos de Respuesta
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| error | number | 0 para éxito, 1 para error |
+| ventas | array | Lista de ventas/remitos encontrados |
+
+### Campos de Venta
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | number | ID interno de la venta |
+| fechaVenta | string | Fecha de la operación (/Date(timestamp)/) |
+| nroRemito | string | Número de remito asignado |
+| clienteEntrega | string | Nombre del cliente receptor |
+| archivoRemitoPdf | string | Nombre del archivo PDF para descarga |
+| Articulos | array | Detalle de artículos entregados en este remito |
+
+### Campos de Artículo
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| articulo_id | number | ID único del producto |
+| nombreArticulo | string | Descripción del producto |
+| cantidad | number | Cantidad entregada |
+| precioUnitario | number | Precio aplicado |
+| esImputacionAbono | boolean | Indica si el item se descontó de un abono |
 
 ## Ver También
 
 - [Descargar Remito](descargar-remito.md)
-- [Reenviar Remito por Mail](reenviar-remito.md)
+- [Reenviar Remito](reenviar-remito.md)

@@ -1,6 +1,6 @@
 # Lista de Precios del Cliente
 
-Obtiene la lista de precios asignada a un cliente específico.
+Devuelve la lista de precios y artículos comerciales habilitados para un cliente específico.
 
 ## Endpoint
 
@@ -14,41 +14,30 @@ GET /ListaDePrecios/ObtenerListaDePreciosDeCliente
 |--------|-------|-----------|
 | CURRENTTOKENVALUE | {token} | Sí |
 
-## Parámetros Query
+## Parámetros de la Query
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| ClienteId | number | ID del cliente | Sí |
+| ClienteId | number | ID del cliente a consultar | Sí |
 
 ## Ejemplo de Request
 
 ```
-GET /ListaDePrecios/ObtenerListaDePreciosDeCliente?ClienteId=208
+GET /ListaDePrecios/ObtenerListaDePreciosDeCliente?ClienteId=1036
 ```
 
 ## Ejemplo de Respuesta Exitosa
 
 ```json
 {
-  "error": 0,
-  "precios": [
-    {
-      "producto_id": 1,
-      "nombre": "Bidón 20L",
-      "precio": 850.00,
-      "moneda": "ARS",
-      "categoria": "Bidones",
-      "stock": 150
-    },
-    {
-      "producto_id": 2,
-      "nombre": "Bidón 12L",
-      "precio": 550.00,
-      "moneda": "ARS",
-      "categoria": "Bidones",
-      "stock": 200
-    }
-  ]
+  "ArticulosDeListaDePrecio": {
+    "Bidon x 20 lts": 800.00,
+    "Bidon x 12 lts": 500.00,
+    "Sifon x 1 1/4": 500.00,
+    "bidon de 20L Monte": 150.00,
+    "bidon de 12L Monte": 200.00
+  },
+  "error": 0
 }
 ```
 
@@ -56,12 +45,10 @@ GET /ListaDePrecios/ObtenerListaDePreciosDeCliente?ClienteId=208
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| producto_id | number | ID del producto |
-| nombre | string | Nombre del producto |
-| precio | number | Precio unitario |
-| moneda | string | Código de moneda |
-| categoria | string | Categoría del producto |
-| stock | number | Stock disponible |
+| error | number | 0 para éxito, 1 para error |
+| ArticulosDeListaDePrecio | object | Diccionario donde la llave es el nombre del artículo y el valor es el precio unitario |
+
+> **Nota**: Este endpoint devuelve la lista de artículos comerciales habilitados para el comercio de un repartidor asociado al cliente.
 
 ## Ver También
 

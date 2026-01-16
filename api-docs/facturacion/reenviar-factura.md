@@ -1,6 +1,6 @@
 # Reenviar Factura por Mail
 
-Reenvía una factura por email al cliente.
+Reenvía por correo electrónico una factura específica a la dirección asociada al cliente.
 
 ## Endpoint
 
@@ -19,13 +19,13 @@ POST /Facturacion/EnviarFacturaPorMail
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| facturaId | number | ID de la factura | Sí |
+| facturaId | number | ID único de la factura | Sí |
 
 ## Ejemplo de Request
 
 ```json
 {
-  "facturaId": 1001
+  "facturaId": 121471
 }
 ```
 
@@ -33,11 +33,18 @@ POST /Facturacion/EnviarFacturaPorMail
 
 ```json
 {
-  "error": 0,
-  "message": "Factura enviada exitosamente"
+  "error": 0
 }
 ```
+
+## Códigos de Error
+
+| Código | Descripción |
+|--------|-------------|
+| 0 | Operación exitosa |
+| 1 | Error - Referencia a objeto no establecida (usualmente factura inexistente) |
 
 ## Ver También
 
 - [Historial de Facturas](historial-facturas.md)
+- [Reenviar Remito](../movimientos/reenviar-remito.md)

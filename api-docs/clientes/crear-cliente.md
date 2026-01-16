@@ -1,6 +1,6 @@
 # Crear Nuevo Cliente
 
-Crea un nuevo cliente en el sistema.
+Este endpoint permite registrar anticipadamente un nuevo cliente en el sistema (Alta Temprana).
 
 ## Endpoint
 
@@ -27,57 +27,62 @@ POST /Clientes/CrearNuevoClientePorChatBot
 | Campo | Tipo | Descripción | Requerido |
 |-------|------|-------------|-----------|
 | nombre | string | Nombre completo del cliente | Sí |
-| tipoDeClienteId | number | Tipo de cliente (1=Familia, 2=Empresa) | Sí |
-| condicionIvaId | number | Condición de IVA (default: 2) | No |
-| dniCuit | string | DNI o CUIT | Sí |
+| tipoDeClienteId | number | ID del tipo de cliente (1=Familia, 2=Empresa) | Sí |
+| actividadId | number | ID de la actividad del cliente (ver tablas abajo) | No |
+| condicionIvaId | number | ID de la Condición de IVA (ver tablas abajo) | Sí |
+| dniCuit | string | DNI o CUIT del cliente | Sí |
 | telefono | string | Teléfono de contacto | Sí |
-| email | string | Email del cliente | No |
-| listaDePreciosId | number | ID de lista de precios (default: 1) | No |
+| email | string | Correo electrónico | Sí |
+| listaDePreciosId | number | ID de la lista de precios asignada | Sí |
 | domicilio | object | Objeto con información del domicilio | Sí |
 
 ### Estructura del objeto `domicilio`
 
 | Campo | Tipo | Descripción | Requerido |
 |-------|------|-------------|-----------|
-| provincia | string | Provincia | Sí |
-| pais | string | País | Sí |
-| ciudad | string | Ciudad | Sí |
-| calle | string | Calle y número | Sí |
-| cp | string | Código postal | No |
+| provincia | string | Nombre de la provincia | Sí |
+| ciudad | string | Nombre de la ciudad | Sí |
+| calle | string | Nombre de la calle | Sí |
+| puerta | number | Número de puerta / altura | Sí |
 | piso | string | Piso | No |
 | depto | string | Departamento | No |
-| torre | string | Torre | No |
-| puerta | string | Puerta | No |
-| observaciones | string | Observaciones | No |
-| latitud | string | Latitud (se calcula automáticamente) | No |
-| longitud | string | Longitud (se calcula automáticamente) | No |
+| torre | string | Torre o edificio | No |
+| cp | string | Código postal | Sí |
+| manzana | string | Manzana | No |
+| lote | string | Lote | No |
+| observaciones | string | Observaciones adicionales | No |
+| latitud | string | Coordenada latitud | Sí |
+| longitud | string | Coordenada longitud | Sí |
 
 ## Ejemplo de Request
 
 ```json
 {
   "cliente": {
-    "nombre": "Juan Pérez",
+    "nombre": "Cliente de alta rapida",
     "tipoDeClienteId": 1,
     "condicionIvaId": 2,
-    "dniCuit": "12345678",
-    "telefono": "3512345678",
-    "email": "juan.perez@email.com",
+    "dniCuit": "3454564566",
+    "telefono": "00",
+    "email": "al456756756@test.com",
     "listaDePreciosId": 1,
     "domicilio": {
-      "provincia": "Cordoba",
-      "pais": "Argentina",
-      "ciudad": "Córdoba Capital",
-      "calle": "Av. Colón 1234",
-      "cp": "5000",
-      "piso": "",
-      "depto": "",
+      "provincia": "Salta",
+      "ciudad": "Salta",
+      "calle": "Av. Sarmiento",
+      "puerta": 2,
+      "observaciones": "",
+      "piso": "4",
+      "depto": "b",
       "torre": "",
-      "puerta": "",
-      "observaciones": ""
+      "cp": "X5012",
+      "lote": "",
+      "manzana": "",
+      "latitud": "-31.3651314",
+      "longitud": "-64.156489"
     }
   },
-  "reparto_id": 1
+  "reparto_id": 1007
 }
 ```
 
@@ -86,61 +91,53 @@ POST /Clientes/CrearNuevoClientePorChatBot
 ```json
 {
   "error": 0,
-  "cliente": {
-    "cliente_id": 350,
-    "nombre": "Juan Pérez",
-    "dniCuit": "12345678",
-    "telefono": "3512345678",
-    "email": "juan.perez@email.com"
-  },
-  "message": "Cliente creado exitosamente"
+  "message": "",
+  "data": {
+    "cliente_id": 1042,
+    "nombreCliente": "Cliente de alta rapida",
+    "nombreReparto": "S/R",
+    "actividad_ids": 15,
+    "tipoCliente_ids": 1,
+    "estadoCliente_ids": 5,
+    "dniCliente": "963345344",
+    "domicilioCompleto": "Córdoba, ALEJANDRA PIZERNICK 2. piso 4. depto b. ",
+    "tipoCliente": "Familia",
+    "estadoCliente": "Borrador",
+    "fechaIngreso": "/Date(1753275884110)/",
+    "codigoPostal": "X5012",
+    "altitud": "-31.3651314",
+    "longitud": "-64.156489",
+    "centroDeDistribucion": "PRUEBA"
+  }
 }
 ```
 
-## Ejemplo de Respuesta con Error
+## Tablas de Referencia
 
-```json
-{
-  "error": 1,
-  "message": "El DNI ya existe en el sistema"
-}
-```
+### Actividades (actividadId)
+- 1: Comercio
+- 2: Servicios Profesionales
+- 3: Educación
+- 4: Industria
+- 15: Consumidor final
+- 18: Otras
 
-## Notas Importantes
-
-- El sistema calcula automáticamente las coordenadas (latitud/longitud) basándose en la dirección
-- El nombre debe incluir nombre y apellido completos
-- El DNI/CUIT debe ser único en el sistema
-- Si no se especifica `listaDePreciosId`, se asigna la lista por defecto (1)
-- Si no se especifica `condicionIvaId`, se asigna "Consumidor Final" (2)
-
-## Tipos de Cliente
-
-| ID | Descripción |
-|----|-------------|
-| 1 | Familia |
-| 2 | Empresa |
-
-## Condiciones de IVA
-
-| ID | Descripción |
-|----|-------------|
-| 1 | Responsable Inscripto |
-| 2 | Consumidor Final |
-| 3 | Exento |
-| 4 | Monotributo |
+### Condiciones de IVA (condicionIvaId)
+- 1: Responsable Inscripto
+- 2: Consumidor Final
+- 3: Monotributista
+- 4: Sujeto Exento
+- 5: IVA No alcanzado
 
 ## Códigos de Error
 
 | Código | Descripción |
 |--------|-------------|
-| 0 | Cliente creado exitosamente |
-| 1 | Error al crear cliente |
-| 2 | DNI/CUIT ya existe |
-| 3 | Datos incompletos |
-| 401 | Token inválido o expirado |
+| 0 | Operación exitosa |
+| 1 | Error - Referencia a objeto no establecida como instancia de un objeto (usualmente faltan parámetros) |
 
 ## Ver También
 
 - [Búsqueda Rápida](busqueda-rapida.md)
 - [Agregar Contacto](agregar-contacto.md)
+- [Obtener Datos del Cliente](obtener-datos.md)

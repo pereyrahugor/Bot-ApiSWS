@@ -1,6 +1,6 @@
 # Obtener Sucursales del Cliente
 
-Obtiene la lista de sucursales de un cliente.
+Devuelve los datos y las sucursales asociadas a un cliente específico.
 
 ## Endpoint
 
@@ -19,7 +19,7 @@ POST /api/Clientes/ObtenerSucursalesJson
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| cliente_id | number | ID del cliente | Sí |
+| cliente_id | number | ID del cliente a consultar | Sí |
 
 ## Ejemplo de Request
 
@@ -34,38 +34,68 @@ POST /api/Clientes/ObtenerSucursalesJson
 ```json
 {
   "error": 0,
+  "message": "",
   "data": [
     {
-      "sucursal_id": 1,
-      "nombre": "Sucursal Centro",
-      "domicilio": {
-        "calle": "Av. Colón 1234",
-        "ciudad": "Córdoba",
-        "provincia": "Córdoba",
-        "cp": "5000",
-        "latitud": "-31.4201",
-        "longitud": "-64.1888"
-      },
-      "telefono": "3512345678",
-      "email": "centro@empresa.com",
-      "contacto": "María González",
-      "activo": true
-    },
-    {
-      "sucursal_id": 2,
-      "nombre": "Sucursal Norte",
-      "domicilio": {
-        "calle": "Av. Circunvalación 5000",
-        "ciudad": "Córdoba",
-        "provincia": "Córdoba",
-        "cp": "5001",
-        "latitud": "-31.3850",
-        "longitud": "-64.1820"
-      },
-      "telefono": "3512345679",
-      "email": "norte@empresa.com",
-      "contacto": "Carlos Martínez",
-      "activo": true
+      "cliente_id": 208,
+      "nombreCliente": "Neyra Patricia",
+      "nombreReparto": "1234",
+      "nombrePromotor": "Admin",
+      "actividad_ids": 31,
+      "tipoCliente_ids": 1,
+      "estadoCliente_ids": 1,
+      "promotor_id": 1,
+      "reparto_id": 2,
+      "dniCliente": null,
+      "nombreProvincia": "Buenos Aires",
+      "nombreCiudad": "Ranchos",
+      "nombreBarrio": "Ranchos",
+      "domicilioCompleto": "Ranchos, Chaco 3088.",
+      "provincia_ids": 2,
+      "ciudad_id": 11,
+      "barrio_id": 479,
+      "calle_id": 43,
+      "torre": "",
+      "piso": "",
+      "depto": "",
+      "manzana": "",
+      "lote": "",
+      "numeroPuerta": "3088",
+      "nombreCalle": "Chaco ",
+      "actividadCliente": "No aplica",
+      "tipoCliente": "Familia",
+      "estadoCliente": "Activo",
+      "datosCompletos": true,
+      "clientePadre": null,
+      "fechaNacimiento": "/Date(1577847600000)/",
+      "fechaIngreso": "/Date(1577847600000)/",
+      "codigoPostal": "1987",
+      "altitud": "",
+      "longitud": "",
+      "fechaUtlimaEntrega": null,
+      "fechaUltimoCobroFactura": null,
+      "fechaUltimaEnvases": null,
+      "fechaUltimaDevoluciones": null,
+      "validarOrdenesDeCompra": false,
+      "validaCredito": false,
+      "creditoPermitido": 100000.00,
+      "limiteFacturas": 30,
+      "facturacionAutomatica": true,
+      "datosFacturacion_id": 208,
+      "condicionIva_ids": 2,
+      "tipoFactura_ids": 2,
+      "cuit": "1111111111",
+      "dniPersona": "",
+      "ingresosBrutos": "1111111111",
+      "domicioFiscal": "Chaco 3088",
+      "razonSocial": "Neyra Patricia",
+      "centroDistribucion_id": 1,
+      "centroDeDistribucion": "CD Testing",
+      "orden": 0,
+      "cicloVisitas": 0,
+      "etiquetas": [],
+      "situacionConsumo": 1,
+      "situacionSaldos": 1
     }
   ]
 }
@@ -75,15 +105,11 @@ POST /api/Clientes/ObtenerSucursalesJson
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| sucursal_id | number | ID único de la sucursal |
-| nombre | string | Nombre de la sucursal |
-| domicilio | object | Información del domicilio |
-| telefono | string | Teléfono de contacto |
-| email | string | Email de la sucursal |
-| contacto | string | Nombre del contacto principal |
-| activo | boolean | Estado de la sucursal |
+| error | number | 0 para éxito, 1 para error |
+| message | string | Mensaje de error (si aplica) |
+| data | array | Lista de sucursales (con estructura similar a Datos del Cliente) |
 
 ## Ver También
 
 - [Obtener Datos del Cliente](obtener-datos.md)
-- [Agregar Contacto](agregar-contacto.md)
+- [Búsqueda Rápida](busqueda-rapida.md)

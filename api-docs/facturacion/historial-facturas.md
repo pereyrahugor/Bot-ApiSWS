@@ -1,6 +1,6 @@
 # Historial de Facturas
 
-Obtiene el historial de facturas de un cliente.
+Obtiene una lista de las facturas de un cliente en un rango de fechas determinado.
 
 ## Endpoint
 
@@ -19,18 +19,18 @@ POST /Facturacion/ObtenerHistorialDeFacturas
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| cliente_id | number | ID del cliente | Sí |
-| fechaDesde | string | Fecha desde (DD/MM/YYYY) | Sí |
-| fechaHasta | string | Fecha hasta (DD/MM/YYYY) | Sí |
-| saldoPendiente | boolean | Solo facturas con saldo pendiente | No |
+| cliente_id | number | ID del cliente a consultar | Sí |
+| fechaDesde | string | Fecha de inicio (dd/MM/yyyy) | Sí |
+| fechaHasta | string | Fecha de fin (dd/MM/yyyy) | Sí |
+| saldoPendiente | boolean | Si es true, filtra facturas con saldo a imputar > 0. Si es false, saldo = 0. | No |
 
 ## Ejemplo de Request
 
 ```json
 {
-  "cliente_id": 208,
-  "fechaDesde": "01/01/2026",
-  "fechaHasta": "31/01/2026",
+  "cliente_id": 8,
+  "fechaDesde": "05/12/2022",
+  "fechaHasta": "26/09/2025",
   "saldoPendiente": false
 }
 ```
@@ -40,20 +40,87 @@ POST /Facturacion/ObtenerHistorialDeFacturas
 ```json
 {
   "error": 0,
-  "data": [
+  "facturas": [
     {
-      "factura_id": 1001,
-      "numero": "A-0001-00001001",
-      "fecha": "15/01/2026",
-      "total": 5000.00,
-      "saldo": 0.00,
-      "estado": "Pagada"
+      "id": 10039,
+      "nroFactura": "003-00000064",
+      "fechaFactura": "/Date(1744047204477)/",
+      "tipoFactura": "Factura A",
+      "montoFacturaTotal": 300050.00,
+      "montoTotalNeto": 247975.21,
+      "montoFacturaIVA": 52074.79,
+      "montoExcento": 0.00,
+      "montoGravado": 300050.00,
+      "fechaVencimiento1": "/Date(1741195625157)/",
+      "fechaVencimiento2": "/Date(1742491625157)/",
+      "fechaVencimiento3": "/Date(1743787625157)/",
+      "cobrado": 0,
+      "cliente_id": 8,
+      "estadoFactura": "No Vencida",
+      "interesVencimiento2": 1.05,
+      "interesVencimiento3": 1.10,
+      "estadoFactura_ids": 1,
+      "leyenda1": null,
+      "leyenda2": "Remitos asociados a las ventas facturadas: ",
+      "leyenda3": null,
+      "leyenda4": null,
+      "codigoAfip": "x",
+      "eliminada": false,
+      "pathFactura": null,
+      "facturaElectronica_id": 35,
+      "resultado": 0,
+      "mensaje": null,
+      "cae": "75146229004566",
+      "numeroComprobante": 64,
+      "fechaVencimientoCae": "/Date(1744858800000)/",
+      "fechaVencimientoComprobante": "/Date(1744858800000)/",
+      "observaciones": "",
+      "facturarAfip": true,
+      "puntoDeVenta": 3,
+      "tipoComprobanteAfip": 11,
+      "pathFacturaDuplicado": null,
+      "entregadaPapel": false,
+      "entregadaEmail": false,
+      "fechaEntregadaPapel": null,
+      "fechaEntregadaEmail": null,
+      "impresa": false,
+      "procesoFacturacion_id": 11105,
+      "notaDeDebitoAjusteId": null,
+      "centroFacturacion_id": 1,
+      "montoImputado": 300050.00,
+      "saldoPendienteDeImputar": 0.00,
+      "ItemsFactura": null
     }
-  ]
+  ],
+  "ajustes": []
 }
 ```
+
+## Campos de Respuesta
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| error | number | 0 para éxito, 1 para error |
+| facturas | array | Lista de facturas encontradas |
+| ajustes | array | Lista de ajustes asociados |
+
+### Campos de Factura
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | number | ID interno de la factura |
+| nroFactura | string | Número de factura (formato XXX-XXXXXXXX) |
+| fechaFactura | string | Fecha de emisión (/Date(timestamp)/) |
+| tipoFactura | string | Tipo de comprobante (Factura A, B, etc.) |
+| montoFacturaTotal | number | Monto total bruto |
+| montoTotalNeto | number | Monto neto |
+| montoFacturaIVA | number | Monto de IVA |
+| estadoFactura | string | Estado actual (No Vencida, Vencida, etc.) |
+| cae | string | Código de Autorización Electrónico |
+| saldoPendienteDeImputar | number | Saldo que falta cobrar/asignar |
 
 ## Ver También
 
 - [Recibos de Pago](recibos-pago.md)
 - [Resumen de Cuenta](resumen-cuenta.md)
+- [Reenviar Factura](reenviar-factura.md)

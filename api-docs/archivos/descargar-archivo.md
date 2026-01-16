@@ -1,11 +1,11 @@
-# Descargar Archivo
+# Descarga de Archivos y Publicaciones
 
-Descarga un archivo del sistema.
+Este endpoint permite obtener una lista de publicaciones y documentos (como manuales o folletos) asociados a un cliente o generales del sistema, incluyendo sus links de descarga.
 
 ## Endpoint
 
 ```
-GET /Archivos/Descargar
+GET /Publicaciones/ObtenerPublicaciones
 ```
 
 ## Headers
@@ -14,18 +14,51 @@ GET /Archivos/Descargar
 |--------|-------|-----------|
 | CURRENTTOKENVALUE | {token} | Sí |
 
-## Parámetros Query
+## Parámetros de la Query
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| archivo_id | number | ID del archivo | Sí |
+| cliente_id | number | ID del cliente para ver sus publicaciones. Si es null, devuelve las generales. | No |
 
 ## Ejemplo de Request
 
 ```
-GET /Archivos/Descargar?archivo_id=300
+GET /Publicaciones/ObtenerPublicaciones?cliente_id=null
 ```
 
-## Respuesta
+## Ejemplo de Respuesta Exitosa
 
-Devuelve el archivo con el Content-Type apropiado según el tipo de archivo.
+```json
+{
+  "error": 0,
+  "publicaciones": [
+    {
+      "id": 1,
+      "cliente_id": null,
+      "titulo": "Manual API",
+      "descripcion": "Manual de integración v5.0",
+      "usuario": "Admin",
+      "fechaAlta": "/Date(1756477342130)/",
+      "tipoPublicacion": "Documentación comercial",
+      "archivos": [
+        {
+          "id": 1,
+          "nombreArchivo": "cd5417..._Manual_API.pdf",
+          "tituloArchivo": "Manual_API.pdf"
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Descarga del Archivo
+
+Para descargar el archivo físicamente, se debe utilizar el nombre del archivo devuelto en la ruta base de archivos del sistema.
+
+**Ejemplo de URL de descarga:**
+`https://url-del-sistema/Archivos/Publicaciones/nombre_del_archivo_devuelto.pdf`
+
+## Ver También
+
+- [Descargar Remito](../movimientos/descargar-remito-venta.md)

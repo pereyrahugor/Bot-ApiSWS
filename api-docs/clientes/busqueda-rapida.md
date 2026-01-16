@@ -1,11 +1,11 @@
 # Búsqueda Rápida de Clientes
 
-Permite buscar clientes por diferentes criterios: nombre, DNI, teléfono o domicilio.
+Permite buscar clientes por diferentes criterios: nombre (o datos de facturación), DNI/CUIT, teléfono o domicilio.
 
 ## Endpoint
 
 ```
-POST /api/Clientes/BusquedaRapidaResultJson
+POST /api/Session/BusquedaRapidaResultJson
 ```
 
 ## Headers
@@ -19,19 +19,21 @@ POST /api/Clientes/BusquedaRapidaResultJson
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| datosCliente | string | Nombre, apellido, DNI o ID del cliente | No |
+| datosCliente | string | Nombre, apellido, Razón Social o datos de facturación | No |
 | telefono | string | Número de teléfono | No |
+| dni | string | DNI o CUIT del cliente | No |
 | domicilio | string | Dirección del cliente | No |
 
-> **Nota**: Al menos uno de los parámetros debe ser proporcionado.
+> **Nota**: Con cualquiera de los parámetros se puede realizar la búsqueda. Cuando no coincide ningún dato, devuelve todos los clientes.
 
 ## Ejemplo de Request
 
 ```json
 {
-  "datosCliente": "Juan Pérez",
-  "telefono": "",
-  "domicilio": ""
+  "datosCliente": "christian",
+  "telefono": "+54",
+  "dni": "3",
+  "domicilio": "a"
 }
 ```
 
@@ -39,43 +41,71 @@ POST /api/Clientes/BusquedaRapidaResultJson
 
 ```json
 {
-  "error": 0,
   "data": [
     {
-      "cliente_id": 208,
-      "nombre": "Juan",
-      "apellido": "Pérez",
-      "nombreCompleto": "Juan Pérez",
-      "dniCuit": "12345678",
-      "telefono": "3512345678",
-      "email": "juan.perez@email.com",
-      "domicilio": {
-        "calle": "Av. Colón",
-        "numero": "1234",
-        "ciudad": "Córdoba",
-        "provincia": "Córdoba",
-        "pais": "Argentina",
-        "cp": "5000"
-      },
+      "cliente_id": 53,
+      "nombreCliente": "Alvarez Pablo",
+      "nombreReparto": "1234",
+      "nombrePromotor": "Admin",
+      "actividad_ids": 24,
+      "tipoCliente_ids": 1,
+      "estadoCliente_ids": 1,
+      "promotor_id": 1,
+      "reparto_id": 2,
+      "dniCliente": null,
+      "nombreProvincia": "Buenos Aires",
+      "nombreCiudad": "Brandsen",
+      "nombreBarrio": "Brandsen",
+      "domicilioCompleto": "Brandsen, Rivadavia 770.",
+      "provincia_ids": 2,
+      "ciudad_id": 10,
+      "barrio_id": 477,
+      "calle_id": 17,
+      "torre": "",
+      "piso": "",
+      "depto": "",
+      "manzana": "",
+      "lote": "",
+      "numeroPuerta": "770",
+      "nombreCalle": "Rivadavia",
+      "actividadCliente": "Taller",
       "tipoCliente": "Familia",
-      "condicionIva": "Consumidor Final",
-      "listaDePreciosId": 1,
-      "reparto": {
-        "id": 1,
-        "nombre": "Zona Centro"
-      }
+      "estadoCliente": "Activo",
+      "datosCompletos": true,
+      "clientePadre": null,
+      "fechaNacimiento": "/Date(1577847600000)/",
+      "fechaIngreso": "/Date(1577847600000)/",
+      "codigoPostal": "1980",
+      "altitud": "",
+      "longitud": "",
+      "fechaUtlimaEntrega": null,
+      "fechaUltimoCobroFactura": null,
+      "fechaUltimaEnvases": null,
+      "fechaUltimaDevoluciones": null,
+      "validarOrdenesDeCompra": false,
+      "validaCredito": false,
+      "creditoPermitido": 100000.00,
+      "limiteFacturas": 30,
+      "facturacionAutomatica": true,
+      "datosFacturacion_id": 53,
+      "condicionIva_ids": 2,
+      "tipoFactura_ids": 2,
+      "cuit": "1111111111",
+      "dniPersona": "",
+      "ingresosBrutos": "1111111111",
+      "domicioFiscal": "Rivadavia 770",
+      "razonSocial": "Alvarez Pablo",
+      "centroDistribucion_id": 1,
+      "centroDeDistribucion": "CD Testing",
+      "orden": 0,
+      "cicloVisitas": 0,
+      "etiquetas": [],
+      "situacionConsumo": 1,
+      "situacionSaldos": 1
     }
-  ]
-}
-```
-
-## Ejemplo de Respuesta Sin Resultados
-
-```json
-{
+  ],
   "error": 0,
-  "data": [],
-  "message": "No se encontraron clientes con los criterios especificados"
+  "message": ""
 }
 ```
 
@@ -83,72 +113,27 @@ POST /api/Clientes/BusquedaRapidaResultJson
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
+| data | array | Lista de clientes encontrados |
+| error | number | 0 para éxito, 1 para error |
+| message | string | Mensaje de error (si aplica) |
+
+### Campos del objeto Cliente
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
 | cliente_id | number | ID único del cliente |
-| nombre | string | Nombre del cliente |
-| apellido | string | Apellido del cliente |
-| nombreCompleto | string | Nombre completo concatenado |
-| dniCuit | string | DNI o CUIT del cliente |
-| telefono | string | Teléfono de contacto |
-| email | string | Email del cliente |
-| domicilio | object | Objeto con información del domicilio |
-| tipoCliente | string | Tipo de cliente (Familia, Empresa, etc.) |
-| condicionIva | string | Condición frente al IVA |
-| listaDePreciosId | number | ID de la lista de precios asignada |
-| reparto | object | Información del reparto asignado |
-
-## Búsqueda por Diferentes Criterios
-
-### Por Nombre
-```json
-{
-  "datosCliente": "Juan",
-  "telefono": "",
-  "domicilio": ""
-}
-```
-
-### Por DNI
-```json
-{
-  "datosCliente": "12345678",
-  "telefono": "",
-  "domicilio": ""
-}
-```
-
-### Por Teléfono
-```json
-{
-  "datosCliente": "",
-  "telefono": "3512345678",
-  "domicilio": ""
-}
-```
-
-### Por Domicilio
-```json
-{
-  "datosCliente": "",
-  "telefono": "",
-  "domicilio": "Av. Colón 1234"
-}
-```
-
-### Búsqueda Combinada
-```json
-{
-  "datosCliente": "Juan",
-  "telefono": "3512345678",
-  "domicilio": ""
-}
-```
-
-## Notas
-
-- La búsqueda es case-insensitive
-- Se admiten búsquedas parciales
-- Los resultados se ordenan por relevancia
-- Si hay múltiples coincidencias, se devuelven todas
+| nombreCliente | string | Nombre completo del cliente |
+| nombreReparto | string | Nombre del reparto asignado |
+| dniCliente | string | DNI del cliente |
+| domicilioCompleto | string | Dirección completa |
+| tipoCliente | string | Tipo (Familia/Empresa) |
+| estadoCliente | string | Estado (Activo/Inactivo/etc.) |
+| cuit | string | CUIT del cliente |
+| razonSocial | string | Razón social |
+| centroDeDistribucion | string | Centro de distribución asignado |
+| fechaIngreso | string | Fecha de ingreso (/Date(timestamp)/) |
+| creditoPermitido | number | Límite de crédito |
+| facturacionAutomatica | boolean | Si tiene facturación automática |
 
 ## Códigos de Error
 
@@ -156,7 +141,7 @@ POST /api/Clientes/BusquedaRapidaResultJson
 |--------|-------------|
 | 0 | Operación exitosa |
 | 1 | Error en la búsqueda |
-| 401 | Token inválido o expirado |
+| 404 | Recurso no encontrado (HTML error response) |
 
 ## Ver También
 

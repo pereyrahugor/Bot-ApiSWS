@@ -1,6 +1,6 @@
 # Reenviar Recibo por Mail
 
-Reenvía un recibo de pago por email.
+Reenvía por correo electrónico un recibo de cobro específico a la dirección asociada al cliente.
 
 ## Endpoint
 
@@ -19,13 +19,13 @@ POST /Recibos/EnviarPorMail
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| reciboId | number | ID del recibo | Sí |
+| reciboId | number | ID único del recibo | Sí |
 
 ## Ejemplo de Request
 
 ```json
 {
-  "reciboId": 500
+  "reciboId": 171406
 }
 ```
 
@@ -33,7 +33,18 @@ POST /Recibos/EnviarPorMail
 
 ```json
 {
-  "error": 0,
-  "message": "Recibo enviado exitosamente"
+  "error": 0
 }
 ```
+
+## Códigos de Error
+
+| Código | Descripción |
+|--------|-------------|
+| 0 | Operación exitosa |
+| 1 | Error - Referencia a objeto no establecida (usualmente recibo inexistente) |
+
+## Ver También
+
+- [Recibos de Pago](../facturacion/recibos-pago.md)
+- [Reenviar Factura](../facturacion/reenviar-factura.md)

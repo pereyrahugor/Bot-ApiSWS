@@ -1,6 +1,6 @@
 # Credenciales de Autogestión
 
-Obtiene las credenciales de acceso al portal de autogestión de un cliente.
+Recupera el nombre de usuario y la contraseña de un cliente para el acceso al portal de autogestión.
 
 ## Endpoint
 
@@ -19,13 +19,13 @@ POST /api/Usuarios/ObtenerUsuarioById
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| id | number | ID del cliente | Sí |
+| id | number | ID único del cliente | Sí |
 
 ## Ejemplo de Request
 
 ```json
 {
-  "id": 208
+  "id": 14854
 }
 ```
 
@@ -34,44 +34,20 @@ POST /api/Usuarios/ObtenerUsuarioById
 ```json
 {
   "error": 0,
-  "data": {
-    "usuario_id": 150,
-    "username": "juanperez",
-    "email": "juan.perez@email.com",
-    "activo": true,
-    "fechaCreacion": "2024-01-15",
-    "ultimoAcceso": "2026-01-15 10:30:00",
-    "cliente_id": 208
-  }
+  "userName": "hugo.pereyra",
+  "password": "hashed_or_plain_password",
+  "message": "Operación exitosa"
 }
 ```
 
-## Campos de Respuesta
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| usuario_id | number | ID del usuario |
-| username | string | Nombre de usuario para login |
-| email | string | Email del usuario |
-| activo | boolean | Estado del usuario |
-| fechaCreacion | string | Fecha de creación del usuario |
-| ultimoAcceso | string | Fecha y hora del último acceso |
-| cliente_id | number | ID del cliente asociado |
-
-## Notas
-
-- Las credenciales se generan automáticamente al crear el cliente
-- El username se genera basado en el nombre del cliente
-- La contraseña inicial se envía por email al cliente
+> **Nota**: Este endpoint es útil para recuperar credenciales en situaciones de soporte o cuando el cliente olvida sus datos de acceso.
 
 ## Códigos de Error
 
 | Código | Descripción |
 |--------|-------------|
 | 0 | Operación exitosa |
-| 1 | Usuario no encontrado |
-| 2 | Cliente sin usuario de autogestión |
-| 401 | Token inválido o expirado |
+| 1 | Error - Cliente no encontrado |
 
 ## Ver También
 

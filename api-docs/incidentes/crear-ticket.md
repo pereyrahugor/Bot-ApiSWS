@@ -1,6 +1,6 @@
 # Crear Ticket de Incidente
 
-Crea un nuevo ticket de incidente o reclamo.
+Permite crear un ticket de incidente o solicitud (ej. "Llamar a cliente", "Servicio Técnico") para que sea gestionado por un operador o en la ruta.
 
 ## Endpoint
 
@@ -19,19 +19,30 @@ POST /api/Incidentes/Save
 
 | Parámetro | Tipo | Descripción | Requerido |
 |-----------|------|-------------|-----------|
-| cliente_id | number | ID del cliente | Sí |
-| descripcion | string | Descripción del incidente | Sí |
-| prioridad | string | Alta, Media, Baja | No |
-| centroDistribucion_id | number | ID del centro (default: 1) | No |
+| cliente_id | number | ID único del cliente | Sí |
+| centroDistribucion_id | number | ID del centro de distribución | Sí |
+| titulo | string | Título breve del incidente | Sí |
+| descripcion | string | Detalle del incidente (soporta HTML) | Sí |
+| tipoIncidente_ids | number | ID del tipo de incidente (ver tablas) | Sí |
+| subTipoIncidente_ids | number | ID secundario del incidente (ver tablas) | Sí |
+| severidad_ids | number | Prioridad (1:Baja, 2:Media, 3:Alta) | Sí |
+| estadoIncidente_ids | number | Estado (1:Abierto, 5:Cerrado, etc.) | No |
+| fechaCierreEstimado | string | Fecha estimada (dd/MM/yyyy) | No |
 
-## Ejemplo de Request
+## Ejemplo de Request (Llamar a Cliente)
 
 ```json
 {
-  "cliente_id": 208,
-  "descripcion": "Bidón con pérdida de agua",
-  "prioridad": "Alta",
-  "centroDistribucion_id": 1
+  "centroDistribucion_id": 3,
+  "cliente_id": 1018,
+  "titulo": "Solicitud de llamada",
+  "descripcion": "<p>Cliente solicita replanificación de entrega</p>",
+  "tipoIncidente_ids": 50,
+  "subTipoIncidente_ids": 50,
+  "severidad_ids": 2,
+  "estadoIncidente_ids": 1,
+  "fechaCierreEstimado": "21/07/2025",
+  "usuarioResponsable_id": null
 }
 ```
 
@@ -41,11 +52,47 @@ POST /api/Incidentes/Save
 {
   "error": 0,
   "incidente": {
-    "id": 150,
-    "numero": "INC-2026-00150",
-    "estado": "Abierto",
-    "fechaCreacion": "2026-01-16 01:00:00"
-  },
-  "message": "Incidente registrado exitosamente"
+    "id": 10190,
+    "fechaHoraRegistro": "/Date(1753112501144)/",
+    "cliente_id": 1018,
+    "titulo": "Solicitud de llamada",
+    "descripcion": "<p>Cliente solicita replanificación de entrega</p>",
+    "tipoIncidente_ids": 50,
+    "severidad_ids": 2,
+    "estadoIncidente_ids": 1,
+    "centroDistribucion_id": 3
+  }
 }
 ```
+
+## Tablas de Clasificación
+
+### Tipos de Incidentes (tipoIncidente_ids)
+- 1: Gestión en ruta
+- 8: Gestión Administrativa
+- 2: Servicio Técnico
+- 50: Llamadas a cliente
+- 60: Gestión de alertas
+
+### Sub-tipos por Categoría
+
+#### 1. Gestión en ruta
+- 1: Solicitud de artículos
+- 2: Reclamo por no visita
+- 13: Gestión cobranza
+- 169: Replanificación visita
+
+#### 2. Gestión Administrativa
+- 501: Gestión de baja de cliente
+- 510: Pausado de cliente
+- 42: Cobranza
+
+#### 3. Servicio Técnico
+- 4: Instalación de dispenser
+- 5: Quitar dispenser
+- 7: Sanitización
+- 9: Reparación
+
+## Ver También
+
+- [Obtener Servicios Técnicos](../servicios/obtener-servicios-tecnicos.md)
