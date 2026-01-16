@@ -74,8 +74,11 @@ export class ClientesApi {
 
     // Obtener coordenadas usando los datos reales del domicilio
     try {
+      // Concatenar calle y puerta para la geolocalización correcta
+      const calleYAltura = `${domicilio.calle ?? ''} ${domicilio.puerta ?? ''}`.trim();
+
       const ubicacion = await getMapsUbication(
-        domicilio.calle ?? '',
+        calleYAltura,
         domicilio.cp ?? '',
         domicilio.ciudad ?? '',
         domicilio.provincia ?? '',
@@ -153,9 +156,11 @@ export class ClientesApi {
 function parseDomicilioString(domicilioStr: string) {
   // Ejemplo esperado: '25 de mayo 1560, Centro, Córdoba Capital'
   let calle = '';
+  let puerta = '';
   let ciudad = '';
   let provincia = 'Cordoba';
   let pais = 'Argentina';
+  let observaciones = '';
   const cp = '';
   // Regex para detectar formato "Calle Altura Resto" (ej: Colon 1540 Centro Cordoba)
   // Busca: Texto (calle) + Espacio + Número (altura) + Espacio opcional + Texto (resto)
@@ -168,10 +173,10 @@ function parseDomicilioString(domicilioStr: string) {
     const parte1 = partes[0] || '';
     const match1 = parte1.match(regexDireccion);
     if (match1) {
-        calle = match1[1].trim();
-        puerta = match1[2].trim();
+      calle = match1[1].trim();
+      puerta = match1[2].trim();
     } else {
-        calle = parte1;
+      calle = parte1;
     }
 
     // Ciudad/localidad
@@ -191,30 +196,30 @@ function parseDomicilioString(domicilioStr: string) {
     // Caso sin comas: intentar parsear "Calle Altura Resto"
     const match = domicilioStr.match(regexDireccion);
     if (match) {
-        calle = match[1].trim();
-        puerta = match[2].trim();
-        const resto = match[3] ? match[3].trim() : '';
-        
-        // Heurística simple para el resto:
-        // Si menciona Cordoba o Capital, asumirlo como ciudad
-        if (/cordoba|capital/i.test(resto)) {
-            ciudad = resto;
-        } else {
-            // Si no parece ciudad, lo ponemos en observaciones o barrio si existiera campo
-            observaciones = resto;
-            // Default ciudad si no se detectó
-            if (!ciudad) ciudad = 'Cordoba Capital'; 
-        }
+      calle = match[1].trim();
+      puerta = match[2].trim();
+      const resto = match[3] ? match[3].trim() : '';
+
+      // Heurística simple para el resto:
+      // Si menciona Cordoba o Capital, asumirlo como ciudad
+      if (/cordoba|capital/i.test(resto)) {
+        ciudad = resto;
+      } else {
+        // Si no parece ciudad, lo ponemos en observaciones o barrio si existiera campo
+        observaciones = resto;
+        // Default ciudad si no se detectó
+        if (!ciudad) ciudad = 'Cordoba Capital';
+      }
     } else {
-        // Fallback: todo a calle si no se detecta número
-        calle = domicilioStr;
+      // Fallback: todo a calle si no se detecta número
+      calle = domicilioStr;
     }
   }
   // Si el string contiene país explícito
   if (/argentina/i.test(domicilioStr)) {
     pais = 'Argentina';
   }
-  
+
   return {
     provincia,
     pais,
