@@ -31,17 +31,60 @@ GET /Repartos/BusquedaClientesCercanosResultJson?address=Av.%20Colón%201234,%20
 
 ```json
 {
-  "error": 0,
   "data": [
     {
-      "cliente_id": 208,
-      "nombreCompleto": "Juan Pérez",
-      "domicilio": "Av. Colón 1234",
-      "telefono": "3512345678",
-      "distanciaMetros": 50,
-      "nombreReparto": "Zona Centro"
+      "cliente_id": 802,
+      "nombreCliente": "Granja Velicceli (Cristina Alibue)",
+      "nombreReparto": "1234",
+      "zona": "Sin especificar",
+      "latitud": -31.4148491,
+      "longitud": -64.1792179,
+      "domicilioCompleto": "Córdoba, MENDOZA 237.",
+      "distanciaMetros": 270.60,
+      "visitas": [
+        {
+          "cliente_id": 802,
+          "dia_ids": 2,
+          "orden": 3.00,
+          "nombreCliente": "Granja Velicceli (Cristina Alibue)",
+          "domicilioCompleto": "Córdoba, MENDOZA 237.",
+          "reparto_id": 2,
+          "nombreReparto": "1234",
+          "tipoCliente": "Familia",
+          "estadoCliente": "Activo",
+          "dia": "Martes",
+          "altitud": "-31.4148491",
+          "longitud": "-64.1792179",
+          "semana": 1,
+          "semanaMensual": 0,
+          "color": null,
+          "haCambiado": 0,
+          "ultimasVisitas": {
+            "cliente_id": 802,
+            "diaSemana": "Martes",
+            "diaId": 2,
+            "horarioMin": "15:45",
+            "horarioMax": "15:45",
+            "horarioProm": "15:45",
+            "cantidadVisitas": 1,
+            "ultimaVisita": "/Date(1750790700000)/",
+            "horarioMaxSeg": 56700,
+            "horarioMinSeg": 56700,
+            "horarioPromSeg": 56700,
+            "ultimaVisitaString": "24/06/2025 15:45"
+          }
+        }
+      ],
+      "proximaVisita": "/Date(1755561600000)/",
+      "diasProximaVisita": 8
     }
-  ]
+  ],
+  "error": 0,
+  "message": "",
+  "coordenadas": {
+    "Latitud": -31.4126304,
+    "Longitud": -64.1780465
+  }
 }
 ```
 

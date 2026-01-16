@@ -33,35 +33,42 @@ GET /Repartos/ObtenerClientesCercanosP orCoordenadas?latitud=-31.4201&longitud=-
 
 ```json
 {
-  "error": 0,
   "clientesCercanos": [
     {
-      "cliente_id": 208,
-      "nombreCompleto": "Juan Pérez",
-      "domicilio": "Av. Colón 1234",
-      "telefono": "3512345678",
-      "distanciaMetros": 150,
-      "latitud": "-31.4201",
-      "longitud": "-64.1888",
-      "nombreReparto": "Zona Centro",
-      "visitas": "Lunes, Miércoles, Viernes",
-      "proximaVisita": "2026-01-17",
-      "diasProximaVisita": 1
-    },
-    {
-      "cliente_id": 215,
-      "nombreCompleto": "María González",
-      "domicilio": "Av. Vélez Sarsfield 500",
-      "telefono": "3512345679",
-      "distanciaMetros": 320,
-      "latitud": "-31.4215",
-      "longitud": "-64.1895",
-      "nombreReparto": "Zona Centro",
-      "visitas": "Martes, Jueves",
-      "proximaVisita": "2026-01-16",
-      "diasProximaVisita": 0
+      "cliente_id": 1017,
+      "nombreCliente": "Julieta Pillado",
+      "nombreReparto": "1234",
+      "zona": "Sin especificar",
+      "latitud": -31.3441697,
+      "longitud": -64.254893299999992,
+      "domicilioCompleto": "Córdoba, PADRE FRANCISCO PALAU 6575. torre 0. piso 0. depto 3. ",
+      "distanciaMetros": 86.18,
+      "visitas": [
+        {
+          "cliente_id": 1017,
+          "dia_ids": 5,
+          "orden": 0.00,
+          "nombreCliente": "Julieta Pillado",
+          "domicilioCompleto": "Córdoba, PADRE FRANCISCO PALAU 6575. torre 0. piso 0. depto 3. ",
+          "reparto_id": 2,
+          "nombreReparto": "1234",
+          "tipoCliente": "Empresa",
+          "estadoCliente": "Activo",
+          "dia": "Viernes",
+          "altitud": "-31.3441697",
+          "longitud": "-64.25489329999999",
+          "semana": 1,
+          "semanaMensual": 1,
+          "color": null,
+          "haCambiado": 0,
+          "ultimasVisitas": null
+        }
+      ],
+      "proximaVisita": "/Date(1753401600000)/",
+      "diasProximaVisita": 3
     }
-  ]
+  ],
+  "error": 0
 }
 ```
 
@@ -70,16 +77,38 @@ GET /Repartos/ObtenerClientesCercanosP orCoordenadas?latitud=-31.4201&longitud=-
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | cliente_id | number | ID del cliente |
-| nombreCompleto | string | Nombre completo del cliente |
-| domicilio | string | Dirección del cliente |
-| telefono | string | Teléfono de contacto |
-| distanciaMetros | number | Distancia en metros desde el punto de referencia |
-| latitud | string | Latitud del cliente |
-| longitud | string | Longitud del cliente |
+| nombreCliente | string | Nombre completo del cliente |
 | nombreReparto | string | Nombre del reparto asignado |
-| visitas | string | Días de visita |
-| proximaVisita | string | Fecha de próxima visita |
+| zona | string | Zona del reparto |
+| latitud | number | Latitud del cliente |
+| longitud | number | Longitud del cliente |
+| domicilioCompleto | string | Dirección completa del cliente |
+| distanciaMetros | number | Distancia en metros desde el punto de referencia |
+| visitas | array | Array de objetos con información de visitas programadas |
+| proximaVisita | string | Fecha de próxima visita (formato /Date(timestamp)/) |
 | diasProximaVisita | number | Días hasta la próxima visita |
+
+### Campos del objeto visitas
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| cliente_id | number | ID del cliente |
+| dia_ids | number | ID del día de la semana |
+| orden | number | Orden de visita |
+| nombreCliente | string | Nombre del cliente |
+| domicilioCompleto | string | Dirección completa |
+| reparto_id | number | ID del reparto |
+| nombreReparto | string | Nombre del reparto |
+| tipoCliente | string | Tipo de cliente (Familia/Empresa) |
+| estadoCliente | string | Estado del cliente |
+| dia | string | Nombre del día de la semana |
+| altitud | string | Latitud (como string) |
+| longitud | string | Longitud (como string) |
+| semana | number | Número de semana |
+| semanaMensual | number | Semana del mes |
+| color | string | Color asignado (puede ser null) |
+| haCambiado | number | Indicador de cambios |
+| ultimasVisitas | object | Información de últimas visitas (puede ser null) |
 
 ## Notas
 
