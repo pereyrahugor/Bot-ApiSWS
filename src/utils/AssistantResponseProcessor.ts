@@ -1,4 +1,8 @@
-// Utilidad para formatear fechas a DD/MM/YYYY
+/**
+ * Convierte una fecha a formato DD/MM/YYYY
+ * @param {string} fecha - Fecha en formato YYYY-MM-DD, YYYY/MM/DD o DD/MM/YYYY
+ * @returns {string} Fecha en formato DD/MM/YYYY
+ */
 function toDDMMYYYY(fecha: string): string {
     if (!fecha) return '';
     // Si ya está en formato DD/MM/YYYY, devolver igual
@@ -26,10 +30,20 @@ import { AdministracionApi } from "../API_SWS/FacturacionApi";
 import { getMapsUbication } from "../addModule/getMapsUbication";
 
 
+/**
+ * Elimina todos los bloques [API]...[/API] de un texto
+ * @param {string} texto - Texto que puede contener bloques API
+ * @returns {string} Texto sin bloques API
+ */
 function limpiarBloquesJSON(texto: string): string {
     return texto.replace(/\[API\][\s\S]*?\[\/API\]/g, "");
 }
 
+/**
+ * Corrige el año de una fecha para asegurar que sea el año vigente o posterior
+ * @param {string} fechaReservaStr - Fecha en formato YYYY-MM-DD HH:mm:ss
+ * @returns {string} Fecha corregida con año vigente
+ */
 function corregirFechaAnioVigente(fechaReservaStr: string): string {
     const ahora = new Date();
     const vigente = ahora.getFullYear();
@@ -40,12 +54,23 @@ function corregirFechaAnioVigente(fechaReservaStr: string): string {
     return `${anio.toString().padStart(4, "0")}-${mes.toString().padStart(2, "0")}-${dia.toString().padStart(2, "0")} ${hora}`;
 }
 
+/**
+ * Verifica si una fecha es futura (mayor o igual a la fecha actual)
+ * @param {string} fechaReservaStr - Fecha en formato YYYY-MM-DD HH:mm:ss
+ * @returns {boolean} true si la fecha es futura, false en caso contrario
+ */
 function esFechaFutura(fechaReservaStr: string): boolean {
     const ahora = new Date();
     const fechaReserva = new Date(fechaReservaStr.replace(" ", "T"));
     return fechaReserva >= ahora;
 }
 
+/**
+ * Limita el número de resultados en un array o en la propiedad data de un objeto
+ * @param {any} data - Array o objeto con propiedad data
+ * @param {number} max - Número máximo de resultados (default: 10)
+ * @returns {any} Datos limitados
+ */
 function limitarResultados(data: any, max: number = 10): any {
     if (Array.isArray(data)) {
         return data.slice(0, max);
@@ -56,6 +81,11 @@ function limitarResultados(data: any, max: number = 10): any {
     return data;
 }
 
+/**
+ * Verifica si hay resultados en un array o en la propiedad data de un objeto
+ * @param {any} datos - Array o objeto con propiedad data
+ * @returns {boolean} true si hay resultados, false en caso contrario
+ */
 function tieneResultados(datos: any): boolean {
     if (Array.isArray(datos)) return datos.length > 0;
     if (datos && Array.isArray(datos.data)) return datos.data.length > 0;
@@ -64,6 +94,12 @@ function tieneResultados(datos: any): boolean {
 
 
 
+/**
+ * Verifica si una respuesta de API es exitosa según diferentes criterios
+ * @param {any} data - Datos de respuesta de la API
+ * @param {any} apiResponse - Respuesta completa de axios (opcional)
+ * @returns {boolean} true si la respuesta es exitosa, false en caso contrario
+ */
 function esRespuestaExitosa(data: any, apiResponse?: any): boolean {
     if (!data) return false;
     // Criterio principal definido por el usuario: error === 0
@@ -77,7 +113,21 @@ function esRespuestaExitosa(data: any, apiResponse?: any): boolean {
     return false;
 }
 
+/**
+ * Clase para procesar respuestas del asistente de OpenAI y ejecutar llamadas a APIs
+ */
 export class AssistantResponseProcessor {
+    /**
+     * Analiza y procesa la respuesta del asistente, detectando bloques [API] y ejecutando las llamadas correspondientes
+     * @param {any} response - Respuesta del asistente de OpenAI
+     * @param {any} ctx - Contexto del mensaje (contiene from, body, type, etc.)
+     * @param {any} flowDynamic - Función para enviar mensajes al usuario
+     * @param {any} state - Estado de la conversación
+     * @param {any} provider - Proveedor de mensajería (WhatsApp, webchat, etc.)
+     * @param {any} gotoFlow - Función para cambiar de flujo
+     * @param {Function} getAssistantResponse - Función para obtener respuestas del asistente
+     * @param {string} ASSISTANT_ID - ID del asistente de OpenAI
+     */
     static async analizarYProcesarRespuestaAsistente(
         response: any,
         ctx: any,
