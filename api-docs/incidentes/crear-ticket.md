@@ -26,8 +26,9 @@ POST /api/Incidentes/Save
 | tipoIncidente_ids | number | ID del tipo de incidente (ver tablas) | Sí |
 | subTipoIncidente_ids | number | ID secundario del incidente (ver tablas) | Sí |
 | severidad_ids | number | Prioridad (1:Baja, 2:Media, 3:Alta) | Sí |
-| estadoIncidente_ids | number | Estado (1:Abierto, 5:Cerrado, etc.) | No |
-| fechaCierreEstimado | string | Fecha estimada (dd/MM/yyyy) | No |
+| `estadoIncidente_ids` | number | Estado (1:Abierto, 5:Cerrado, etc.) | No |
+| `fechaCierreEstimado` | string | Fecha estimada (dd/MM/yyyy). El sistema la calcula automáticamente como **+2 días hábiles**. | No |
+| `usuarioResponsable_id` | number | ID del usuario responsable. Se obtiene del logueo (`usuario_id`). | Sí |
 
 ## Ejemplo de Request (Llamar a Cliente)
 
@@ -41,8 +42,8 @@ POST /api/Incidentes/Save
   "subTipoIncidente_ids": 50,
   "severidad_ids": 2,
   "estadoIncidente_ids": 1,
-  "fechaCierreEstimado": "21/07/2025",
-  "usuarioResponsable_id": null
+  "fechaCierreEstimado": "23/07/2025",
+  "usuarioResponsable_id": 12
 }
 ```
 

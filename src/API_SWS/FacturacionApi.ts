@@ -157,4 +157,12 @@ export class AdministracionApi {
     const data = { reciboId };
     return axios.post(url, data, { headers });
   }
+
+  static async obtenerLinkPago(cliente_id: number, monto: number) {
+    await ensureValidToken();
+    const url = `${BASE_URL}/Recibos/ObtenerLinkMP`;
+    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
+    const data = { cliente_id, monto };
+    return axios.post(url, data, { headers });
+  }
 }

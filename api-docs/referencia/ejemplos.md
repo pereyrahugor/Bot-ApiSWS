@@ -163,9 +163,14 @@ const incidenteResponse = await fetch('http://demo.chatbot.sistemaws.com/api/Inc
   },
   body: JSON.stringify({
     cliente_id: 208,
-    descripcion: 'Bidón con pérdida de agua',
-    prioridad: 'Alta',
-    centroDistribucion_id: 1
+    titulo: 'Bidón con pérdida de agua',
+    descripcion: '<p>El cliente informa que el bidón entregado hoy presenta una fisura en la base.</p>',
+    tipoIncidente_ids: 2,
+    subTipoIncidente_ids: 9,
+    severidad_ids: 3,
+    centroDistribucion_id: 1,
+    usuarioResponsable_id: 12,
+    fechaCierreEstimado: '23/07/2025'
   })
 });
 

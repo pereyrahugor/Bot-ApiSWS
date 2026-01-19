@@ -9,6 +9,7 @@ export class JsonBlockFinder {
         // Autogestión y pagos
         "OBTENER_CREDENCIALES_AUTOGESTION",
         "OBTENER_LINK_MERCADO_PAGO",
+        "LINK_PAGO",
         // Clientes
         "BUSCAR_CLIENTE",
         "CREAR_CLIENTE",
@@ -18,6 +19,7 @@ export class JsonBlockFinder {
         "OBTENER_SUCURSALES_CLIENTE",
         // Incidentes
         "INCIDENCIA",
+        "BUSCAR_INCIDENCIA",
         // Precios y productos
         "PRECIO",
         "PRODUCTOS",

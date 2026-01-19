@@ -55,3 +55,6 @@
 * [Códigos de Error](referencia/codigos-error.md)
 * [Tipos de Datos](referencia/tipos-datos.md)
 * [Ejemplos Completos](referencia/ejemplos.md)
+
+## Instrucciones de Uso en Prompt
+* [Instrucciones de Uso en Prompt](Etiquetas%20Prompt/Biblioteca%20Api.md)

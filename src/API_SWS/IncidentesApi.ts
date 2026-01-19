@@ -14,4 +14,14 @@ export class IncidentesApi {
     };
     return axios.post(url, params, { headers });
   }
+
+  static async obtenerIncidentesCliente(params: any) {
+    await ensureValidToken();
+    const url = `${BASE_URL}/api/Incidentes/ObtenerIncidentesCliente`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'CURRENTTOKENVALUE': getSessionToken() || ''
+    };
+    return axios.post(url, params, { headers });
+  }
 }

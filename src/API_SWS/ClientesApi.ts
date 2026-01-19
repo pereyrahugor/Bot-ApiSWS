@@ -122,9 +122,10 @@ export class ClientesApi {
       telefono: payload.cliente.telefono ?? '',
       email: payload.cliente.email ?? '',
       listaDePreciosId: payload.cliente.listaDePreciosId ?? 1,
+      reparto_id: payload.reparto_id,
       domicilio
     };
-    return axios.post(url, { cliente, reparto_id: payload.reparto_id }, { headers });
+    return axios.post(url, { cliente }, { headers });
   }
 
   static async agregarContacto(modeloContacto: any) {
@@ -139,16 +140,16 @@ export class ClientesApi {
     return axios.post(url, { ModeloContacto: modeloContacto }, { headers });
   }
 
-  static async obtenerCredencialesAutogestion(id: number) {
+  static async obtenerCredencialesAutogestion(cliente_id: number) {
     await ensureValidToken();
     const token = getSessionToken() || '';
-    const url = `${BASE_URL}/api/Usuarios/ObtenerUsuarioById`;
+    const url = `${BASE_URL}/api/UsuariosClientes/ObtenerUsuarioPorCliente`;
     const headers = {
       'Content-Type': 'application/json',
       'CURRENTTOKENVALUE': token
     };
-    // Enviar el campo correcto 'id' en el body
-    return axios.post(url, { id }, { headers });
+    // Enviar el campo correcto 'cliente_id' en el body
+    return axios.post(url, { cliente_id }, { headers });
   }
 }
 

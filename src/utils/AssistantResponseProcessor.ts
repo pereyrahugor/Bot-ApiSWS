@@ -28,6 +28,26 @@ import { ListaDePreciosApi } from "../API_SWS/ListaDePreciosApi";
 import { RepartosApi } from "../API_SWS/RepartosApi";
 import { AdministracionApi } from "../API_SWS/FacturacionApi";
 import { getMapsUbication } from "../addModule/getMapsUbication";
+import { getUsuarioId } from "../API_SWS/SessionApi";
+
+/**
+ * Calcula la fecha actual + 2 días hábiles en formato DD/MM/YYYY
+ * @returns {string}
+ */
+function getFechaCierreEstimado(): string {
+    const date = new Date();
+    let businessDays = 0;
+    while (businessDays < 2) {
+        date.setDate(date.getDate() + 1);
+        if (date.getDay() !== 0 && date.getDay() !== 6) { // 0=Domingo, 6=Sábado
+            businessDays++;
+        }
+    }
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}/${m}/${y}`;
+}
 
 
 /**
@@ -404,6 +424,10 @@ export class AssistantResponseProcessor {
                     jsonData.cliente_id = jsonData.clienteId;
                     delete jsonData.clienteId;
                 }
+                // NUEVO: Asignar usuario responsable desde la sesión y fecha de cierre estimado calculada
+                jsonData.usuarioResponsable_id = getUsuarioId() || null;
+                jsonData.fechaCierreEstimado = getFechaCierreEstimado();
+
                 const apiResponse = await IncidentesApi.crearTicket(jsonData);
                 console.log('[API Debug] Respuesta INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
                 let resumen = "";
@@ -413,6 +437,30 @@ export class AssistantResponseProcessor {
                 } else {
                     resumen = `No se pudo registrar la incidencia: ${apiResponse.data?.message || 'Error desconocido.'}`;
                 }
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
+                return;
+            }
+
+            // BUSCAR_INCIDENCIA
+            if (tipo === "BUSCAR_INCIDENCIA") {
+                const apiResponse = await IncidentesApi.obtenerIncidentesCliente(jsonData);
+                console.log('[API Debug] Respuesta BUSCAR_INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
+                const datos = limitarResultados(apiResponse.data || {});
+                const resumen = esRespuestaExitosa(datos, apiResponse) ? `Incidentes encontrados: ${JSON.stringify(datos, null, 2)}` : "No se encontraron incidentes para el cliente.";
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
+                return;
+            }
+
+            // LINK_PAGO / OBTENER_LINK_MERCADO_PAGO
+            if (tipo === "LINK_PAGO" || tipo === "OBTENER_LINK_MERCADO_PAGO") {
+                const cliente_id = jsonData.cliente_id ?? jsonData.ClienteId;
+                const monto = jsonData.monto;
+                const apiResponse = await AdministracionApi.obtenerLinkPago(cliente_id, monto);
+                console.log('[API Debug] Respuesta LINK_PAGO:', util.inspect(apiResponse, { depth: 4 }));
+                const datos = apiResponse.data || {};
+                const resumen = esRespuestaExitosa(datos, apiResponse) ? `Link de pago generado: ${JSON.stringify(datos, null, 2)}` : "No se pudo generar el link de pago.";
                 const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;

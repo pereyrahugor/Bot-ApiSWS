@@ -31,6 +31,7 @@ const BASE_URL = 'http://demo.chatbot.sistemaws.com';
 
 let sessionToken: string | null = null;
 let tokenVencimiento: string | null = null;
+let usuarioId: number | null = null;
 
 export function setSessionToken(token: string) {
   sessionToken = token;
@@ -40,6 +41,9 @@ export function setTokenVencimiento(vencimiento: string) {
   tokenVencimiento = vencimiento;
 }
 
+export function setUsuarioId(id: number) {
+  usuarioId = id;
+}
 
 export function getSessionToken(): string | null {
   return sessionToken;
@@ -47,6 +51,10 @@ export function getSessionToken(): string | null {
 
 export function getTokenVencimiento(): string | null {
   return tokenVencimiento;
+}
+
+export function getUsuarioId(): number | null {
+  return usuarioId;
 }
 
 export class SessionApi {
@@ -58,13 +66,15 @@ export class SessionApi {
     const body = { username, password };
     const headers = { 'Content-Type': 'application/json' };
     const response = await axios.post(url, body, { headers });
-    // Si el login es exitoso, guardar el token
+    // Si el login es exitoso, guardar el token y el id de usuario
     if (response.data && response.data.tokenValido) {
       setSessionToken(response.data.tokenValido);
       setTokenVencimiento(response.data.vencimiento || '');
+      setUsuarioId(response.data.usuario_id || 0);
     } else {
       setSessionToken('');
       setTokenVencimiento('');
+      setUsuarioId(0);
     }
     return response;
   }
