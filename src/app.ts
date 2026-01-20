@@ -25,7 +25,7 @@ import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
-import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
+import { AssistantResponseProcessor, waitForActiveRuns } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 import { ErrorReporter } from "./utils/errorReporter";
 // import { AssistantBridge } from './utils-web/AssistantBridge';
@@ -68,7 +68,6 @@ export const safeToAsk = async (assistantId: string, message: string, state: any
     const threadId = state && typeof state.get === 'function' && state.get('thread_id');
     if (threadId) {
         try {
-            const { waitForActiveRuns } = await import('./utils/AssistantResponseProcessor.js');
             await waitForActiveRuns(threadId);
         } catch (err) {
             console.error('[safeToAsk] Error esperando runs activos:', err);
