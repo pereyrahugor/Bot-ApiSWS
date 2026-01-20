@@ -3,7 +3,7 @@ import { getMapsUbication } from '../addModule/getMapsUbication';
 import axios from 'axios';
 import { getSessionToken, ensureValidToken } from './SessionApi';
 
-const BASE_URL = 'http://demo.chatbot.sistemaws.com';
+const BASE_URL = process.env.SWS_BASE_URL;
 
 export class ClientesApi {
   /**

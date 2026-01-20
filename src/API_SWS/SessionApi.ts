@@ -26,7 +26,7 @@ export async function ensureValidToken(username?: string, password?: string): Pr
 import axios from 'axios';
 
 
-const BASE_URL = 'http://demo.chatbot.sistemaws.com';
+const BASE_URL = process.env.SWS_BASE_URL;
 
 
 let sessionToken: string | null = null;
@@ -59,8 +59,8 @@ export function getUsuarioId(): number | null {
 
 export class SessionApi {
   // Credenciales por defecto (pueden ser cambiadas en tiempo de ejecución)
-  static username: string = 'admin';
-  static password: string = 'demo2024';
+  static username: string = process.env.SWS_USERNAME;
+  static password: string = process.env.SWS_PASSWORD;
   static async login(username: string, password: string) {
     const url = `${BASE_URL}/api/Session/GetToken`;
     const body = { username, password };
