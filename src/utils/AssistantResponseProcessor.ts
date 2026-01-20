@@ -274,7 +274,7 @@ export class AssistantResponseProcessor {
                     console.log('[API Debug] Respuesta OBTENER_CREDENCIALES_AUTOGESTION:', util.inspect(apiResponse, { depth: 4 }));
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Credenciales de autogestión: ${JSON.stringify(datos)}` : "No se pudieron obtener las credenciales.";
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     return;
             }
@@ -299,7 +299,7 @@ export class AssistantResponseProcessor {
                 } while (radio <= radioMax);
                 console.log(`[API Debug] CLIENTES_CERCANOS_A_CLIENTE: clienteId=${jsonData.clienteId}, radio=${radio}`);
                 const resumen = esRespuestaExitosa(datos, apiResponse) ? `Clientes cercanos: ${JSON.stringify(datos)}` : "No se pudo obtener los clientes cercanos.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -316,7 +316,7 @@ export class AssistantResponseProcessor {
 
                 if (!ubicacion || !ubicacion.lat || !ubicacion.lng) {
                     const resumen = "No se pudo obtener coordenadas para la dirección proporcionada.";
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     return;
                 }
@@ -339,7 +339,7 @@ export class AssistantResponseProcessor {
                 console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION: address=${jsonData.address}, metros=${metros}`);
 
                 const resumen = esRespuestaExitosa(datos, apiResponse) ? `Clientes cercanos: ${JSON.stringify(datos)}` : "No se encontraron clientes cercanos.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -366,7 +366,7 @@ export class AssistantResponseProcessor {
                 } else {
                     resumen = "No se encuentra cliente coincidente con los datos enviados";
                 }
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) {
                     // Si la respuesta del asistente contiene un bloque [API], reprocesar antes de enviar al usuario
                     const apiBlockRegex = /\[API\](.*?)\[\/API\]/is;
@@ -422,7 +422,7 @@ export class AssistantResponseProcessor {
                 } else {
                     resumen = "No se pudo crear el cliente. (Sin respuesta de la API)";
                 }
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) {
                     const apiBlockRegex = /\[API\](.*?)\[\/API\]/is;
                     if (typeof assistantApiResponse === 'string' && apiBlockRegex.test(assistantApiResponse)) {
@@ -444,7 +444,7 @@ export class AssistantResponseProcessor {
                 const resumen = esRespuestaExitosa(apiResponse.data)
                     ? "Contacto agregado exitosamente."
                     : "No se pudo agregar el contacto.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -472,7 +472,7 @@ export class AssistantResponseProcessor {
                 } else {
                     resumen = `No se pudo registrar la incidencia: ${apiResponse.data?.message || 'Error desconocido.'}`;
                 }
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -483,7 +483,7 @@ export class AssistantResponseProcessor {
                 console.log('[API Debug] Respuesta BUSCAR_INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
                 const datos = limitarResultados(apiResponse.data || {});
                 const resumen = esRespuestaExitosa(datos, apiResponse) ? `Incidentes encontrados: ${JSON.stringify(datos, null, 2)}` : "No se encontraron incidentes para el cliente.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -496,7 +496,7 @@ export class AssistantResponseProcessor {
                 console.log('[API Debug] Respuesta LINK_PAGO:', util.inspect(apiResponse, { depth: 4 }));
                 const datos = apiResponse.data || {};
                 const resumen = esRespuestaExitosa(datos, apiResponse) ? `Link de pago generado: ${JSON.stringify(datos, null, 2)}` : "No se pudo generar el link de pago.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -523,7 +523,7 @@ export class AssistantResponseProcessor {
                 const resumen = success
                     ? `Precios: ${JSON.stringify(precios)}`
                     : "No se pudo obtener la lista de precios.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -578,7 +578,7 @@ export class AssistantResponseProcessor {
                 } else {
                     resumen = "Funcionalidad de reparto no implementada.";
                 }
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -612,7 +612,7 @@ export class AssistantResponseProcessor {
                     }
 
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -627,7 +627,7 @@ export class AssistantResponseProcessor {
                 const datos = limitarResultados(apiResponse.data || {});
                 const resumen = esRespuestaExitosa(datos, apiResponse) ? `Datos del cliente: ${JSON.stringify(datos)}` : "No se encontraron datos del cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -642,7 +642,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Sucursales del cliente: ${JSON.stringify(datos)}` : "No se encontraron sucursales para el cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -658,7 +658,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Matriz de lista de precios: ${JSON.stringify(datos)}` : "No se pudo obtener la matriz de lista de precios.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -678,7 +678,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Tipos de abonos: ${JSON.stringify(datos)}` : "No se pudo obtener los tipos de abonos.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -698,7 +698,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Historial de facturas: ${JSON.stringify(datos)}` : "No se pudo obtener el historial de facturas.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -718,7 +718,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Recibos de pago: ${JSON.stringify(datos)}` : "No se pudo obtener los recibos de pago.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -737,7 +737,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Resumen de cuenta: ${JSON.stringify(datos)}` : "No se pudo obtener el resumen de cuenta.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -756,7 +756,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Servicios técnicos: ${JSON.stringify(datos)}` : "No se pudo obtener los servicios técnicos.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -776,7 +776,7 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(apiResponse.data || {});
                     const resumen = esRespuestaExitosa(datos) ? `Remitos de entrega: ${JSON.stringify(datos)}` : "No se pudo obtener los remitos de entrega.";
                     // Enviar SIEMPRE la respuesta al asistente
-                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
                         await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                     }
@@ -790,7 +790,7 @@ export class AssistantResponseProcessor {
                 console.log('[API Debug] Respuesta DESCARGA_REMITO:', util.inspect(apiResponse, { depth: 4 }));
                 const datos = apiResponse.data || {};
                 const resumen = esRespuestaExitosa(datos) ? `Archivo de remito descargado: ${JSON.stringify(datos)}` : "No se pudo descargar el remito.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -802,7 +802,7 @@ export class AssistantResponseProcessor {
                 console.log('[API Debug] Respuesta DESCARGA_REMITO_VENTA:', util.inspect(apiResponse, { depth: 4 }));
                 const datos = apiResponse.data || {};
                 const resumen = esRespuestaExitosa(datos) ? `Archivo de remito por venta descargado: ${JSON.stringify(datos)}` : "No se pudo descargar el remito por venta.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -814,7 +814,7 @@ export class AssistantResponseProcessor {
                 console.log('[API Debug] Respuesta DESCARGA_ARCHIVO:', util.inspect(apiResponse, { depth: 4 }));
                 const datos = apiResponse.data || {};
                 const resumen = esRespuestaExitosa(datos) ? `Archivo descargado: ${JSON.stringify(datos)}` : "No se pudo descargar el archivo.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -825,7 +825,7 @@ export class AssistantResponseProcessor {
                 const apiResponse = await AdministracionApi.reenviarFacturaPorMail(jsonData.facturaId);
                 console.log('[API Debug] Respuesta REENVIAR_FACTURA_POR_MAIL:', util.inspect(apiResponse, { depth: 4 }));
                 const resumen = esRespuestaExitosa(apiResponse.data) ? "Factura reenviada por mail exitosamente." : "No se pudo reenviar la factura.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -836,7 +836,7 @@ export class AssistantResponseProcessor {
                 const apiResponse = await AdministracionApi.reenviarRemitoPorMail(jsonData.remitoId);
                 console.log('[API Debug] Respuesta REENVIAR_REMITO_POR_MAIL:', util.inspect(apiResponse, { depth: 4 }));
                 const resumen = esRespuestaExitosa(apiResponse.data) ? "Remito reenviado por mail exitosamente." : "No se pudo reenviar el remito.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -847,7 +847,7 @@ export class AssistantResponseProcessor {
                 const apiResponse = await AdministracionApi.reenviarReciboPorMail(jsonData.reciboId);
                 console.log('[API Debug] Respuesta REENVIAR_RECIBO_POR_MAIL:', util.inspect(apiResponse, { depth: 4 }));
                 const resumen = esRespuestaExitosa(apiResponse.data) ? "Recibo reenviado por mail exitosamente." : "No se pudo reenviar el recibo.";
-                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.from);
+                const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                 if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                 return;
             }
@@ -855,7 +855,7 @@ export class AssistantResponseProcessor {
             // Fallback para tipos válidos pero no implementados
             console.warn(`[API Debug] Tipo de API reconocido pero no implementado: ${tipo}`);
             const errorResumen = `El sistema aún no tiene implementada la función para el tipo: ${tipo}.`;
-            const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, errorResumen, state, undefined, ctx.from, ctx.from);
+            const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, errorResumen, state, undefined, ctx.from, ctx.thread_id);
             if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
             return;
         }
