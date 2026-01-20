@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 /**
  * Convierte una fecha a formato DD/MM/YYYY
  * @param {string} fecha - Fecha en formato YYYY-MM-DD, YYYY/MM/DD o DD/MM/YYYY
@@ -18,6 +19,40 @@ function toDDMMYYYY(fecha: string): string {
         return `${d}/${m}/${y}`;
     }
     return fecha;
+}
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
+
+export async function waitForActiveRuns(threadId: string) {
+    if (!threadId) return;
+    try {
+        console.log(`[AssistantResponseProcessor] Verificando runs activos en thread ${threadId}...`);
+        let attempt = 0;
+        const maxAttempts = 20; // 40-60 segundos total
+        while (attempt < maxAttempts) {
+            const runs = await openai.beta.threads.runs.list(threadId, { limit: 5 });
+            const activeRun = runs.data.find(run => 
+                ["queued", "in_progress", "cancelling", "requires_action"].includes(run.status)
+            );
+            
+            if (activeRun) {
+                console.log(`[AssistantResponseProcessor] [${attempt}/${maxAttempts}] Run activo detectado (${activeRun.id}, estado: ${activeRun.status}). Esperando 2s...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                attempt++;
+            } else {
+                console.log(`[AssistantResponseProcessor] No hay runs activos. OK.`);
+                // Delay adicional reducido pero presente para asegurar sincronización de OpenAI
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                return;
+            }
+        }
+        console.warn(`[AssistantResponseProcessor] Timeout esperando liberación del thread ${threadId}.`);
+    } catch (error) {
+        console.error(`[AssistantResponseProcessor] Error verificando runs:`, error);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
 }
 // src/utils/AssistantResponseProcessor.ts
 import { JsonBlockFinder } from "../API_SWS/JsonBlockFinder";
