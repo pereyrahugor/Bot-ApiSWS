@@ -464,6 +464,7 @@ export class AssistantResponseProcessor {
                     // NUEVO: Asignar usuario responsable desde la sesión y fecha de cierre estimado calculada
                     jsonData.usuarioResponsable_id = getUsuarioId() || null;
                     jsonData.fechaCierreEstimado = getFechaCierreEstimado();
+                    jsonData.estadoIncidente_ids = 1;
 
                     const apiResponse = await IncidentesApi.crearTicket(jsonData);
                     console.log('[API Debug] Respuesta INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
