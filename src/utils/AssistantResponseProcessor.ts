@@ -123,10 +123,10 @@ function esFechaFutura(fechaReservaStr: string): boolean {
 /**
  * Limita el número de resultados en un array o en la propiedad data de un objeto
  * @param {any} data - Array o objeto con propiedad data
- * @param {number} max - Número máximo de resultados (default: 10)
+ * @param {number} max - Número máximo de resultados (default: 25)
  * @returns {any} Datos limitados
  */
-function limitarResultados(data: any, max: number = 10): any {
+function limitarResultados(data: any, max: number = 25): any {
     if (Array.isArray(data)) {
         return data.slice(0, max);
     }
@@ -317,7 +317,7 @@ export class AssistantResponseProcessor {
                             radio, // ignorar jsonData.radioMetros
                             typeof jsonData.excluir === 'boolean' ? jsonData.excluir : false
                         );
-                        datos = apiResponse.data ? limitarResultados(apiResponse.data) : [];
+                        datos = apiResponse.data ? limitarResultados(apiResponse.data, 25) : [];
                         if (tieneResultados(datos)) break;
                         if (radio >= radioMax) break;
                         radio += 250;
@@ -356,7 +356,7 @@ export class AssistantResponseProcessor {
                             address: jsonData.address,
                             metros // ignorar jsonData.metros
                         });
-                        datos = apiResponse.data ? limitarResultados(apiResponse.data) : [];
+                        datos = apiResponse.data ? limitarResultados(apiResponse.data, 25) : [];
                         if (tieneResultados(datos)) break;
                         if (metros >= metrosMax) break;
                         metros += 250;
@@ -484,7 +484,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "BUSCAR_INCIDENCIA") {
                     const apiResponse = await IncidentesApi.obtenerIncidentesCliente(jsonData);
                     console.log('[API Debug] Respuesta BUSCAR_INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Incidentes encontrados: ${JSON.stringify(datos, null, 2)}` : "No se encontraron incidentes para el cliente.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
@@ -625,7 +625,7 @@ export class AssistantResponseProcessor {
                     // obtenerDatosCliente espera: cliente_id (number)
                     const apiResponse = await ClientesApi.obtenerDatosCliente(jsonData.cliente_id);
                     console.log('[API Debug] Respuesta OBTENER_DATOS_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Datos del cliente: ${JSON.stringify(datos)}` : "No se encontraron datos del cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -638,7 +638,7 @@ export class AssistantResponseProcessor {
                     // obtenerSucursales espera: cliente_id (number)
                     const apiResponse = await ClientesApi.obtenerSucursales(jsonData.cliente_id);
                     console.log('[API Debug] Respuesta OBTENER_SUCURSALES_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Sucursales del cliente: ${JSON.stringify(datos)}` : "No se encontraron sucursales para el cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -654,7 +654,7 @@ export class AssistantResponseProcessor {
                     const tipoListaId = jsonData.tipoLista_id ?? 1;
                     const apiResponse = await ListaDePreciosApi.obtenerMatrizListaDePrecios(tipoListaId);
                     console.log('[API Debug] Respuesta MATRIZ_LISTA_PRECIOS:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Matriz de lista de precios: ${JSON.stringify(datos)}` : "No se pudo obtener la matriz de lista de precios.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -672,7 +672,7 @@ export class AssistantResponseProcessor {
                         typeof jsonData.activo === 'boolean' ? jsonData.activo : true
                     );
                     console.log('[API Debug] Respuesta ABONOS_TIPOS:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Tipos de abonos: ${JSON.stringify(datos)}` : "No se pudo obtener los tipos de abonos.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -690,7 +690,7 @@ export class AssistantResponseProcessor {
                         typeof jsonData.saldoPendiente === 'boolean' ? jsonData.saldoPendiente : false
                     );
                     console.log('[API Debug] Respuesta HISTORIAL_FACTURAS:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Historial de facturas: ${JSON.stringify(datos)}` : "No se pudo obtener el historial de facturas.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -708,7 +708,7 @@ export class AssistantResponseProcessor {
                         typeof jsonData.saldoDisponible === 'boolean' ? jsonData.saldoDisponible : false
                     );
                     console.log('[API Debug] Respuesta RECIBOS_PAGO:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Recibos de pago: ${JSON.stringify(datos)}` : "No se pudo obtener los recibos de pago.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -725,7 +725,7 @@ export class AssistantResponseProcessor {
                         toDDMMYYYY(jsonData.fechaHasta ?? '')
                     );
                     console.log('[API Debug] Respuesta RESUMEN_CUENTA:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Resumen de cuenta: ${JSON.stringify(datos)}` : "No se pudo obtener el resumen de cuenta.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -742,7 +742,7 @@ export class AssistantResponseProcessor {
                         toDDMMYYYY(jsonData.fechaHasta ?? '')
                     );
                     console.log('[API Debug] Respuesta ORDEN_TRABAJO:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Servicios técnicos: ${JSON.stringify(datos)}` : "No se pudo obtener los servicios técnicos.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -760,7 +760,7 @@ export class AssistantResponseProcessor {
                         typeof jsonData.consumosSinFacturar === 'boolean' ? jsonData.consumosSinFacturar : false
                     );
                     console.log('[API Debug] Respuesta REMITOS_ENTREGA:', util.inspect(apiResponse, { depth: 4 }));
-                    const datos = limitarResultados(apiResponse.data || {});
+                    const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Remitos de entrega: ${JSON.stringify(datos)}` : "No se pudo obtener los remitos de entrega.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
