@@ -53,6 +53,11 @@ function validarRangoFechas(desdeStr: string, hastaStr: string): { desde: string
     const desde = toDDMMYYYY(desdeStr);
     let hasta = toDDMMYYYY(hastaStr);
 
+    // Si fechaHasta no llega o está vacía, autocompletar con la fecha de HOY
+    if (!hasta) {
+        hasta = toDDMMYYYY('{{HOY}}');
+    }
+
     if (desde && hasta) {
         const dDate = parseDate(desde);
         const hDate = parseDate(hasta);
