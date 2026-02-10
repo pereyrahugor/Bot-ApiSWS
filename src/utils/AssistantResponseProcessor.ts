@@ -31,6 +31,41 @@ function toDDMMYYYY(fecha: string): string {
     return fecha;
 }
 
+/**
+ * Convierte un string DD/MM/YYYY a un objeto Date (local)
+ * @param {string} fechaStr 
+ * @returns {Date | null}
+ */
+function parseDate(fechaStr: string): Date | null {
+    if (!fechaStr || !/^\d{2}\/\d{2}\/\d{4}$/.test(fechaStr)) return null;
+    const [d, m, y] = fechaStr.split('/').map(Number);
+    return new Date(y, m - 1, d);
+}
+
+/**
+ * Valida un rango de fechas. Si la fechaHasta es anterior a fechaDesde, 
+ * reemplaza fechaHasta por la fecha actual.
+ * @param {string} desdeStr 
+ * @param {string} hastaStr 
+ * @returns {{desde: string, hasta: string}}
+ */
+function validarRangoFechas(desdeStr: string, hastaStr: string): { desde: string, hasta: string } {
+    const desde = toDDMMYYYY(desdeStr);
+    let hasta = toDDMMYYYY(hastaStr);
+
+    if (desde && hasta) {
+        const dDate = parseDate(desde);
+        const hDate = parseDate(hasta);
+
+        if (dDate && hDate && hDate < dDate) {
+            console.log(`[AssistantResponseProcessor] fechaHasta (${hasta}) anterior a fechaDesde (${desde}). Corrigiendo hasta a HOY.`);
+            hasta = toDDMMYYYY('{{HOY}}');
+        }
+    }
+
+    return { desde, hasta };
+}
+
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
@@ -675,9 +710,10 @@ export class AssistantResponseProcessor {
                 // ABONOS_TIPOS
                 if (tipo === "ABONOS_TIPOS") {
                     // obtenerAbonosTipos espera: desde, hasta, concepto, activo
+                    const { desde, hasta } = validarRangoFechas(jsonData.desde ?? '', jsonData.hasta ?? '');
                     const apiResponse = await ListaDePreciosApi.obtenerAbonosTipos(
-                        jsonData.desde ? toDDMMYYYY(jsonData.desde) : null,
-                        jsonData.hasta ? toDDMMYYYY(jsonData.hasta) : null,
+                        desde || null,
+                        hasta || null,
                         jsonData.concepto ?? null,
                         typeof jsonData.activo === 'boolean' ? jsonData.activo : true
                     );
@@ -693,10 +729,11 @@ export class AssistantResponseProcessor {
                 // HISTORIAL_FACTURAS
                 if (tipo === "HISTORIAL_FACTURAS") {
                     // historialFacturasCliente espera: cliente_id, fechaDesde, fechaHasta, saldoPendiente (opcional)
+                    const { desde, hasta } = validarRangoFechas(jsonData.fechaDesde ?? '', jsonData.fechaHasta ?? '');
                     const apiResponse = await AdministracionApi.historialFacturasCliente(
                         jsonData.cliente_id,
-                        toDDMMYYYY(jsonData.fechaDesde),
-                        toDDMMYYYY(jsonData.fechaHasta),
+                        desde,
+                        hasta,
                         typeof jsonData.saldoPendiente === 'boolean' ? jsonData.saldoPendiente : false
                     );
                     console.log('[API Debug] Respuesta HISTORIAL_FACTURAS:', util.inspect(apiResponse, { depth: 4 }));
@@ -711,10 +748,11 @@ export class AssistantResponseProcessor {
                 // RECIBOS_PAGO
                 if (tipo === "RECIBOS_PAGO") {
                     // recibosPagoCliente espera: clienteId, fechaReciboDesde, fechaReciboHasta, saldoDisponible (opcional)
+                    const { desde, hasta } = validarRangoFechas(jsonData.fechaReciboDesde ?? '', jsonData.fechaReciboHasta ?? '');
                     const apiResponse = await AdministracionApi.recibosPagoCliente(
                         jsonData.cliente_id,
-                        toDDMMYYYY(jsonData.fechaReciboDesde ?? ''),
-                        toDDMMYYYY(jsonData.fechaReciboHasta ?? ''),
+                        desde,
+                        hasta,
                         typeof jsonData.saldoDisponible === 'boolean' ? jsonData.saldoDisponible : false
                     );
                     console.log('[API Debug] Respuesta RECIBOS_PAGO:', util.inspect(apiResponse, { depth: 4 }));
@@ -729,10 +767,11 @@ export class AssistantResponseProcessor {
                 // RESUMEN_CUENTA
                 if (tipo === "RESUMEN_CUENTA") {
                     // resumenCuentaCliente espera: clienteId, desde, hasta
+                    const { desde, hasta } = validarRangoFechas(jsonData.fechaDesde ?? '', jsonData.fechaHasta ?? '');
                     const apiResponse = await AdministracionApi.resumenCuentaCliente(
                         jsonData.cliente_id,
-                        toDDMMYYYY(jsonData.fechaDesde ?? ''),
-                        toDDMMYYYY(jsonData.fechaHasta ?? '')
+                        desde,
+                        hasta
                     );
                     console.log('[API Debug] Respuesta RESUMEN_CUENTA:', util.inspect(apiResponse, { depth: 4 }));
                     const datos = apiResponse.data || {};
@@ -746,10 +785,11 @@ export class AssistantResponseProcessor {
                 // ORDEN_TRABAJO
                 if (tipo === "ORDEN_TRABAJO") {
                     // obtenerServiciosTecnicosCliente espera: clienteId, desde, hasta (hasta es opcional, default: hoy)
+                    const { desde, hasta } = validarRangoFechas(jsonData.fechaDesde ?? '', jsonData.fechaHasta ?? '');
                     const apiResponse = await AdministracionApi.obtenerServiciosTecnicosCliente(
                         jsonData.clienteId,
-                        toDDMMYYYY(jsonData.fechaDesde ?? ''),
-                        toDDMMYYYY(jsonData.fechaHasta ?? '')
+                        desde,
+                        hasta
                     );
                     console.log('[API Debug] Respuesta ORDEN_TRABAJO:', util.inspect(apiResponse, { depth: 4 }));
                     const datos = apiResponse.data || {};
@@ -763,10 +803,11 @@ export class AssistantResponseProcessor {
                 // REMITOS_ENTREGA
                 if (tipo === "REMITOS_ENTREGA") {
                     // remitosEntrega espera: cliente_id, fechaDesde, fechaHasta, consumosSinFacturar (opcional)
+                    const { desde, hasta } = validarRangoFechas(jsonData.fechaDesde ?? '', jsonData.fechaHasta ?? '');
                     const apiResponse = await AdministracionApi.remitosEntrega(
                         jsonData.cliente_id,
-                        toDDMMYYYY(jsonData.fechaDesde ?? ''),
-                        toDDMMYYYY(jsonData.fechaHasta ?? ''),
+                        desde,
+                        hasta,
                         typeof jsonData.consumosSinFacturar === 'boolean' ? jsonData.consumosSinFacturar : false
                     );
                     console.log('[API Debug] Respuesta REMITOS_ENTREGA:', util.inspect(apiResponse, { depth: 4 }));
