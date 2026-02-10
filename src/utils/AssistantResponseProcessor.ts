@@ -6,6 +6,16 @@ import OpenAI from "openai";
  */
 function toDDMMYYYY(fecha: string): string {
     if (!fecha) return '';
+    
+    // Manejar marcadores de posición para la fecha actual
+    if (fecha.includes('{{HOY_DDMMYYYY}}') || fecha.includes('{{HOY}}')) {
+        const today = new Date();
+        const d = String(today.getDate()).padStart(2, '0');
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const y = today.getFullYear();
+        return `${d}/${m}/${y}`;
+    }
+
     // Si ya está en formato DD/MM/YYYY, devolver igual
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)) return fecha;
     // Si está en formato YYYY-MM-DD, convertir
@@ -666,8 +676,8 @@ export class AssistantResponseProcessor {
                 if (tipo === "ABONOS_TIPOS") {
                     // obtenerAbonosTipos espera: desde, hasta, concepto, activo
                     const apiResponse = await ListaDePreciosApi.obtenerAbonosTipos(
-                        jsonData.desde ?? null,
-                        jsonData.hasta ?? null,
+                        jsonData.desde ? toDDMMYYYY(jsonData.desde) : null,
+                        jsonData.hasta ? toDDMMYYYY(jsonData.hasta) : null,
                         jsonData.concepto ?? null,
                         typeof jsonData.activo === 'boolean' ? jsonData.activo : true
                     );
