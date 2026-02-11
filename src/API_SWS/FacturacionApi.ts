@@ -160,7 +160,7 @@ export class AdministracionApi {
 
   static async obtenerLinkPago(cliente_id: number, monto: number) {
     await ensureValidToken();
-    const url = `${BASE_URL}/Recibos/ObtenerLinkMP`;
+    const url = `${BASE_URL}/Sync/ObtenerLinkMP`;
     const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
     const data = { cliente_id, monto };
     return axios.post(url, data, { headers });
