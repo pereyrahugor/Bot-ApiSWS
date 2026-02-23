@@ -421,6 +421,10 @@ export class AssistantResponseProcessor {
 
                 // BUSCAR_CLIENTE
                 if (tipo === "BUSCAR_CLIENTE" || tipo === "BUSCAR_CLEINTE") {
+                    // Filtros opcionales internos (no se envían a la API)
+                    const filtroPiso = jsonData.piso ? String(jsonData.piso).trim().toLowerCase() : null;
+                    const filtroDepto = jsonData.depto ? String(jsonData.depto).trim().toLowerCase() : null;
+
                     // busquedaRapida espera: { datosCliente, telefono, domicilio }
                     const apiResponse = await ClientesApi.busquedaRapida({
                         datosCliente: jsonData.datosCliente ?? '',
@@ -428,19 +432,48 @@ export class AssistantResponseProcessor {
                         domicilio: jsonData.domicilio ?? ''
                     });
                     console.log('[API Debug] Respuesta BUSCAR_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
+                    
                     const respuestaApi = apiResponse.data || {};
                     let datosCliente = null;
+                    
                     if (Array.isArray(respuestaApi.data) && respuestaApi.data.length > 0) {
-                        // Aquí solo tomamos el primero, así que no hace falta limitar
-                        datosCliente = respuestaApi.data[0];
-                        console.log('[API Debug] Datos de cliente:', util.inspect(datosCliente, { depth: 4 }));
+                        let resultados = respuestaApi.data;
+                        
+                        // Aplicar filtros internos si existen
+                        if (filtroPiso || filtroDepto) {
+                            resultados = resultados.filter((c: any) => {
+                                let match = true;
+                                if (filtroPiso) {
+                                    const pisoCliente = String(c.domicilio?.piso || c.piso || '').trim().toLowerCase();
+                                    if (pisoCliente !== filtroPiso) match = false;
+                                }
+                                if (filtroDepto) {
+                                    const deptoCliente = String(c.domicilio?.depto || c.depto || '').trim().toLowerCase();
+                                    if (deptoCliente !== filtroDepto) match = false;
+                                }
+                                return match;
+                            });
+                        }
+
+                        if (resultados.length > 0) {
+                            // Tomamos el primero de los que pasaron el filtro
+                            datosCliente = resultados[0];
+                            console.log('[API Debug] Datos de cliente (tras filtrar):', util.inspect(datosCliente, { depth: 4 }));
+                        } else {
+                            console.log('[API Debug] Ningún cliente pasó los filtros internos de piso/depto.');
+                        }
                     }
+                    
                     let resumen;
                     if (esRespuestaExitosa(respuestaApi) && datosCliente) {
                         resumen = `Datos completos del cliente:\n${JSON.stringify(datosCliente, null, 2)}`;
                     } else {
                         resumen = "No se encuentra cliente coincidente con los datos enviados";
+                        if (filtroPiso || filtroDepto) {
+                            resumen += ` (se aplicaron filtros - piso: ${filtroPiso || 'N/A'}, depto: ${filtroDepto || 'N/A'})`;
+                        }
                     }
+                    
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
                     return;
