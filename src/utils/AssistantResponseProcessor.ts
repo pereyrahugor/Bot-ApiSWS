@@ -444,11 +444,11 @@ export class AssistantResponseProcessor {
                             resultados = resultados.filter((c: any) => {
                                 let match = true;
                                 if (filtroPiso) {
-                                    const pisoCliente = String(c.domicilio?.piso || c.piso || '').trim().toLowerCase();
+                                    const pisoCliente = String(c.piso || '').trim().toLowerCase();
                                     if (pisoCliente !== filtroPiso) match = false;
                                 }
                                 if (filtroDepto) {
-                                    const deptoCliente = String(c.domicilio?.depto || c.depto || '').trim().toLowerCase();
+                                    const deptoCliente = String(c.depto || '').trim().toLowerCase();
                                     if (deptoCliente !== filtroDepto) match = false;
                                 }
                                 return match;
@@ -735,10 +735,32 @@ export class AssistantResponseProcessor {
                 if (tipo === "MATRIZ_LISTA_PRECIOS") {
                     // obtenerMatrizListaDePrecios espera: tipoLista_id (number)
                     const tipoListaId = jsonData.tipoLista_id ?? 1;
+                    const filtroListaId = jsonData.lista_id ? parseInt(jsonData.lista_id, 10) : null;
+
                     const apiResponse = await ListaDePreciosApi.obtenerMatrizListaDePrecios(tipoListaId);
                     console.log('[API Debug] Respuesta MATRIZ_LISTA_PRECIOS:', util.inspect(apiResponse, { depth: 4 }));
+                    
                     const datos = apiResponse.data || {};
-                    const resumen = esRespuestaExitosa(datos) ? `Matriz de lista de precios: ${JSON.stringify(datos)}` : "No se pudo obtener la matriz de lista de precios.";
+                    let success = esRespuestaExitosa(datos);
+                    
+                    if (success && filtroListaId != null && datos.matriz && Array.isArray(datos.matriz.articulos)) {
+                        // Filtrar los artículos para que solo queden los que tengan el lista_id específico
+                        datos.matriz.articulos = datos.matriz.articulos
+                            .map((art: any) => {
+                                // Filtrar sus precios al lista_id específico
+                                if (Array.isArray(art.precios)) {
+                                    art.precios = art.precios.filter((p: any) => p.lista_id === filtroListaId);
+                                }
+                                return art;
+                            })
+                            // Conservar solo los artículos que todavía tengan al menos 1 precio válido para esta lista
+                            // y omitir aquellos donde el precio sea 0 si no es válido
+                            .filter((art: any) => Array.isArray(art.precios) && art.precios.length > 0);
+                            
+                        console.log(`[API Debug] Filtrado interno MATRIZ_LISTA_PRECIOS aplicado (lista_id: ${filtroListaId}). Artículos encontrados: ${datos.matriz.articulos.length}`);
+                    }
+
+                    const resumen = success ? `Matriz de lista de precios: ${JSON.stringify(datos)}` : "No se pudo obtener la matriz de lista de precios.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
