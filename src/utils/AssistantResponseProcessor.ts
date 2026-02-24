@@ -381,7 +381,7 @@ export class AssistantResponseProcessor {
 
                 // CLIENTES_CERCANOS_DIRECCION
                 if (tipo === "CLIENTES_CERCANOS_DIRECCION") {
-                    const ubicacion = await getMapsUbication(
+                    const apiResponse = await RepartosApi.obtenerClientesCercanosPorDireccion(
                         jsonData.address,
                         "",
                         "",
@@ -389,31 +389,28 @@ export class AssistantResponseProcessor {
                         ""
                     );
 
-                    if (!ubicacion || !ubicacion.lat || !ubicacion.lng) {
-                        const resumen = "No se pudo obtener coordenadas para la dirección proporcionada.";
+                    // Si falló el geocoding local o la API devolvió error en formato de objeto (no Axios)
+                    if (apiResponse && (apiResponse as any).error) {
+                        const resumen = (apiResponse as any).error;
                         const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                         if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
                         return;
                     }
 
-                    // Ignorar metros recibido, siempre iniciar en 500 y escalar
-                    let metros = 500;
-                    const metrosMax = 2500;
-                    let apiResponse;
-                    let datos = [];
-                    do {
-                        apiResponse = await RepartosApi.busquedaClientesCercanosResultJson({
-                            address: jsonData.address,
-                            metros // ignorar jsonData.metros
-                        });
-                        datos = apiResponse.data ? limitarResultados(apiResponse.data, 25) : [];
-                        if (tieneResultados(datos)) break;
-                        if (metros >= metrosMax) break;
-                        metros += 250;
-                    } while (metros <= metrosMax);
-                    console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION: address=${jsonData.address}, metros=${metros}`);
+                    // Normalizar respuesta para el asistente: mapear clientesCercanos a data si existe
+                    // para asegurar compatibilidad con tieneResultados y limitarResultados
+                    let data = apiResponse.data || {};
+                    if (data.clientesCercanos && !data.data) {
+                        data.data = data.clientesCercanos;
+                    }
+                    
+                    const datos = limitarResultados(data, 25);
+                    console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION (Coords-based): address=${jsonData.address}`);
 
-                    const resumen = esRespuestaExitosa(datos, apiResponse) ? `Clientes cercanos: ${JSON.stringify(datos)}` : "No se encontraron clientes cercanos.";
+                    const resumen = tieneResultados(datos)
+                        ? `Clientes cercanos: ${JSON.stringify(datos)}`
+                        : "No se encontraron clientes cercanos.";
+
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
                     return;

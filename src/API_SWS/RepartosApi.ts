@@ -81,8 +81,12 @@ export class RepartosApi {
         radio,
         false // excluir siempre es falso
       );
-      // Si hay resultados, salir
-      if (respuesta?.data && Array.isArray(respuesta.data) && respuesta.data.length > 0) {
+      // Si hay resultados, salir (detectar array directo o propiedad clientesCercanos/data)
+      const hasResults = (Array.isArray(respuesta?.data) && respuesta.data.length > 0) ||
+                         (Array.isArray(respuesta?.data?.clientesCercanos) && respuesta.data.clientesCercanos.length > 0) ||
+                         (Array.isArray(respuesta?.data?.data) && respuesta.data.data.length > 0);
+
+      if (hasResults) {
         break;
       }
       radio += 250;
