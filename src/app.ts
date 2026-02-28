@@ -63,8 +63,8 @@ const TIMEOUT_MS = 30000;
 // Control de timeout por usuario para evitar ejecuciones automáticas superpuestas
 const userTimeouts = new Map();
 
-// Wrapper seguro para toAsk que SIEMPRE verifica runs activos
-export const safeToAsk = async (assistantId: string, message: string, state: any) => {
+// Wrapper seguro para toAsk que SIEMPRE verifica runs activos e inyecta contexto (Fecha/Hora/Contacto)
+export const safeToAsk = async (assistantId: string, message: string, state: any, userId?: string) => {
     const threadId = state && typeof state.get === 'function' && state.get('thread_id');
     if (threadId) {
         try {
@@ -74,20 +74,24 @@ export const safeToAsk = async (assistantId: string, message: string, state: any
             await new Promise(r => setTimeout(r, 3000));
         }
     }
-    return toAsk(assistantId, message, state);
+
+    // Inyectar contexto de fecha, hora y contacto en cada mensaje
+    const currentDatetimeArg = getArgentinaDatetimeString();
+    let contextHeader = `[CONTEXTO_SISTEMA]:\n- Fecha/Hora: ${currentDatetimeArg}`;
+    
+    // Intentar obtener el contacto si no viene como argumento
+    const effectiveUserId = userId || (state && typeof state.get === 'function' ? state.get('from') : undefined);
+    if (effectiveUserId) {
+        contextHeader += `\n- Contacto: ${effectiveUserId}`;
+    }
+    contextHeader += `\n[/CONTEXTO_SISTEMA]`;
+
+    const finalMessage = `${contextHeader}\n\n${message}`;
+
+    return toAsk(assistantId, finalMessage, state);
 };
 
 export const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId, thread_id = null) => {
-    // Solo enviar la fecha/hora si es realmente un hilo nuevo (no existe thread_id ni en el argumento ni en el state)
-    let effectiveThreadId = thread_id;
-    if (!effectiveThreadId && state && typeof state.get === 'function') {
-        effectiveThreadId = state.get('thread_id');
-    }
-    let systemPrompt = "";
-    if (!effectiveThreadId) {
-        systemPrompt += `Fecha y hora actual: ${getArgentinaDatetimeString()}\n`;
-    }
-    const finalMessage = systemPrompt + message;
     // Si hay un timeout previo, lo limpiamos
     if (userTimeouts.has(userId)) {
         clearTimeout(userTimeouts.get(userId));
@@ -99,14 +103,15 @@ export const getAssistantResponse = async (assistantId, message, state, fallback
         timeoutResolve = resolve;
         const timeoutId = setTimeout(async () => {
             console.warn("⏱ Timeout alcanzado. Reintentando con mensaje de control...");
-            resolve(await safeToAsk(assistantId, fallbackMessage ?? finalMessage, state));
+            // Pasamos userId para asegurar que safeToAsk incluya el contexto del contacto
+            resolve(await safeToAsk(assistantId, fallbackMessage ?? message, state, userId));
             userTimeouts.delete(userId);
         }, TIMEOUT_MS);
         userTimeouts.set(userId, timeoutId);
     });
 
-    // Lanzamos la petición a OpenAI, pasando thread_id si existe
-    const askPromise = safeToAsk(assistantId, finalMessage, state).then((result) => {
+    // Lanzamos la petición a OpenAI pasando userId para el contexto
+    const askPromise = safeToAsk(assistantId, message, state, userId).then((result) => {
         if (userTimeouts.has(userId)) {
             clearTimeout(userTimeouts.get(userId));
             userTimeouts.delete(userId);

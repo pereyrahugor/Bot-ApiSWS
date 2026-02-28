@@ -112,6 +112,7 @@ import { IncidentesApi } from "../API_SWS/IncidentesApi";
 import { ListaDePreciosApi } from "../API_SWS/ListaDePreciosApi";
 import { RepartosApi } from "../API_SWS/RepartosApi";
 import { AdministracionApi } from "../API_SWS/FacturacionApi";
+import { MovimientosApi } from "../API_SWS/MovimientosApi";
 import { getMapsUbication } from "../addModule/getMapsUbication";
 import { getUsuarioId } from "../API_SWS/SessionApi";
 
@@ -816,6 +817,17 @@ export class AssistantResponseProcessor {
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Recibos de pago: ${JSON.stringify(datos)}` : "No se pudo obtener los recibos de pago.";
                     // Enviar SIEMPRE la respuesta al asistente
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
+                    await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
+                    return;
+                }
+
+                // SALDO_CUENTA
+                if (tipo === "SALDO_CUENTA") {
+                    const apiResponse = await MovimientosApi.obtenerSaldosDeCliente(jsonData.cliente_id);
+                    console.log('[API Debug] Respuesta SALDO_CUENTA:', util.inspect(apiResponse, { depth: 4 }));
+                    const datos = apiResponse.data || {};
+                    const resumen = esRespuestaExitosa(datos, apiResponse) ? `Saldo de cuenta: ${JSON.stringify(datos)}` : "No se pudo obtener el saldo de cuenta.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
                     return;

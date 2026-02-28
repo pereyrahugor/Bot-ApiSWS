@@ -135,7 +135,7 @@ export class ReconectionFlow {
             }
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el asistente
-            const resumen = await safeToAsk(this.ASSISTANT_ID, "GET_RESUMEN", this.state);
+            const resumen = await safeToAsk(this.ASSISTANT_ID, "GET_RESUMEN", this.state, this.ctx.from);
             const data: GenericResumenData = extraerDatosResumen(resumen);
             const tipo = data.tipo || "SI_RESUMEN";
             if (tipo === "SI_RESUMEN") {
@@ -184,7 +184,7 @@ export class ReconectionFlow {
                 const userMsg = msg.body;
                 const prompt = `hola, ${userMsg}`;
                 try {
-                    await safeToAsk(this.ASSISTANT_ID, prompt, this.state);
+                    await safeToAsk(this.ASSISTANT_ID, prompt, this.state, this.ctx.from);
                 } catch (err) {
                     console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);
                 }

@@ -38,6 +38,7 @@ export class JsonBlockFinder {
         "DESCARGA_REMITO",
         "DESCARGA_REMITO_VENTA",
         "DESCARGA_ARCHIVO",
+        "SALDO_CUENTA",
     // Otros
     "SESSION_LOGIN",
     // Reenvío de comprobantes
