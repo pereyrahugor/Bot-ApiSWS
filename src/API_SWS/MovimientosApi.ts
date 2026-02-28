@@ -12,12 +12,11 @@ export class MovimientosApi {
   static async obtenerSaldosDeCliente(cliente_id: number) {
     await ensureValidToken();
     const token = getSessionToken() || '';
-    const url = `${BASE_URL}/Movimientos/ObtenerSaldosDeCliente`;
+    const url = `${BASE_URL}/api/Movimientos/ObtenerSaldosDeCliente/`;
     const headers = {
-      'Content-Type': 'application/json',
       'CURRENTTOKENVALUE': token
     };
-    const data = { cliente_id };
-    return axios.post(url, data, { headers });
+    const params = { cliente_id };
+    return axios.get(url, { headers, params });
   }
 }
