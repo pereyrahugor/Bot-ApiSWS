@@ -16,7 +16,7 @@ export class MovimientosApi {
     const headers = {
       'CURRENTTOKENVALUE': token
     };
-    const params = { cliente_id };
+    const params = { clienteId: cliente_id };
     return axios.get(url, { headers, params });
   }
 }

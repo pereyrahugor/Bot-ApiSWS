@@ -704,7 +704,14 @@ const main = async () => {
                 };
 
                 const webChatAdapterFn = async (assistantId, message, state, fallback, userId, threadId) => {
-                    return await sendMessageToThread(threadId, message, assistantId);
+                    const now = getArgentinaDatetimeString();
+                    const systemContext = `[CONTEXTO_SISTEMA]
+Fecha y hora actual: ${now}
+Contacto del usuario: ${userId}
+[/CONTEXTO_SISTEMA]
+
+${message}`;
+                    return await sendMessageToThread(threadId, systemContext, assistantId);
                 };
 
                 const reply = await webChatAdapterFn(ASSISTANT_ID, message, state, "", ip, threadId);
