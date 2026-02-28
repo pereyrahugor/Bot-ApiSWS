@@ -12,7 +12,7 @@ export class MovimientosApi {
   static async obtenerSaldosDeCliente(cliente_id: number) {
     await ensureValidToken();
     const token = getSessionToken() || '';
-    const url = `${BASE_URL}/api/Movimientos/ObtenerSaldosDeCliente/`;
+    const url = `${BASE_URL}/Movimientos/ObtenerSaldosDeCliente`;
     const headers = {
       'Content-Type': 'application/json',
       'CURRENTTOKENVALUE': token
