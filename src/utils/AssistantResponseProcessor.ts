@@ -177,14 +177,19 @@ function esFechaFutura(fechaReservaStr: string): boolean {
  * @param {number} max - Número máximo de resultados (default: 25)
  * @returns {any} Datos limitados
  */
-function limitarResultados(data: any, max: number = 25): any {
+function limitarResultados(data: any, max: number = 10): any {
+    if (!data) return data;
     if (Array.isArray(data)) {
         return data.slice(0, max);
     }
-    if (data && Array.isArray(data.data)) {
-        return { ...data, data: data.data.slice(0, max) };
+    const result = { ...data };
+    if (Array.isArray(result.data)) {
+        result.data = result.data.slice(0, max);
     }
-    return data;
+    if (Array.isArray(result.clientesCercanos)) {
+        result.clientesCercanos = result.clientesCercanos.slice(0, max);
+    }
+    return result;
 }
 
 /**
@@ -368,7 +373,7 @@ export class AssistantResponseProcessor {
                             radio, // ignorar jsonData.radioMetros
                             typeof jsonData.excluir === 'boolean' ? jsonData.excluir : false
                         );
-                        datos = apiResponse.data ? limitarResultados(apiResponse.data, 25) : [];
+                        datos = apiResponse.data ? limitarResultados(apiResponse.data, 10) : [];
                         if (tieneResultados(datos)) break;
                         if (radio >= radioMax) break;
                         radio += 250;
@@ -405,7 +410,7 @@ export class AssistantResponseProcessor {
                         data.data = data.clientesCercanos;
                     }
                     
-                    const datos = limitarResultados(data, 25);
+                    const datos = limitarResultados(data, 10);
                     console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION (Coords-based): address=${jsonData.address}`);
 
                     const resumen = tieneResultados(datos)
