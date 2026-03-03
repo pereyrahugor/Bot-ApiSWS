@@ -851,8 +851,8 @@ export class AssistantResponseProcessor {
                     
                     // Cálculo de Saldo Real: saldoCuentaConsumo + saldoCuentaFacturacion
                     if (datos.saldos) {
-                        const consumo = Number(datos.saldos.saldoCuentaConsumo || 0);
-                        const facturacion = Number(datos.saldos.saldoCuentaFacturacion || 0);
+                        const consumo = Number(datos.saldos.saldoCuentaConsumo);
+                        const facturacion = Number(datos.saldos.saldoCuentaFacturacion);
                         datos.saldos.saldoReal = consumo + facturacion;
                         console.log(`[API Logic] Saldo Real calculado: ${datos.saldos.saldoReal}`);
                     }
@@ -867,14 +867,30 @@ export class AssistantResponseProcessor {
                 if (tipo === "RESUMEN_CUENTA") {
                     // resumenCuentaCliente espera: clienteId, desde, hasta
                     const { desde, hasta } = validarRangoFechas(jsonData.fechaDesde ?? '', jsonData.fechaHasta ?? '');
+                    const cId = jsonData.cliente_id ?? jsonData.clienteId;
                     const apiResponse = await AdministracionApi.resumenCuentaCliente(
-                        jsonData.cliente_id,
+                        cId,
                         desde,
                         hasta
                     );
                     console.log('[API Debug] Respuesta RESUMEN_CUENTA:', util.inspect(apiResponse, { depth: 4 }));
                     const datos = apiResponse.data || {};
-                    const resumen = esRespuestaExitosa(datos) ? `Resumen de cuenta: ${JSON.stringify(datos)}` : "No se pudo obtener el resumen de cuenta.";
+                    
+                    // Inyectar los saldos reales para evitar que el asistente los calcule erróneamente 
+                    // a partir de los "movimientos" (que suelen traer saldo: 0)
+                    try {
+                        const saldosResp = await MovimientosApi.obtenerSaldosDeCliente(cId);
+                        if (saldosResp && saldosResp.data && saldosResp.data.saldos) {
+                            datos.saldos = saldosResp.data.saldos;
+                            const consumo = Number(datos.saldos.saldoCuentaConsumo || 0);
+                            const facturacion = Number(datos.saldos.saldoCuentaFacturacion || 0);
+                            datos.saldos.saldoReal = consumo + facturacion;
+                        }
+                    } catch (error) {
+                        console.error('[API Logic] Error inyectando saldos a RESUMEN_CUENTA:', error);
+                    }
+
+                    const resumen = esRespuestaExitosa(datos) ? `Resumen de cuenta con saldos incluidos: ${JSON.stringify(datos)}` : "No se pudo obtener el resumen de cuenta.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
