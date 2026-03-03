@@ -423,11 +423,22 @@ export class AssistantResponseProcessor {
                     const filtroPiso = jsonData.piso ? String(jsonData.piso).trim().toLowerCase() : null;
                     const filtroDepto = jsonData.depto ? String(jsonData.depto).trim().toLowerCase() : null;
 
+                    let domicilioParam = jsonData.domicilio ?? '';
+                    let requiereFiltroSN = false;
+                    
+                    if (typeof domicilioParam === 'string' && domicilioParam) {
+                        const regexSN = /(?:\bs\/n\b|\bsin n[uú]mero\b)/i;
+                        if (regexSN.test(domicilioParam)) {
+                            requiereFiltroSN = true;
+                            domicilioParam = domicilioParam.replace(regexSN, '').trim();
+                        }
+                    }
+
                     // busquedaRapida espera: { datosCliente, telefono, domicilio }
                     const apiResponse = await ClientesApi.busquedaRapida({
                         datosCliente: jsonData.datosCliente ?? '',
                         telefono: jsonData.telefono ?? '',
-                        domicilio: jsonData.domicilio ?? ''
+                        domicilio: domicilioParam
                     });
                     console.log('[API Debug] Respuesta BUSCAR_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
                     
@@ -438,7 +449,7 @@ export class AssistantResponseProcessor {
                         let resultados = respuestaApi.data;
                         
                         // Aplicar filtros internos si existen
-                        if (filtroPiso || filtroDepto) {
+                        if (filtroPiso || filtroDepto || requiereFiltroSN) {
                             resultados = resultados.filter((c: any) => {
                                 let match = true;
                                 if (filtroPiso) {
@@ -449,6 +460,10 @@ export class AssistantResponseProcessor {
                                     const deptoCliente = String(c.depto || '').trim().toLowerCase();
                                     if (deptoCliente !== filtroDepto) match = false;
                                 }
+                                if (requiereFiltroSN) {
+                                    const numPuerta = String(c.numeroPuerta || '').trim().toUpperCase();
+                                    if (numPuerta !== 'S/N') match = false;
+                                }
                                 return match;
                             });
                         }
@@ -458,7 +473,7 @@ export class AssistantResponseProcessor {
                             datosCliente = resultados[0];
                             console.log('[API Debug] Datos de cliente (tras filtrar):', util.inspect(datosCliente, { depth: 4 }));
                         } else {
-                            console.log('[API Debug] Ningún cliente pasó los filtros internos de piso/depto.');
+                            console.log('[API Debug] Ningún cliente pasó los filtros internos de piso/depto/S/N.');
                         }
                     }
                     
@@ -467,8 +482,13 @@ export class AssistantResponseProcessor {
                         resumen = `Datos completos del cliente:\n${JSON.stringify(datosCliente, null, 2)}`;
                     } else {
                         resumen = "No se encuentra cliente coincidente con los datos enviados";
-                        if (filtroPiso || filtroDepto) {
-                            resumen += ` (se aplicaron filtros - piso: ${filtroPiso || 'N/A'}, depto: ${filtroDepto || 'N/A'})`;
+                        const filtrosAplicados = [];
+                        if (filtroPiso) filtrosAplicados.push(`piso: ${filtroPiso}`);
+                        if (filtroDepto) filtrosAplicados.push(`depto: ${filtroDepto}`);
+                        if (requiereFiltroSN) filtrosAplicados.push(`S/N: S/N`);
+                        
+                        if (filtrosAplicados.length > 0) {
+                            resumen += ` (se aplicaron filtros - ${filtrosAplicados.join(', ')})`;
                         }
                     }
                     
