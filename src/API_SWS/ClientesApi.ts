@@ -86,7 +86,28 @@ export class ClientesApi {
       );
       domicilio.latitud = (ubicacion && ubicacion.lat != null) ? String(ubicacion.lat) : '';
       domicilio.longitud = (ubicacion && ubicacion.lng != null) ? String(ubicacion.lng) : '';
-      console.log('[CrearCliente] Domicilio parseado:', domicilio);
+      
+      // Reemplazar la dirección del asistente por la dirección normalizada de Google Maps
+      if (ubicacion && ubicacion.formattedAddress) {
+        const partesGoogle = ubicacion.formattedAddress.split(',');
+        const principal = partesGoogle[0].trim(); // Ej: "Bv. Chacabuco 206"
+        const matchDirs = principal.match(/^(.+?)\s+(\d+)$/);
+        
+        if (matchDirs) {
+          domicilio.calle = matchDirs[1].trim();
+          domicilio.puerta = matchDirs[2].trim();
+        } else {
+          domicilio.calle = principal;
+          domicilio.puerta = '';
+        }
+        
+        // Guardamos el resto de la dirección (barrio, ciudad, CP, país) en observaciones para no perder el contexto exacto
+        if (partesGoogle.length > 1) {
+          domicilio.observaciones = partesGoogle.slice(1).join(', ').trim();
+        }
+      }
+
+      console.log('[CrearCliente] Domicilio parseado (Normalizado):', domicilio);
       console.log('[CrearCliente] Coordenadas obtenidas:', { latitud: domicilio.latitud, longitud: domicilio.longitud });
     } catch (e) {
       console.warn('No se pudo obtener geolocalización:', e);

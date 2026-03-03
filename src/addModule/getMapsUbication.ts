@@ -58,7 +58,8 @@ export async function getMapsUbication(
       response.data.results.length > 0
     ) {
       const location = response.data.results[0].geometry.location;
-      return { lat: location.lat, lng: location.lng };
+      const formattedAddress = response.data.results[0].formatted_address;
+      return { lat: location.lat, lng: location.lng, formattedAddress: formattedAddress };
     } else {
       console.warn("No se encontró la ubicación para:", address);
       return null;
