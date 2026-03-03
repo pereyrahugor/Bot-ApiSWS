@@ -387,15 +387,12 @@ export class AssistantResponseProcessor {
 
                 // CLIENTES_CERCANOS_DIRECCION
                 if (tipo === "CLIENTES_CERCANOS_DIRECCION") {
-                    const apiResponse = await RepartosApi.obtenerClientesCercanosPorDireccion(
-                        jsonData.address,
-                        "",
-                        "",
-                        "",
-                        ""
-                    );
+                    const apiResponse = await RepartosApi.busquedaClientesCercanosResultJson({
+                        address: jsonData.address,
+                        metros: 2500 // Search up to 2500 metros
+                    });
 
-                    // Si falló el geocoding local o la API devolvió error en formato de objeto (no Axios)
+                    // Si la API devolvió error en formato de objeto (no Axios)
                     if (apiResponse && (apiResponse as any).error) {
                         const resumen = (apiResponse as any).error;
                         const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
