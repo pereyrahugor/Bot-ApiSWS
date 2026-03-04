@@ -1,4 +1,14 @@
 import OpenAI from "openai";
+import { JsonBlockFinder } from "../API_SWS/JsonBlockFinder";
+import util from "util";
+import { ClientesApi } from "../API_SWS/ClientesApi";
+import { IncidentesApi } from "../API_SWS/IncidentesApi";
+import { ListaDePreciosApi } from "../API_SWS/ListaDePreciosApi";
+import { RepartosApi } from "../API_SWS/RepartosApi";
+import { AdministracionApi } from "../API_SWS/FacturacionApi";
+import { MovimientosApi } from "../API_SWS/MovimientosApi";
+import { getMapsUbication } from "../addModule/getMapsUbication";
+import { getUsuarioId } from "../API_SWS/SessionApi";
 /**
  * Convierte una fecha a formato DD/MM/YYYY
  * @param {string} fecha - Fecha en formato YYYY-MM-DD, YYYY/MM/DD o DD/MM/YYYY
@@ -104,17 +114,6 @@ export async function waitForActiveRuns(threadId: string) {
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
 }
-// src/utils/AssistantResponseProcessor.ts
-import { JsonBlockFinder } from "../API_SWS/JsonBlockFinder";
-import util from "util";
-import { ClientesApi } from "../API_SWS/ClientesApi";
-import { IncidentesApi } from "../API_SWS/IncidentesApi";
-import { ListaDePreciosApi } from "../API_SWS/ListaDePreciosApi";
-import { RepartosApi } from "../API_SWS/RepartosApi";
-import { AdministracionApi } from "../API_SWS/FacturacionApi";
-import { MovimientosApi } from "../API_SWS/MovimientosApi";
-import { getMapsUbication } from "../addModule/getMapsUbication";
-import { getUsuarioId } from "../API_SWS/SessionApi";
 
 /**
  * Calcula la fecha actual + 2 días hábiles en formato DD/MM/YYYY
@@ -203,7 +202,23 @@ function tieneResultados(datos: any): boolean {
     return false;
 }
 
-
+/**
+ * Loguea de forma limpia y consolidada la respuesta de la API SWS.
+ * @param tipo - El tipo de endpoint o acción (e.g. "INCIDENCIA", "BUSCAR_CLIENTE")
+ * @param response - La respuesta completa de Axios
+ */
+function logApiResponse(tipo: string, response: any): void {
+    if (!response || !response.config) {
+        console.log(`[API Debug] ${tipo} (Sin objeto Axios):`, util.inspect(response, { depth: 4 }));
+        return;
+    }
+    
+    console.log(`\n[API Debug] Respuesta ${tipo}:`);
+    console.log(`    url: '${response.config.url || ''}',`);
+    console.log(`    data: '${response.config.data || ''}',`);
+    console.log(`    status: ${response.status},`);
+    console.log(`    responseData:`, util.inspect(response.data, { depth: 4 }));
+}
 
 /**
  * Verifica si una respuesta de API es exitosa según diferentes criterios
@@ -387,10 +402,26 @@ export class AssistantResponseProcessor {
 
                 // CLIENTES_CERCANOS_DIRECCION
                 if (tipo === "CLIENTES_CERCANOS_DIRECCION") {
+                    const address = jsonData.address;
+                    let normalizedAddress = address;
+
+                    try {
+                        const mapData = await getMapsUbication(address, "", "", "", "");
+                        if (mapData && mapData.formattedAddress) {
+                            normalizedAddress = mapData.formattedAddress;
+                        }
+                    } catch (error) {
+                        console.error("[API Debug] Error normalizando dirección con Google Maps:", error);
+                    }
+
+                    const metros = jsonData.metros || jsonData.radioMetros || 2500;
+
                     const apiResponse = await RepartosApi.busquedaClientesCercanosResultJson({
-                        address: jsonData.address,
-                        metros: 2500 // Search up to 2500 metros
+                        address: normalizedAddress,
+                        metros: metros // Search radius according to user preference
                     });
+
+                    logApiResponse("CLIENTES_CERCANOS_DIRECCION", apiResponse);
 
                     // Si la API devolvió error en formato de objeto (no Axios)
                     if (apiResponse && (apiResponse as any).error) {
@@ -408,7 +439,7 @@ export class AssistantResponseProcessor {
                     }
                     
                     const datos = limitarResultados(data, 10);
-                    console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION (Coords-based): address=${jsonData.address}`);
+                    console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION (Coords-based): address=${normalizedAddress}`);
 
                     const resumen = tieneResultados(datos)
                         ? `Clientes cercanos: ${JSON.stringify(datos)}`
@@ -442,7 +473,7 @@ export class AssistantResponseProcessor {
                         telefono: jsonData.telefono ?? '',
                         domicilio: domicilioParam
                     });
-                    console.log('[API Debug] Respuesta BUSCAR_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse('BUSCAR_CLIENTE', apiResponse);
                     
                     const respuestaApi = apiResponse.data || {};
                     let datosCliente = null;
@@ -511,6 +542,20 @@ export class AssistantResponseProcessor {
                     } else if (clienteRaw.apellido) {
                         nombreCompleto = String(clienteRaw.apellido).trim();
                     }
+                    
+                    // --- NORMALIZACIÓN DE DIRECCIÓN ---
+                    if (clienteRaw.direccion) {
+                        try {
+                            const mapData = await getMapsUbication(clienteRaw.direccion, "", "", "", "");
+                            if (mapData && mapData.formattedAddress) {
+                                console.log(`[CREAR_CLIENTE] Dirección normalizada: ${clienteRaw.direccion} -> ${mapData.formattedAddress}`);
+                                clienteRaw.direccion = mapData.formattedAddress;
+                            }
+                        } catch (error) {
+                            console.error("[CREAR_CLIENTE] Error normalizando dirección con Google Maps:", error);
+                        }
+                    }
+
                     // Construir nuevo objeto cliente con nombre completo
                     const cliente = {
                         ...clienteRaw,
@@ -518,14 +563,17 @@ export class AssistantResponseProcessor {
                     };
                     // Eliminar apellido si existe
                     if (cliente.apellido !== undefined) delete cliente.apellido;
+                    
                     console.log('[CREAR_CLIENTE] Datos recibidos del asistente:', JSON.stringify(jsonData));
                     console.log('[CREAR_CLIENTE] Objeto cliente armado:', JSON.stringify(cliente));
+                    
                     const reparto_id = (jsonData.payload && jsonData.payload.reparto_id) ? jsonData.payload.reparto_id : 1;
                     const apiResponse = await ClientesApi.crearNuevoCliente({
                         cliente,
                         reparto_id
                     });
-                    console.log('[API Debug] Respuesta CREAR_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
+
+                    logApiResponse('CREAR_CLIENTE', apiResponse);
                     let resumen = "";
                     if (esRespuestaExitosa(apiResponse?.data)) {
                         // Éxito: mostrar mensaje claro y el id del cliente
@@ -545,7 +593,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "AGREGAR_CONTACTO") {
                     // agregarContacto espera: modeloContacto
                     const apiResponse = await ClientesApi.agregarContacto(jsonData.modeloContacto);
-                    console.log('[API Debug] Respuesta AGREGAR_CONTACTO:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse('AGREGAR_CONTACTO', apiResponse);
                     const resumen = esRespuestaExitosa(apiResponse.data)
                         ? "Contacto agregado exitosamente."
                         : "No se pudo agregar el contacto.";
@@ -586,7 +634,7 @@ export class AssistantResponseProcessor {
                 // BUSCAR_INCIDENCIA
                 if (tipo === "BUSCAR_INCIDENCIA") {
                     const apiResponse = await IncidentesApi.obtenerIncidentesCliente(jsonData);
-                    console.log('[API Debug] Respuesta BUSCAR_INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("BUSCAR_INCIDENCIA", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Incidentes encontrados: ${JSON.stringify(datos, null, 2)}` : "No se encontraron incidentes para el cliente.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -599,7 +647,7 @@ export class AssistantResponseProcessor {
                     const cliente_id = jsonData.cliente_id ?? jsonData.ClienteId;
                     const monto = jsonData.monto;
                     const apiResponse = await AdministracionApi.obtenerLinkPago(cliente_id, monto);
-                    console.log('[API Debug] Respuesta LINK_PAGO:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("LINK_PAGO", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Link de pago generado: ${JSON.stringify(datos, null, 2)}` : "No se pudo generar el link de pago.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -610,7 +658,7 @@ export class AssistantResponseProcessor {
                 // PRECIO
                 if (tipo === "PRECIO") {
                     const apiResponse = await ListaDePreciosApi.obtenerListaDePrecios(jsonData.ClienteId);
-                    console.log('[API Debug] Respuesta PRECIO completa:', util.inspect(apiResponse.data, { depth: 5 }));
+                    logApiResponse("PRECIO", apiResponse);
 
                     const success = esRespuestaExitosa(apiResponse.data);
                     let precios = [];
@@ -650,7 +698,7 @@ export class AssistantResponseProcessor {
                             jsonData.pais ?? '',
                             typeof jsonData.excluir === 'boolean' ? jsonData.excluir : false
                         );
-                        console.log('[API Debug] Respuesta REPARTO:', util.inspect(apiResponse, { depth: 4 }));
+                        logApiResponse("REPARTO", apiResponse);
                         // Seleccionar el cliente con menor distanciaMetros
                         if (apiResponse.data?.clientesCercanos && Array.isArray(apiResponse.data.clientesCercanos) && apiResponse.data.clientesCercanos.length > 0) {
                             const clientes = apiResponse.data.clientesCercanos;
@@ -694,7 +742,7 @@ export class AssistantResponseProcessor {
                     // PRODUCTOS espera: ClienteId (preferido) o cliente_Id (legacy), categoria (opcional)
                     const clienteId = jsonData.ClienteId ?? jsonData.cliente_Id;
                     const apiResponse = await ListaDePreciosApi.obtenerListaDePrecios(clienteId);
-                    console.log('[API Debug] Respuesta PRODUCTOS:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("PRODUCTOS", apiResponse);
 
                     let resumen = "No se pudieron obtener los productos.";
                     // Si la respuesta contiene error: 0, se considera exitosa
@@ -727,7 +775,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "OBTENER_DATOS_CLIENTE") {
                     // obtenerDatosCliente espera: cliente_id (number)
                     const apiResponse = await ClientesApi.obtenerDatosCliente(jsonData.cliente_id);
-                    console.log('[API Debug] Respuesta OBTENER_DATOS_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("OBTENER_DATOS_CLIENTE", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Datos del cliente: ${JSON.stringify(datos)}` : "No se encontraron datos del cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -740,7 +788,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "OBTENER_SUCURSALES_CLIENTE") {
                     // obtenerSucursales espera: cliente_id (number)
                     const apiResponse = await ClientesApi.obtenerSucursales(jsonData.cliente_id);
-                    console.log('[API Debug] Respuesta OBTENER_SUCURSALES_CLIENTE:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("OBTENER_SUCURSALES_CLIENTE", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Sucursales del cliente: ${JSON.stringify(datos)}` : "No se encontraron sucursales para el cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -758,7 +806,7 @@ export class AssistantResponseProcessor {
                     const filtroListaId = jsonData.lista_id ? parseInt(jsonData.lista_id, 10) : null;
 
                     const apiResponse = await ListaDePreciosApi.obtenerMatrizListaDePrecios(tipoListaId);
-                    console.log('[API Debug] Respuesta MATRIZ_LISTA_PRECIOS:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("MATRIZ_LISTA_PRECIOS", apiResponse);
                     
                     const datos = apiResponse.data || {};
                     let success = esRespuestaExitosa(datos);
@@ -797,7 +845,7 @@ export class AssistantResponseProcessor {
                         jsonData.concepto ?? null,
                         typeof jsonData.activo === 'boolean' ? jsonData.activo : true
                     );
-                    console.log('[API Debug] Respuesta ABONOS_TIPOS:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("ABONOS_TIPOS", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Tipos de abonos: ${JSON.stringify(datos)}` : "No se pudo obtener los tipos de abonos.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -816,7 +864,7 @@ export class AssistantResponseProcessor {
                         hasta,
                         typeof jsonData.saldoPendiente === 'boolean' ? jsonData.saldoPendiente : false
                     );
-                    console.log('[API Debug] Respuesta HISTORIAL_FACTURAS:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("HISTORIAL_FACTURAS", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Historial de facturas: ${JSON.stringify(datos)}` : "No se pudo obtener el historial de facturas.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -835,7 +883,7 @@ export class AssistantResponseProcessor {
                         hasta,
                         typeof jsonData.saldoDisponible === 'boolean' ? jsonData.saldoDisponible : false
                     );
-                    console.log('[API Debug] Respuesta RECIBOS_PAGO:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("RECIBOS_PAGO", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Recibos de pago: ${JSON.stringify(datos)}` : "No se pudo obtener los recibos de pago.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -848,7 +896,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "SALDO_CUENTA") {
                     const cId = jsonData.cliente_id ?? jsonData.clienteId;
                     const apiResponse = await MovimientosApi.obtenerSaldosDeCliente(cId);
-                    console.log('[API Debug] Respuesta SALDO_CUENTA:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("SALDO_CUENTA", apiResponse);
                     const datos = apiResponse.data || {};
                     
                     // Cálculo de Saldo Real: saldoCuentaConsumo + saldoCuentaFacturacion
@@ -875,7 +923,7 @@ export class AssistantResponseProcessor {
                         desde,
                         hasta
                     );
-                    console.log('[API Debug] Respuesta RESUMEN_CUENTA:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("RESUMEN_CUENTA", apiResponse);
                     const datos = apiResponse.data || {};
                     
                     // Inyectar los saldos reales para evitar que el asistente los calcule erróneamente 
@@ -908,7 +956,7 @@ export class AssistantResponseProcessor {
                         desde,
                         hasta
                     );
-                    console.log('[API Debug] Respuesta ORDEN_TRABAJO:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("ORDEN_TRABAJO", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Servicios técnicos: ${JSON.stringify(datos)}` : "No se pudo obtener los servicios técnicos.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -927,7 +975,7 @@ export class AssistantResponseProcessor {
                         hasta,
                         typeof jsonData.consumosSinFacturar === 'boolean' ? jsonData.consumosSinFacturar : false
                     );
-                    console.log('[API Debug] Respuesta REMITOS_ENTREGA:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("REMITOS_ENTREGA", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Remitos de entrega: ${JSON.stringify(datos)}` : "No se pudo obtener los remitos de entrega.";
                     // Enviar SIEMPRE la respuesta al asistente
@@ -940,7 +988,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "DESCARGA_REMITO") {
                     // descargarRemito espera: remito_id
                     const apiResponse = await AdministracionApi.descargarRemito(jsonData.remito_id);
-                    console.log('[API Debug] Respuesta DESCARGA_REMITO:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("DESCARGA_REMITO", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Archivo de remito descargado: ${JSON.stringify(datos)}` : "No se pudo descargar el remito.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -952,7 +1000,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "DESCARGA_REMITO_VENTA") {
                     // descargarRemitoPorVenta espera: idVenta
                     const apiResponse = await AdministracionApi.descargarRemitoPorVenta(jsonData.idVenta);
-                    console.log('[API Debug] Respuesta DESCARGA_REMITO_VENTA:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("DESCARGA_REMITO_VENTA", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Archivo de remito por venta descargado: ${JSON.stringify(datos)}` : "No se pudo descargar el remito por venta.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -964,7 +1012,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "DESCARGA_ARCHIVO") {
                     // descargarArchivo espera: archivo_id
                     const apiResponse = await AdministracionApi.descargarArchivo(jsonData.archivo_id);
-                    console.log('[API Debug] Respuesta DESCARGA_ARCHIVO:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("DESCARGA_ARCHIVO", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos) ? `Archivo descargado: ${JSON.stringify(datos)}` : "No se pudo descargar el archivo.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -976,7 +1024,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "REENVIAR_FACTURA_POR_MAIL") {
                     // reenviarFacturaPorMail espera: facturaId
                     const apiResponse = await AdministracionApi.reenviarFacturaPorMail(jsonData.facturaId);
-                    console.log('[API Debug] Respuesta REENVIAR_FACTURA_POR_MAIL:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("REENVIAR_FACTURA_POR_MAIL", apiResponse);
                     const resumen = esRespuestaExitosa(apiResponse.data) ? "Factura reenviada por mail exitosamente." : "No se pudo reenviar la factura.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
@@ -987,7 +1035,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "REENVIAR_REMITO_POR_MAIL") {
                     // reenviarRemitoPorMail espera: remitoId
                     const apiResponse = await AdministracionApi.reenviarRemitoPorMail(jsonData.remitoId);
-                    console.log('[API Debug] Respuesta REENVIAR_REMITO_POR_MAIL:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("REENVIAR_REMITO_POR_MAIL", apiResponse);
                     const resumen = esRespuestaExitosa(apiResponse.data) ? "Remito reenviado por mail exitosamente." : "No se pudo reenviar el remito.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
@@ -998,7 +1046,7 @@ export class AssistantResponseProcessor {
                 if (tipo === "REENVIAR_RECIBO_POR_MAIL") {
                     // reenviarReciboPorMail espera: reciboId
                     const apiResponse = await AdministracionApi.reenviarReciboPorMail(jsonData.reciboId);
-                    console.log('[API Debug] Respuesta REENVIAR_RECIBO_POR_MAIL:', util.inspect(apiResponse, { depth: 4 }));
+                    logApiResponse("REENVIAR_RECIBO_POR_MAIL", apiResponse);
                     const resumen = esRespuestaExitosa(apiResponse.data) ? "Recibo reenviado por mail exitosamente." : "No se pudo reenviar el recibo.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);

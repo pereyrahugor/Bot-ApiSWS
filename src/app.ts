@@ -33,6 +33,8 @@ import { WebChatManager } from './utils-web/WebChatManager';
 import { fileURLToPath } from 'url';
 import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
 import { RailwayApi } from "./Api-RailWay/Railway";
+import { userQueues, userLocks, handleQueue, registerProcessCallback } from "./utils/queueManager";
+
 
 //import { imgResponseFlow } from "./Flows/imgResponse";
 //import { listImg } from "./addModule/listImg";
@@ -50,8 +52,10 @@ const PORT = process.env.PORT || 8080;
 export const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? "";
 
-const userQueues = new Map();
-const userLocks = new Map();
+
+
+
+
 
 
 // Listener para generar el archivo QR manualmente cuando se solicite
@@ -238,25 +242,16 @@ export const processUserMessage = async (
 };
 
 
-const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
 
-    if (userLocks.get(userId)) return;
+registerProcessCallback(async (item) => {
+    const { ctx, flowDynamic, state, provider, gotoFlow } = item;
+    await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
+});
 
-    userLocks.set(userId, true);
+// La función handleQueue ya está importada de queueManager y sabe procesar vía el callback registrado.
 
-    while (queue.length > 0) {
-        const { ctx, flowDynamic, state, provider, gotoFlow } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
-        } catch (error) {
-            console.error(`Error procesando el mensaje de ${userId}:`, error);
-        }
-    }
+const handleQueueWrapper = handleQueue;
 
-    userLocks.set(userId, false);
-    userQueues.delete(userId);
-};
 
 // Función auxiliar para verificar si existe sesión activa (Local o Remota)
 const hasActiveSession = async () => {
