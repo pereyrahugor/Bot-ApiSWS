@@ -9,6 +9,7 @@ import { AdministracionApi } from "../API_SWS/FacturacionApi";
 import { MovimientosApi } from "../API_SWS/MovimientosApi";
 import { getMapsUbication } from "../addModule/getMapsUbication";
 import { getUsuarioId } from "../API_SWS/SessionApi";
+import { HistoryHandler } from "./historyHandler";
 /**
  * Convierte una fecha a formato DD/MM/YYYY
  * @param {string} fecha - Fecha en formato YYYY-MM-DD, YYYY/MM/DD o DD/MM/YYYY
@@ -141,7 +142,49 @@ function getFechaCierreEstimado(): string {
  * @returns {string} Texto sin bloques API
  */
 function limpiarBloquesJSON(texto: string): string {
-    return texto.replace(/\[API\][\s\S]*?\[\/API\]/g, "");
+    // 1. Preservar bloques especiales temporalmente
+    const specialBlocks: string[] = [];
+    let textoConMarcadores = texto;
+    
+    // Preservar [DB_QUERY: ...] (Permitiendo espacios opcionales tras el corchete y el separador opcional)
+    textoConMarcadores = textoConMarcadores.replace(/\[\s*DB_QUERY\s*:?\s*[\s\S]*?\]/gi, (match) => {
+        const index = specialBlocks.length;
+        specialBlocks.push(match);
+        return `___SPECIAL_BLOCK_${index}___`;
+    });
+
+    // Preservar [DB: "T":"tabla", "D":"dato"] o [DB{"T":"..."}]
+    textoConMarcadores = textoConMarcadores.replace(/\[\s*DB\s*:?\s*[\s\S]*?\]/gi, (match) => {
+        const index = specialBlocks.length;
+        specialBlocks.push(match);
+        return `___SPECIAL_BLOCK_${index}___`;
+    });
+    
+    // Preservar [API]...[/API] (Tolerante a espacios)
+    textoConMarcadores = textoConMarcadores.replace(/\[\s*API\s*\][\s\S]*?\[\/\s*API\s*\]/gi, (match) => {
+        const index = specialBlocks.length;
+        specialBlocks.push(match);
+        return `___SPECIAL_BLOCK_${index}___`;
+    });
+    
+    // 2. Limpiar referencias de OpenAI tipo 【4:0†archivo.pdf】
+    let limpio = textoConMarcadores.replace(/【.*?】/g, "");
+
+    // 2b. Limpiar bloques JSON de "queries" que a veces fuga el asistente de OpenAI (File Search / Web Search)
+    limpio = limpio.replace(/\{\s*"queries"\s*:\s*\[[\s\S]*?\]\s*\}[\s,]*?/gi, "");
+    
+    // 2c. Limpiar bloques de PDF [PDF: ID]
+    limpio = limpio.replace(/\[\s*PDF\s*:\s*[\s\S]*?\]/gi, "");
+
+    // 2d. Filtrar SYSTEM_DB_RESULT o SYSTEM_API_RESULT filtrados por error del asistente
+    limpio = limpio.replace(/\[?\s*SYSTEM_(DB|API)_RESULT[\s\S]*?(?:\]|$)/gi, "");
+
+    // 3. Restaurar bloques especiales
+    specialBlocks.forEach((block, index) => {
+        limpio = limpio.replace(`___SPECIAL_BLOCK_${index}___`, block);
+    });
+    
+    return limpio;
 }
 
 /**
@@ -1064,8 +1107,25 @@ export class AssistantResponseProcessor {
             // Si no hubo bloque JSON válido, simplemente limpiar y enviar el texto si existe
             const cleanTextResponse = limpiarBloquesJSON(textResponse).trim();
             if (cleanTextResponse.length > 0) {
-                // Enviar el mensaje tal como lo recibió el asistente, preservando saltos de línea y formato markdown
-                await flowDynamic([{ body: cleanTextResponse }]);
+                // Guardar en Supabase antes de fragmentar
+                if (ctx && ctx.from) {
+                    await HistoryHandler.saveMessage(ctx.from, 'assistant', cleanTextResponse, 'text');
+                }
+
+                // Fragmentar mensajes largos por saltos de línea dobles
+                const chunks = cleanTextResponse.split(/\n\n+/);
+                for (const chunk of chunks) {
+                    if (chunk.trim().length > 0) {
+                        try {
+                            // Enviar el mensaje tal como lo recibió el asistente, preservando saltos de línea y formato markdown
+                            await flowDynamic([{ body: chunk.trim() }]);
+                            // Pequeña pausa para evitar que WhatsApp ignore mensajes muy rápidos
+                            await new Promise(r => setTimeout(r, 600)); 
+                        } catch (err) {
+                            console.error('[WhatsApp Debug] Error en flowDynamic:', err);
+                        }
+                    }
+                }
             }
         } catch (error) {
             console.error('[Processor Error] Error crítico en analizarYProcesarRespuestaAsistente:', error);

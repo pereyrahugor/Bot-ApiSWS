@@ -244,3 +244,27 @@ async function syncToDb(sessionId: string) {
         console.error('[SessionSync] Error en ciclo de sincronización:', error);
     }
 }
+
+/**
+ * Verifica si existe un respaldo unificado (full_backup) en la base de datos.
+ */
+export async function hasFullBackup(sessionId: string = 'default'): Promise<boolean> {
+    try {
+        const { data, error } = await supabase
+            .from('whatsapp_sessions')
+            .select('key_id')
+            .eq('project_id', projectId)
+            .eq('session_id', sessionId)
+            .eq('key_id', 'full_backup')
+            .maybeSingle();
+
+        if (error) {
+            console.error('[SessionSync] Error verificando full_backup:', error);
+            return false;
+        }
+        return !!data;
+    } catch (e) {
+        console.error('[SessionSync] Error crítico verificando full_backup:', e);
+        return false;
+    }
+}

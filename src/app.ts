@@ -28,6 +28,8 @@ import { locationFlow } from "./Flows/locationFlow";
 import { AssistantResponseProcessor, waitForActiveRuns } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 import { ErrorReporter } from "./utils/errorReporter";
+import { HistoryHandler, historyEvents } from "./utils/historyHandler";
+import * as sessionSync from "./utils/sessionSync";
 // import { AssistantBridge } from './utils-web/AssistantBridge';
 import { WebChatManager } from './utils-web/WebChatManager';
 import { fileURLToPath } from 'url';
@@ -70,14 +72,6 @@ const userTimeouts = new Map();
 // Wrapper seguro para toAsk que SIEMPRE verifica runs activos e inyecta contexto (Fecha/Hora/Contacto)
 export const safeToAsk = async (assistantId: string, message: string, state: any, userId?: string) => {
     const threadId = state && typeof state.get === 'function' && state.get('thread_id');
-    if (threadId) {
-        try {
-            await waitForActiveRuns(threadId);
-        } catch (err) {
-            console.error('[safeToAsk] Error esperando runs activos:', err);
-            await new Promise(r => setTimeout(r, 3000));
-        }
-    }
 
     // Inyectar contexto de fecha, hora y contacto en cada mensaje
     const currentDatetimeArg = getArgentinaDatetimeString();
@@ -92,7 +86,28 @@ export const safeToAsk = async (assistantId: string, message: string, state: any
 
     const finalMessage = `${contextHeader}\n\n${message}`;
 
-    return toAsk(assistantId, finalMessage, state);
+    // Mecanismo de Backoff Loop (3 intentos) para absorber saturación API
+    let lastError: any;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            if (threadId) {
+                await waitForActiveRuns(threadId);
+            }
+            return await toAsk(assistantId, finalMessage, state);
+        } catch (err: any) {
+            lastError = err;
+            console.error(`[safeToAsk] Error en intento ${attempt}:`, err.message);
+            // Si hay un run activo o rate limit, esperar con backoff
+            if (err.message && (err.message.includes('run') || err.message.includes('active') || err.message.includes('rate_limit'))) {
+                const waitTime = attempt * 2000;
+                console.log(`[safeToAsk] Problema detectado. Reintentando en ${waitTime}ms...`);
+                await new Promise(r => setTimeout(r, waitTime));
+                continue;
+            }
+            throw err;
+        }
+    }
+    throw lastError;
 };
 
 export const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId, thread_id = null) => {
@@ -136,25 +151,28 @@ export const processUserMessage = async (
         const body = ctx.body && ctx.body.trim();
 
 
-        // Comando para encender el bot
-        if (body === "#ON#") {
-            if (!botEnabled) {
+        // Guardar mensaje del usuario en el historial
+        if (ctx.from) {
+            await HistoryHandler.saveMessage(ctx.from, 'user', body || '');
+        }
+
+        // Comando para encender el bot (Individual o Global)
+        if (body === "#ON#" || body === "#GLOBAL_ON#") {
+            const isGlobal = body === "#GLOBAL_ON#";
+            if (isGlobal) {
                 botEnabled = true;
-                await flowDynamic([{ body: "🤖 Bot activado." }]);
+                await flowDynamic([{ body: "🤖 Bot activado GLOBALMENTE." }]);
             } else {
-                await flowDynamic([{ body: "🤖 El bot ya está activado." }]);
+                await HistoryHandler.toggleBot(ctx.from, true);
+                await flowDynamic([{ body: "🤖 Bot activado para este chat." }]);
             }
             return state;
         }
 
         // Comando para apagar el bot
         if (body === "#OFF#") {
-            if (botEnabled) {
-                botEnabled = false;
-                await flowDynamic([{ body: "🛑 Bot desactivado. No responderé a más mensajes hasta recibir #ON#." }]);
-            } else {
-                await flowDynamic([{ body: "🛑 El bot ya está desactivado." }]);
-            }
+            await HistoryHandler.toggleBot(ctx.from, false);
+            await flowDynamic([{ body: "🛑 Bot desactivado para este contacto. No responderé hasta recibir #ON#." }]);
             return state;
         }
 
@@ -169,8 +187,9 @@ export const processUserMessage = async (
             return state;
         }
 
-        // Si el bot está apagado, ignorar todo excepto #ON#
-        if (!botEnabled) {
+        // Si el bot está apagado para este usuario, ignorar
+        const isEnabled = await HistoryHandler.isBotEnabled(ctx.from);
+        if (!isEnabled || !botEnabled) {
             return;
         }
 
@@ -473,10 +492,10 @@ const main = async () => {
         }
     });
 
-    // 3. Función para servir páginas HTML
-    function serveHtmlPage(route, filename) {
+    // 3. Función para servir páginas HTML con reemplazo dinámico (Multitenancy Visual)
+    function serveHtmlPage(route: string, filename: string) {
         const handler = (req, res) => {
-            console.log(`[DEBUG] Serving HTML for ${req.url} -> ${filename}`);
+            console.log(`[DEBUG] Serving HTML for ${req.url} -> ${filename} (Dynamic)`);
             try {
                 const possiblePaths = [
                     path.join(process.cwd(), 'src', 'html', filename),
@@ -496,7 +515,16 @@ const main = async () => {
                 }
 
                 if (htmlPath) {
-                    res.sendFile(htmlPath);
+                    // Cargar archivo y reemplazar placeholders dinamicamente
+                    let content = fs.readFileSync(htmlPath, 'utf-8');
+                    const assistantName = process.env.ASSISTANT_NAME || process.env.RAILWAY_PROJECT_NAME || "Bot RialWay";
+                    
+                    // Sustituciones dinámicas
+                    content = content.replace(/{{ASSISTANT_NAME}}/g, assistantName);
+                    content = content.replace(/{{PROJECT_NAME}}/g, assistantName);
+
+                    res.setHeader('Content-Type', 'text/html');
+                    res.end(content);
                 } else {
                     console.error(`[ERROR] File not found: ${filename}`);
                     res.status(404).send('HTML no encontrado en el servidor');
@@ -507,7 +535,7 @@ const main = async () => {
             }
         };
         app.get(route, handler);
-        if (route !== "/") {
+        if (route !== "/" && !route.includes('.')) {
             app.get(route + '/', handler);
         }
     }
@@ -517,6 +545,8 @@ const main = async () => {
 
     // Registrar páginas HTML
     serveHtmlPage("/dashboard", "dashboard.html");
+    serveHtmlPage("/login", "login.html");
+    serveHtmlPage("/backoffice", "backoffice.html");
     serveHtmlPage("/webchat", "webchat.html");
     serveHtmlPage("/webreset", "webreset.html");
     serveHtmlPage("/variables", "variables.html");
@@ -535,6 +565,104 @@ const main = async () => {
         } else {
             res.statusCode = 404;
             res.end('QR not found');
+        }
+    });
+
+    // --- API Backoffice Middleware y Rutas ---
+    const backofficeAuth = (req, res, next) => {
+        const tokenHeader = req.headers['authorization'] || '';
+        const tokenQuery = req.query.token || '';
+        const serverToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
+        
+        // Soportar "token=VALOR" o simplemente "VALOR"
+        const cleanToken = (t: string) => t.replace('token=', '').trim();
+        
+        if (cleanToken(tokenHeader) === serverToken || cleanToken(tokenQuery as string) === serverToken) {
+            return next();
+        }
+        res.status(401).json({ error: 'Unauthorized' });
+    };
+
+    // APIs Públicas de Acceso
+    app.get('/api/dashboard-status', async (req, res) => {
+        try {
+            // Verificar si el archivo creds.json existe
+            const credsExists = fs.existsSync(path.join(process.cwd(), 'bot_sessions', 'creds.json'));
+            const fullBackupExists = await sessionSync.hasFullBackup();
+            
+            // Intentar obtener número de teléfono del estado (si el proveedor lo expone)
+            let phoneNumber = null;
+            if (adapterProvider && adapterProvider.vendor && adapterProvider.vendor.user) {
+                phoneNumber = adapterProvider.vendor.user.id.split(':')[0].split('@')[0];
+            }
+
+            res.json({
+                active: credsExists,
+                source: credsExists ? 'connected' : 'waiting',
+                hasRemote: fullBackupExists,
+                phoneNumber: phoneNumber,
+                message: fullBackupExists ? "Restaurando desde backup..." : "Esperando vinculación..."
+            });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/api/backoffice/auth', async (req, res) => {
+        try {
+            const { token } = req.body;
+            const serverToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
+            if (token === serverToken) {
+                res.json({ success: true });
+            } else {
+                res.status(401).json({ success: false });
+            }
+        } catch (e) {
+            res.status(500).json({ success: false });
+        }
+    });
+
+    // APIs Privadas
+    app.get('/api/backoffice/chats', backofficeAuth, async (req, res) => {
+        const chats = await HistoryHandler.listChats();
+        res.json(chats);
+    });
+
+    app.get('/api/backoffice/messages/:chatId', backofficeAuth, async (req, res) => {
+        const messages = await HistoryHandler.getMessages(req.params.chatId);
+        res.json(messages);
+    });
+
+    app.get('/api/backoffice/profile-pic/:chatId', backofficeAuth, async (req, res) => {
+        try {
+            const jid = req.params.chatId.includes('@') ? req.params.chatId : `${req.params.chatId}@s.whatsapp.net`;
+            const url = await adapterProvider.vendor.profilePictureUrl(jid, 'image');
+            res.json({ url });
+        } catch (e) {
+            res.json({ url: null });
+        }
+    });
+
+    app.post('/api/backoffice/toggle-bot', backofficeAuth, async (req, res) => {
+        const { chatId, enabled } = req.body;
+        const result = await HistoryHandler.toggleBot(chatId, enabled);
+        res.json(result);
+    });
+
+    app.post('/api/backoffice/send-message', backofficeAuth, async (req, res) => {
+        try {
+            const { chatId, message } = req.body;
+            const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+            
+            // Enviar vía Baileys
+            await adapterProvider.sendMessage(jid, message, {});
+            
+            // Guardar en historial como assistant
+            await HistoryHandler.saveMessage(chatId, 'assistant', message, 'text');
+            
+            res.json({ success: true });
+        } catch (e) {
+            res.status(500).json({ success: false, error: e.message });
         }
     });
 
@@ -624,6 +752,16 @@ const main = async () => {
         }
         console.log('✅ [DEBUG] Inicializando Socket.IO...');
         const io = new Server(serverInstance, { cors: { origin: '*' } });
+
+        // Enlazar eventos de HistoryHandler con Socket.IO para tiempo real
+        historyEvents.on('new_message', (payload) => {
+            io.emit('new_message', payload);
+        });
+
+        historyEvents.on('bot_toggled', (payload) => {
+            io.emit('bot_toggled', payload);
+        });
+
         io.on('connection', (socket) => {
             console.log('💬 Cliente web conectado');
             socket.on('message', async (msg) => {
