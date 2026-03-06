@@ -180,7 +180,14 @@ export class HistoryHandler {
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID);
 
-            historyEvents.emit('new_message', { chatId, role, content, type });
+            const messageData = { 
+                chatId, 
+                role, 
+                content, 
+                type, 
+                created_at: new Date().toISOString() 
+            };
+            historyEvents.emit('new_message', messageData);
 
         } catch (err) {
             console.error('[HistoryHandler] Error en saveMessage:', err);
