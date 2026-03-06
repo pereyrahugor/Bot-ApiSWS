@@ -522,6 +522,14 @@ const main = async () => {
                     // Sustituciones dinámicas
                     content = content.replace(/{{ASSISTANT_NAME}}/g, assistantName);
                     content = content.replace(/{{PROJECT_NAME}}/g, assistantName);
+                    
+                    // Inyección específica para Backoffice (según referencia)
+                    if (filename === 'backoffice.html') {
+                        content = content.replace(
+                            '<h2 style="margin:0; font-size: 1.2rem;">Backoffice</h2>',
+                            `<h2 style="margin:0; font-size: 1.2rem;">Backoffice - ${assistantName}</h2>`
+                        );
+                    }
 
                     res.setHeader('Content-Type', 'text/html');
                     res.end(content);
