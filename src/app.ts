@@ -25,7 +25,7 @@ import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
-import { AssistantResponseProcessor, waitForActiveRuns } from "./utils/AssistantResponseProcessor";
+import { AssistantResponseProcessor, waitForActiveRuns, cancelRun } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 import { ErrorReporter } from "./utils/errorReporter";
 import { HistoryHandler, historyEvents } from "./utils/historyHandler";
@@ -97,6 +97,15 @@ export const safeToAsk = async (assistantId: string, message: string, state: any
         } catch (err: any) {
             lastError = err;
             console.error(`[safeToAsk] Error en intento ${attempt}:`, err.message);
+
+            // Si detectamos el error de run activo con el ID, intentamos cancelarlo
+            const runMatch = err.message && err.message.match(/run_(?:\w+)/);
+            if (runMatch && threadId) {
+                const activeRunId = runMatch[0];
+                console.log(`[safeToAsk] Detectado run activo bloqueante: ${activeRunId}. Solicitando cancelación...`);
+                await cancelRun(threadId, activeRunId);
+            }
+
             // Si hay un run activo o rate limit, esperar con backoff
             if (err.message && (err.message.includes('run') || err.message.includes('active') || err.message.includes('rate_limit'))) {
                 const waitTime = attempt * 2000;
