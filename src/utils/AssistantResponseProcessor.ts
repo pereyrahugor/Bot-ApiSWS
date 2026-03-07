@@ -122,18 +122,23 @@ export async function waitForActiveRuns(threadId: string) {
             if (activeRun) {
                 console.log(`[AssistantResponseProcessor] [${attempt}/${maxAttempts}] Run activo detectado (${activeRun.id}, estado: ${activeRun.status}).`);
                 
-                // Si está en requires_action o lleva mucho tiempo, intentar cancelar proactivamente
-                if (activeRun.status === "requires_action" || attempt > 5) {
-                    console.log(`[AssistantResponseProcessor] Run estancado detectado. Iniciando cancelación proactiva...`);
+                // Si está estancado en requires_action, lo cancelamos proactivamente (Capa 1 de la guía)
+                if (activeRun.status === 'requires_action' && attempt >= 2) {
+                    console.log(`[AssistantResponseProcessor] [Reconexión] Run estancado en requires_action detectado (${activeRun.id}). Cancelando...`);
                     await cancelRun(threadId, activeRun.id);
-                    // No salimos del loop, dejamos que la siguiente iteración verifique si ya se liberó
+                    return; // Retornar para que safeToAsk pueda reintentar de inmediato
+                }
+
+                // Fallback para otros estados que duren demasiado
+                if (attempt > 10) {
+                    console.log(`[AssistantResponseProcessor] Run persistente detectado. Intentando cancelación final...`);
+                    await cancelRun(threadId, activeRun.id);
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 attempt++;
             } else {
                 console.log(`[AssistantResponseProcessor] No hay runs activos. OK.`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
                 return;
             }
         }

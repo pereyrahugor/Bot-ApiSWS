@@ -1,5 +1,5 @@
 // Clase para manejar la lógica de reconexión cuando el campo nombre está vacío
-import { safeToAsk } from '../app';
+import { safeToAsk, errorReporter } from '../app';
 import { extraerDatosResumen, GenericResumenData } from '~/utils/extractJsonData';
 import { downloadFileFromDrive } from '~/utils/googleDriveHandler';
 import fs from 'fs';
@@ -182,7 +182,7 @@ export class ReconectionFlow {
             }
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el asistente
-            const resumen = await safeToAsk(this.ASSISTANT_ID, "GET_RESUMEN", this.state, this.ctx.from);
+            const resumen = await safeToAsk(this.ASSISTANT_ID, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
 
             const data: GenericResumenData = extraerDatosResumen(resumen);
             const tipo = data.tipo || "SI_RESUMEN";
@@ -232,7 +232,7 @@ export class ReconectionFlow {
                 const userMsg = msg.body;
                 const prompt = `hola, ${userMsg}`;
                 try {
-                    await safeToAsk(this.ASSISTANT_ID, prompt, this.state, this.ctx.from);
+                    await safeToAsk(this.ASSISTANT_ID, prompt, this.state, this.ctx.from, errorReporter);
                 } catch (err) {
                     console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);
                 }

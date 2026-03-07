@@ -10,6 +10,7 @@ import polka from 'polka';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
 import QRCode from 'qrcode';
+import OpenAI from "openai";
 // Estado global para encender/apagar el bot
 let botEnabled = true;
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
@@ -62,23 +63,69 @@ const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? "";
 
 // Listener para generar el archivo QR manualmente cuando se solicite
 export let adapterProvider;
-let errorReporter;
+export let errorReporter;
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
 
 const TIMEOUT_MS = 30000;
 
 // Control de timeout por usuario para evitar ejecuciones automáticas superpuestas
 const userTimeouts = new Map();
 
+/**
+ * Capa 3: Renovación Automática de Hilo
+ * Si tras los reintentos el hilo sigue bloqueado, creamos uno nuevo con el contexto previo.
+ */
+async function renewThreadAndRetry(assistantId: string, message: string, state: any, userId: string, activeErrorReporter?: any) {
+    try {
+        if (activeErrorReporter) {
+            await activeErrorReporter.reportError(`⚠️ Hilo bloqueado para ${userId}. Iniciando renovación automática de thread...`, userId);
+        }
+
+        console.log(`[Reconexión] Renovando hilo para ${userId}...`);
+
+        // 1. Traer el historial reciente (últimos 10 mensajes)
+        const history = await HistoryHandler.getMessages(userId, 10);
+        
+        // 2. Crear nuevo hilo en OpenAI con ese contexto
+        const newThread = await openai.beta.threads.create({
+            messages: history.map(m => ({ 
+                role: (m.role === 'assistant' ? 'assistant' : 'user') as any, 
+                content: m.content 
+            }))
+        });
+
+        console.log(`[Reconexión] Nuevo thread creado: ${newThread.id}`);
+
+        // 3. Actualizar estado y reintentar
+        if (state && typeof state.update === 'function') {
+            await state.update({ thread_id: newThread.id });
+        }
+        
+        return await toAsk(assistantId, message, state);
+    } catch (error) {
+        console.error('[Reconexión] Error crítico en renewThreadAndRetry:', error);
+        throw error;
+    }
+}
+
 // Wrapper seguro para toAsk que SIEMPRE verifica runs activos e inyecta contexto (Fecha/Hora/Contacto)
-export const safeToAsk = async (assistantId: string, message: string, state: any, userId?: string) => {
+export const safeToAsk = async (
+    assistantId: string, 
+    message: string, 
+    state: any, 
+    userId?: string, 
+    customErrorReporter?: any
+) => {
     const threadId = state && typeof state.get === 'function' && state.get('thread_id');
+    const effectiveUserId = userId || (state && typeof state.get === 'function' ? state.get('from') : undefined);
+    const activeErrorReporter = customErrorReporter || errorReporter;
 
     // Inyectar contexto de fecha, hora y contacto en cada mensaje
     const currentDatetimeArg = getArgentinaDatetimeString();
     let contextHeader = `[CONTEXTO_SISTEMA]:\n- Fecha/Hora: ${currentDatetimeArg}`;
     
-    // Intentar obtener el contacto si no viene como argumento
-    const effectiveUserId = userId || (state && typeof state.get === 'function' ? state.get('from') : undefined);
     if (effectiveUserId) {
         contextHeader += `\n- Contacto: ${effectiveUserId}`;
     }
@@ -86,9 +133,9 @@ export const safeToAsk = async (assistantId: string, message: string, state: any
 
     const finalMessage = `${contextHeader}\n\n${message}`;
 
-    // Mecanismo de Backoff Loop (3 intentos) para absorber saturación API
+    // Mecanismo de Backoff Loop (5 intentos según guía) para absorber saturación API
     let lastError: any;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
         try {
             if (threadId) {
                 await waitForActiveRuns(threadId);
@@ -96,20 +143,31 @@ export const safeToAsk = async (assistantId: string, message: string, state: any
             return await toAsk(assistantId, finalMessage, state);
         } catch (err: any) {
             lastError = err;
-            console.error(`[safeToAsk] Error en intento ${attempt}:`, err.message);
+            const errorMessage = err?.message || String(err);
+            console.error(`[safeToAsk] Error en intento ${attempt}/5:`, errorMessage);
 
-            // Si detectamos el error de run activo con el ID, intentamos cancelarlo
-            const runMatch = err.message && err.message.match(/run_(?:\w+)/);
-            if (runMatch && threadId) {
-                const activeRunId = runMatch[0];
-                console.log(`[safeToAsk] Detectado run activo bloqueante: ${activeRunId}. Solicitando cancelación...`);
-                await cancelRun(threadId, activeRunId);
+            // Si OpenAI nos dice qué run está bloqueando, lo cancelamos de inmediato (Capa 2)
+            if (errorMessage.includes('while a run') && errorMessage.includes('is active') && threadId) {
+                const runIdMatch = errorMessage.match(/run_[a-zA-Z0-9]+/);
+                if (runIdMatch) {
+                    const activeRunId = runIdMatch[0];
+                    console.log(`[safeToAsk] Detectado run activo bloqueante: ${activeRunId}. Cancelando proactivamente...`);
+                    await cancelRun(threadId, activeRunId);
+                    await new Promise(r => setTimeout(r, 3000));
+                    continue; // Reintento inmediato tras cancelación
+                }
+            }
+
+            if (attempt >= 5 && threadId && effectiveUserId) {
+                console.log(`[safeToAsk] Agotados reintentos. Iniciando Capa 3: Renovación de hilo.`);
+                return await renewThreadAndRetry(assistantId, finalMessage, state, effectiveUserId, activeErrorReporter);
             }
 
             // Si hay un run activo o rate limit, esperar con backoff
-            if (err.message && (err.message.includes('run') || err.message.includes('active') || err.message.includes('rate_limit'))) {
+            const isRetryable = errorMessage.includes('run') || errorMessage.includes('active') || errorMessage.includes('rate_limit');
+            if (isRetryable) {
                 const waitTime = attempt * 2000;
-                console.log(`[safeToAsk] Problema detectado. Reintentando en ${waitTime}ms...`);
+                console.log(`[safeToAsk] Problema temporal detectado. Reintentando en ${waitTime}ms...`);
                 await new Promise(r => setTimeout(r, waitTime));
                 continue;
             }
