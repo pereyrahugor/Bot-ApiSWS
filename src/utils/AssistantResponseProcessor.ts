@@ -548,8 +548,8 @@ export class AssistantResponseProcessor {
                     logApiResponse('BUSCAR_CLIENTE', apiResponse);
                     
                     const respuestaApi = apiResponse.data || {};
+                    let countResultados = 0;
                     let datosCliente = null;
-                    
                     if (Array.isArray(respuestaApi.data) && respuestaApi.data.length > 0) {
                         let resultados = respuestaApi.data;
                         
@@ -573,10 +573,12 @@ export class AssistantResponseProcessor {
                             });
                         }
 
+                        countResultados = resultados.length;
                         if (resultados.length > 0) {
-                            // Tomamos el primero de los que pasaron el filtro
-                            datosCliente = resultados[0];
-                            console.log('[API Debug] Datos de cliente (tras filtrar):', util.inspect(datosCliente, { depth: 4 }));
+                            // Preferimos clientes que NO estén en BAJA
+                            const clienteActivo = resultados.find((c: any) => c.estadoCliente?.trim().toLowerCase() !== 'baja');
+                            datosCliente = clienteActivo || resultados[0];
+                            console.log('[API Debug] Datos de cliente (tras filtrar y priorizar por estado):', util.inspect(datosCliente, { depth: 4 }));
                         } else {
                             console.log('[API Debug] Ningún cliente pasó los filtros internos de piso/depto/S/N.');
                         }
@@ -584,7 +586,15 @@ export class AssistantResponseProcessor {
                     
                     let resumen;
                     if (esRespuestaExitosa(respuestaApi) && datosCliente) {
-                        resumen = `Datos completos del cliente:\n${JSON.stringify(datosCliente, null, 2)}`;
+                        const esBaja = datosCliente.estadoCliente?.trim().toLowerCase() === 'baja';
+                        const esMultiple = countResultados > 1;
+                        let advertenciaMultiple = esMultiple ? "⚠️ ATENCIÓN: multiples resultados obtenidos, solicitar datos adicionales para obtener datos mas precisos o identificar un unico cliente\n\n" : "";
+
+                        if (esBaja) {
+                            resumen = `${advertenciaMultiple}⚠️ ATENCIÓN: El cliente se encuentra en estado de "BAJA" (Inactivo). No se permiten realizar nuevas pedidos ni registrar incidencias para clientes en este estado.\n\nDatos completos:\n${JSON.stringify(datosCliente, null, 2)}`;
+                        } else {
+                            resumen = `${advertenciaMultiple}Datos completos del cliente:\n${JSON.stringify(datosCliente, null, 2)}`;
+                        }
                     } else {
                         resumen = "No se encuentra cliente coincidente con los datos enviados";
                         const filtrosAplicados = [];
