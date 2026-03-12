@@ -317,6 +317,55 @@ function esRespuestaExitosa(data: any, apiResponse?: any): boolean {
 }
 
 /**
+ * Convierte un formato de fecha SWS "/Date(timestamp)/" a un string legible DD/MM/YYYY - HH:mm (GMT-3)
+ * @param {string} swsDateStr 
+ * @returns {string}
+ */
+function formatSWSDate(swsDateStr: string): string {
+    if (typeof swsDateStr !== 'string') return swsDateStr;
+    const match = swsDateStr.match(/\/Date\((\d+)\)\//);
+    if (!match) return swsDateStr;
+    const timestamp = parseInt(match[1]);
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return swsDateStr;
+
+    // Ajuste GMT-3 (Argentina) para visualización estandarizada
+    const gmt3 = new Date(date.getTime() - 3 * 60 * 60 * 1000);
+    const d = String(gmt3.getUTCDate()).padStart(2, '0');
+    const m = String(gmt3.getUTCMonth() + 1).padStart(2, '0');
+    const y = gmt3.getUTCFullYear();
+    const hh = String(gmt3.getUTCHours()).padStart(2, '0');
+    const min = String(gmt3.getUTCMinutes()).padStart(2, '0');
+
+    return `${d}/${m}/${y} - ${hh}:${min}`;
+}
+
+/**
+ * Recorre un objeto y formatea todas las fechas tipo SWS que encuentre
+ * @param {any} obj 
+ * @returns {any}
+ */
+function formatAllSWSDates(obj: any): any {
+    if (!obj || typeof obj !== 'object') return obj;
+    
+    if (Array.isArray(obj)) {
+        return obj.map(item => formatAllSWSDates(item));
+    }
+    
+    const newObj: any = {};
+    for (const key in obj) {
+        if (typeof obj[key] === 'string' && obj[key].includes('/Date(')) {
+            newObj[key] = formatSWSDate(obj[key]);
+        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            newObj[key] = formatAllSWSDates(obj[key]);
+        } else {
+            newObj[key] = obj[key];
+        }
+    }
+    return newObj;
+}
+
+/**
  * Clase para procesar respuestas del asistente de OpenAI y ejecutar llamadas a APIs
  */
 export class AssistantResponseProcessor {
@@ -863,7 +912,9 @@ export class AssistantResponseProcessor {
                     // obtenerDatosCliente espera: cliente_id (number)
                     const apiResponse = await ClientesApi.obtenerDatosCliente(jsonData.cliente_id);
                     logApiResponse("OBTENER_DATOS_CLIENTE", apiResponse);
-                    const datos = apiResponse.data || {};
+                    const rawDatos = apiResponse.data || {};
+                    // Traducir fechas SWS (/Date(ms)/) a formato legible
+                    const datos = formatAllSWSDates(rawDatos);
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Datos del cliente: ${JSON.stringify(datos)}` : "No se encontraron datos del cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -876,7 +927,8 @@ export class AssistantResponseProcessor {
                     // obtenerSucursales espera: cliente_id (number)
                     const apiResponse = await ClientesApi.obtenerSucursales(jsonData.cliente_id);
                     logApiResponse("OBTENER_SUCURSALES_CLIENTE", apiResponse);
-                    const datos = apiResponse.data || {};
+                    const rawDatos = apiResponse.data || {};
+                    const datos = formatAllSWSDates(rawDatos);
                     const resumen = esRespuestaExitosa(datos) ? `Sucursales del cliente: ${JSON.stringify(datos)}` : "No se encontraron sucursales para el cliente.";
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
@@ -895,7 +947,8 @@ export class AssistantResponseProcessor {
                     const apiResponse = await ListaDePreciosApi.obtenerMatrizListaDePrecios(tipoListaId);
                     logApiResponse("MATRIZ_LISTA_PRECIOS", apiResponse);
                     
-                    const datos = apiResponse.data || {};
+                    const rawDatos = apiResponse.data || {};
+                    const datos = formatAllSWSDates(rawDatos);
                     let success = esRespuestaExitosa(datos);
                     
                     if (success && filtroListaId != null && datos.matriz && Array.isArray(datos.matriz.articulos)) {
