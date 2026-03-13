@@ -438,6 +438,19 @@ export class AssistantResponseProcessor {
                 const jsonStr = match[1].trim();
                 try {
                     jsonData = JSON.parse(jsonStr);
+
+                    // Validar si todos los campos de datos están vacíos (según pedido del usuario)
+                    if (jsonData && typeof jsonData.type === 'string') {
+                        const keys = Object.keys(jsonData).filter(k => k !== 'type' && k !== 'payload');
+                        if (keys.length > 0 && keys.every(k => !jsonData[k] || String(jsonData[k]).trim() === "")) {
+                            console.log(`[AssistantResponseProcessor] Bloque API ${jsonData.type} con todos los campos vacíos. Respondiendo falta de datos.`);
+                            const resumen = "faltan datos, no se puede obtener informacion";
+                            const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
+                            await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
+                            return;
+                        }
+                    }
+
                     // Solo CREAR_CLIENTE usa payload
                     if (jsonData && typeof jsonData.type === 'string' && !jsonData.payload) {
                         if (jsonData.type === 'CREAR_CLIENTE') {
