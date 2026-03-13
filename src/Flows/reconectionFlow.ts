@@ -3,6 +3,7 @@ import { safeToAsk, errorReporter } from '../app';
 import { extraerDatosResumen, GenericResumenData } from '~/utils/extractJsonData';
 import { downloadFileFromDrive } from '~/utils/googleDriveHandler';
 import fs from 'fs';
+import { HistoryHandler } from '../utils/historyHandler';
 
 
 // Opciones para configurar el flujo de reconexión
@@ -135,11 +136,13 @@ export class ReconectionFlow {
 
             // Limpiar el mensaje de etiquetas PDF para el envío de texto
             const cleanMsg = originalMsg.replace(/\[\s*PDF\s*:\s*[\s\S]*?\]/gi, "").trim();
-
             if (jid) {
                 try {
                     console.log(`[ReconectionFlow] Enviando mensaje de reconexión a:`, jid);
                     await this.provider.sendText(jid, cleanMsg);
+                    
+                    // Guardar en historial
+                    await HistoryHandler.saveMessage(originalFrom, 'assistant', cleanMsg, 'text');
 
                     // Enviar los PDFs descargados
                     for (const pdfPath of pdfPaths) {

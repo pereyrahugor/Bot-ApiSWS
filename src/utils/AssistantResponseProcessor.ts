@@ -399,6 +399,9 @@ export class AssistantResponseProcessor {
             } else {
                 const cleanTextResponse = limpiarBloquesJSON(String(assistantApiResponse)).trim();
                 if (cleanTextResponse.length > 0) {
+                    if (ctx && ctx.from) {
+                        await HistoryHandler.saveMessage(ctx.from, 'assistant', cleanTextResponse, 'text');
+                    }
                     await flowDynamic([{ body: cleanTextResponse }]);
                 }
             }
@@ -439,11 +442,15 @@ export class AssistantResponseProcessor {
                 try {
                     jsonData = JSON.parse(jsonStr);
 
+                    // Extraer tipo de forma segura
+                    const tipoRaw = jsonData && typeof jsonData === 'object' ? jsonData.type : null;
+                    const tipo = typeof tipoRaw === 'string' ? tipoRaw.trim() : null;
+
                     // Validar si todos los campos de datos están vacíos (según pedido del usuario)
-                    if (jsonData && typeof jsonData.type === 'string') {
+                    if (tipo) {
                         const keys = Object.keys(jsonData).filter(k => k !== 'type' && k !== 'payload');
                         if (keys.length > 0 && keys.every(k => !jsonData[k] || String(jsonData[k]).trim() === "")) {
-                            console.log(`[AssistantResponseProcessor] Bloque API ${jsonData.type} con todos los campos vacíos. Respondiendo falta de datos.`);
+                            console.log(`[AssistantResponseProcessor] Bloque API ${tipo} con todos los campos vacíos. Respondiendo falta de datos.`);
                             const resumen = "faltan datos, no se puede obtener informacion";
                             const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                             await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
@@ -452,8 +459,8 @@ export class AssistantResponseProcessor {
                     }
 
                     // Solo CREAR_CLIENTE usa payload
-                    if (jsonData && typeof jsonData.type === 'string' && !jsonData.payload) {
-                        if (jsonData.type === 'CREAR_CLIENTE') {
+                    if (tipo && !jsonData.payload) {
+                        if (tipo === 'CREAR_CLIENTE') {
                             // Mover todos los campos excepto 'type' a 'payload'
                             const payload = {};
                             for (const key of Object.keys(jsonData)) {
@@ -569,7 +576,13 @@ export class AssistantResponseProcessor {
                     if (apiResponse && (apiResponse as any).error) {
                         const resumen = (apiResponse as any).error;
                         const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
-                        if (assistantApiResponse) await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
+                        if (assistantApiResponse) {
+                            const finalMsg = limpiarBloquesJSON(String(assistantApiResponse)).trim();
+                            if (finalMsg.length > 0) {
+                                if (ctx && ctx.from) await HistoryHandler.saveMessage(ctx.from, 'assistant', finalMsg, 'text');
+                                await flowDynamic([{ body: finalMsg }]);
+                            }
+                        }
                         return;
                     }
 
@@ -950,7 +963,11 @@ export class AssistantResponseProcessor {
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     if (assistantApiResponse) {
-                        await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
+                        const finalMsg = limpiarBloquesJSON(String(assistantApiResponse)).trim();
+                        if (finalMsg.length > 0) {
+                            if (ctx && ctx.from) await HistoryHandler.saveMessage(ctx.from, 'assistant', finalMsg, 'text');
+                            await flowDynamic([{ body: finalMsg }]);
+                        }
                     }
                     return;
                 }
@@ -1245,7 +1262,9 @@ export class AssistantResponseProcessor {
             console.error('[Processor Error] Error crítico en analizarYProcesarRespuestaAsistente:', error);
             // Intentar informar al usuario o al menos no crashear
             try {
-                await flowDynamic([{ body: "Hubo un problema técnico al procesar la respuesta del sistema. Por favor, intenta de nuevo en unos instantes." }]);
+                const errorMsg = "Hubo un problema técnico al procesar la respuesta del sistema. Por favor, intenta de nuevo en unos instantes.";
+                if (ctx && ctx.from) await HistoryHandler.saveMessage(ctx.from, 'assistant', errorMsg, 'text');
+                await flowDynamic([{ body: errorMsg }]);
             } catch (innerError) {
                 console.error('[Processor Error] No se pudo enviar mensaje de error:', innerError);
             }

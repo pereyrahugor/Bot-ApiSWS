@@ -226,20 +226,23 @@ export const processUserMessage = async (
         // Comando para encender el bot (Individual o Global)
         if (body === "#ON#" || body === "#GLOBAL_ON#") {
             const isGlobal = body === "#GLOBAL_ON#";
+            const msg = isGlobal ? "🤖 Bot activado GLOBALMENTE." : "🤖 Bot activado para este chat.";
             if (isGlobal) {
                 botEnabled = true;
-                await flowDynamic([{ body: "🤖 Bot activado GLOBALMENTE." }]);
             } else {
                 await HistoryHandler.toggleBot(ctx.from, true);
-                await flowDynamic([{ body: "🤖 Bot activado para este chat." }]);
             }
+            await HistoryHandler.saveMessage(ctx.from, 'assistant', msg, 'text');
+            await flowDynamic([{ body: msg }]);
             return state;
         }
 
         // Comando para apagar el bot
         if (body === "#OFF#") {
+            const msg = "🛑 Bot desactivado para este contacto. No responderé hasta recibir #ON#.";
             await HistoryHandler.toggleBot(ctx.from, false);
-            await flowDynamic([{ body: "🛑 Bot desactivado para este contacto. No responderé hasta recibir #ON#." }]);
+            await HistoryHandler.saveMessage(ctx.from, 'assistant', msg, 'text');
+            await flowDynamic([{ body: msg }]);
             return state;
         }
 
@@ -480,6 +483,15 @@ const main = async () => {
     // Middleware para parsear JSON en el body
     app.use(bodyParser.json());
 
+    // 0. Middleware de seguridad inicial - Evitar crashes por req/headers undefined
+    app.use((req, res, next) => {
+        if (!req) return;
+        if (!req.headers) req.headers = {};
+        if (!req.method) req.method = 'GET';
+        if (!req.url) req.url = '/';
+        next();
+    });
+
     // 1. Middleware de compatibilidad (res.json, res.send, res.sendFile, etc)
     app.use((req, res, next) => {
         res.status = (code) => { res.statusCode = code; return res; };
@@ -542,9 +554,10 @@ const main = async () => {
 
     // 2. Middleware de logging y redirección de raíz
     app.use((req, res, next) => {
+        if (!req || !req.url) return next();
         console.log(`[REQUEST] ${req.method} ${req.url}`);
         try {
-            if (req.url === "/" || req.url === "") {
+            if (req.url === "/" || req.url === "" || req.url === " ") {
                 console.log('[DEBUG] Redirigiendo raíz (/) a /dashboard via middleware');
                 res.writeHead(302, { 'Location': '/dashboard' });
                 return res.end();
@@ -727,16 +740,32 @@ const main = async () => {
     app.post('/api/backoffice/send-message', backofficeAuth, async (req, res) => {
         try {
             const { chatId, message } = req.body;
+            if (!chatId || !message) return res.status(400).json({ success: false, error: 'chatId and message are required' });
+
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
             
+            console.log(`[BACKOFFICE] Intentando enviar mensaje a ${jid}...`);
+
+            // Verificar si el proveedor está listo
+            if (!adapterProvider || !adapterProvider.vendor) {
+                console.error('[BACKOFFICE] Error: Proveedor no inicializado');
+                return res.status(503).json({ success: false, error: 'WhatsApp provider not ready' });
+            }
+
             // Enviar vía Baileys
-            await adapterProvider.sendMessage(jid, message, {});
+            const sent = await adapterProvider.sendMessage(jid, message, {});
             
+            if (!sent) {
+                console.warn(`[BACKOFFICE] Advertencia: sendMessage retornó vacío para ${jid}`);
+            }
+
             // Guardar en historial como assistant
             await HistoryHandler.saveMessage(chatId, 'assistant', message, 'text');
             
+            console.log(`✅ [BACKOFFICE] Mensaje enviado y guardado para ${jid}`);
             res.json({ success: true });
         } catch (e) {
+            console.error(`❌ [BACKOFFICE] Error enviando mensaje:`, e);
             res.status(500).json({ success: false, error: e.message });
         }
     });
