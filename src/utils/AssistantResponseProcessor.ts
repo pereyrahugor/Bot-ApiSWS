@@ -520,7 +520,10 @@ export class AssistantResponseProcessor {
                         radio += 250;
                     } while (radio <= radioMax);
                     console.log(`[API Debug] CLIENTES_CERCANOS_A_CLIENTE: clienteId=${jsonData.clienteId}, radio=${radio}`);
-                    const resumen = esRespuestaExitosa(datos, apiResponse) ? `Clientes cercanos: ${JSON.stringify(datos)}` : "No se pudo obtener los clientes cercanos.";
+                    const datosFormateados = formatAllSWSDates(datos);
+                    const resumen = tieneResultados(datosFormateados)
+                        ? `Hay cobertura en la zona. Clientes cercanos: ${JSON.stringify(datosFormateados)}`
+                        : "no hay clientes cercanos en la zona";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
                     return;
@@ -567,9 +570,10 @@ export class AssistantResponseProcessor {
                     const datos = limitarResultados(data, 10);
                     console.log(`[API Debug] CLIENTES_CERCANOS_DIRECCION (Coords-based): address=${normalizedAddress}`);
 
-                    const resumen = tieneResultados(datos)
-                        ? `Clientes cercanos: ${JSON.stringify(datos)}`
-                        : "No se encontraron clientes cercanos.";
+                    const datosFormateados = formatAllSWSDates(datos);
+                    const resumen = tieneResultados(datosFormateados)
+                        ? `Hay cobertura en la zona. Clientes cercanos: ${JSON.stringify(datosFormateados)}`
+                        : "no hay clientes cercanos en la zona";
 
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
