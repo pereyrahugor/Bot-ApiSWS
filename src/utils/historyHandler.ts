@@ -22,6 +22,7 @@ export interface Chat {
     name: string | null;
     bot_enabled: boolean;
     last_message_at: string;
+    last_human_message_at: string | null;
     metadata: any;
 }
 
@@ -52,8 +53,29 @@ export class HistoryHandler {
                     name TEXT,
                     bot_enabled BOOLEAN DEFAULT true,
                     last_message_at TIMESTAMPTZ DEFAULT NOW(),
+                    last_human_message_at TIMESTAMPTZ,
                     metadata JSONB DEFAULT '{}'::jsonb,
                     PRIMARY KEY (id, project_id)
+                );`
+            },
+            {
+                name: 'tags',
+                sql: `CREATE TABLE IF NOT EXISTS tags (
+                    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+                    project_id TEXT,
+                    name TEXT NOT NULL,
+                    color TEXT DEFAULT '#000000',
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                );`
+            },
+            {
+                name: 'chat_tags',
+                sql: `CREATE TABLE IF NOT EXISTS chat_tags (
+                    chat_id TEXT,
+                    tag_id uuid REFERENCES tags(id) ON DELETE CASCADE,
+                    project_id TEXT,
+                    PRIMARY KEY (chat_id, tag_id, project_id),
+                    FOREIGN KEY (chat_id, project_id) REFERENCES chats(id, project_id)
                 );`
             },
             {
@@ -88,7 +110,7 @@ export class HistoryHandler {
                 } else if (checkError && checkError.code !== '42703') {
                     console.error(`❌ Error verificando tabla '${table.name}':`, checkError.message);
                 } else {
-                    // Verificar si falta la columna project_id (Migración)
+                    // Verificar columnas adicionales (Migración)
                     const { error: columnError } = await supabase.from(table.name).select('project_id').limit(1);
                     if (columnError && columnError.code === '42703') {
                          console.log(`🔧 Actualizando tabla '${table.name}' para incluir project_id...`);
@@ -109,6 +131,15 @@ export class HistoryHandler {
                          } else {
                              console.log(`✅ Tabla '${table.name}' migrada a multitenancy.`);
                          }
+                    }
+
+                    // Migración para last_human_message_at
+                    if (table.name === 'chats') {
+                        const { error: humanMsgErr } = await supabase.from('chats').select('last_human_message_at').limit(1);
+                        if (humanMsgErr && humanMsgErr.code === '42703') {
+                            console.log(`🔧 Agregando columna last_human_message_at a chats...`);
+                            await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN last_human_message_at TIMESTAMPTZ;` });
+                        }
                     }
                 }
             } catch (fatalErr) {
@@ -234,12 +265,16 @@ export class HistoryHandler {
         try {
             const { data, error } = await supabase
                 .from('chats')
-                .select('*')
+                .select('*, chat_tags(tag_id, tags(*))')
                 .eq('project_id', PROJECT_ID)
                 .order('last_message_at', { ascending: false });
             
             if (error) throw error;
-            return data;
+            
+            return (data || []).map(chat => ({
+                ...chat,
+                tags: chat.chat_tags ? chat.chat_tags.map((ct: any) => ct.tags).filter((t: any) => t !== null) : []
+            }));
         } catch (err) {
             console.error('[HistoryHandler] Error en listChats:', err);
             return [];
@@ -261,6 +296,119 @@ export class HistoryHandler {
         } catch (err) {
             console.error('[HistoryHandler] Error en getMessages:', err);
             return [];
+        }
+    }
+
+    // --- Tag Management ---
+
+    static async getTags() {
+        try {
+            const { data, error } = await supabase
+                .from('tags')
+                .select('*')
+                .eq('project_id', PROJECT_ID)
+                .order('name');
+            if (error) throw error;
+            return data;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getTags:', err);
+            return [];
+        }
+    }
+
+    static async createTag(name: string, color: string) {
+        try {
+            const { data, error } = await supabase
+                .from('tags')
+                .insert({ name, color, project_id: PROJECT_ID })
+                .select()
+                .single();
+            if (error) throw error;
+            return { success: true, tag: data };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    static async updateTag(id: string, name: string, color: string) {
+        try {
+            const { error } = await supabase
+                .from('tags')
+                .update({ name, color })
+                .eq('id', id)
+                .eq('project_id', PROJECT_ID);
+            if (error) throw error;
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    static async deleteTag(id: string) {
+        try {
+            const { error } = await supabase
+                .from('tags')
+                .delete()
+                .eq('id', id)
+                .eq('project_id', PROJECT_ID);
+            if (error) throw error;
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    static async addTagToChat(chatId: string, tagId: string) {
+        try {
+            const { error } = await supabase
+                .from('chat_tags')
+                .insert({ chat_id: chatId, tag_id: tagId, project_id: PROJECT_ID });
+            if (error) throw error;
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    static async removeTagFromChat(chatId: string, tagId: string) {
+        try {
+            const { error } = await supabase
+                .from('chat_tags')
+                .delete()
+                .eq('chat_id', chatId)
+                .eq('tag_id', tagId)
+                .eq('project_id', PROJECT_ID);
+            if (error) throw error;
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    static async getChatTags(chatId: string) {
+        try {
+            const { data, error } = await supabase
+                .from('chat_tags')
+                .select('tag_id, tags(*)')
+                .eq('chat_id', chatId)
+                .eq('project_id', PROJECT_ID);
+            if (error) throw error;
+            return (data || []).map(item => item.tags);
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getChatTags:', err);
+            return [];
+        }
+    }
+
+    static async updateLastHumanMessage(chatId: string) {
+        try {
+            await supabase
+                .from('chats')
+                .update({ last_human_message_at: new Date().toISOString() })
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID);
+        } catch (err) {
+            console.error('[HistoryHandler] Error en updateLastHumanMessage:', err);
         }
     }
 }

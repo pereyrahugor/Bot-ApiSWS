@@ -51,7 +51,7 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
             // Eliminar imagen anterior si existe para no acumular archivos
             const oldImage = state.get('lastImage');
             if (oldImage && typeof oldImage === 'string' && fs.existsSync(oldImage)) {
-                try { fs.unlinkSync(oldImage); } catch (e) {}
+                try { fs.unlinkSync(oldImage); } catch (e) { /* ignore */ }
             }
 
             await state.update({ lastImage: localPath });

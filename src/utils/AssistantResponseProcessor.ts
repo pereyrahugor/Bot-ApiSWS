@@ -733,7 +733,7 @@ export class AssistantResponseProcessor {
 
                     // Normalizar respuesta para el asistente: mapear clientesCercanos a data si existe
                     // para asegurar compatibilidad con tieneResultados y limitarResultados
-                    let data = apiResponse.data || {};
+                    const data = apiResponse.data || {};
                     if (data.clientesCercanos && !data.data) {
                         data.data = data.clientesCercanos;
                     }
@@ -817,7 +817,7 @@ export class AssistantResponseProcessor {
                     if (esRespuestaExitosa(respuestaApi) && datosCliente) {
                         const esBaja = datosCliente.estadoCliente?.trim().toLowerCase() === 'baja';
                         const esMultiple = countResultados > 1;
-                        let advertenciaMultiple = esMultiple ? "⚠️ ATENCIÓN: multiples resultados obtenidos, solicitar datos adicionales para obtener datos mas precisos o identificar un unico cliente\n\n" : "";
+                        const advertenciaMultiple = esMultiple ? "⚠️ ATENCIÓN: multiples resultados obtenidos, solicitar datos adicionales para obtener datos mas precisos o identificar un unico cliente\n\n" : "";
 
                         if (esBaja) {
                             resumen = `${advertenciaMultiple}⚠️ ATENCIÓN: El cliente se encuentra en estado de "BAJA" (Inactivo). No se permiten realizar nuevas pedidos ni registrar incidencias para clientes en este estado.\n\nDatos completos:\n${JSON.stringify(datosCliente, null, 2)}`;
@@ -1140,7 +1140,7 @@ export class AssistantResponseProcessor {
                     
                     const rawDatos = apiResponse.data || {};
                     const datos = formatAllSWSDates(rawDatos);
-                    let success = esRespuestaExitosa(datos);
+                    const success = esRespuestaExitosa(datos);
                     
                     if (success && filtroListaId != null && datos.matriz && Array.isArray(datos.matriz.articulos)) {
                         // Filtrar los artículos para que solo queden los que tengan el lista_id específico

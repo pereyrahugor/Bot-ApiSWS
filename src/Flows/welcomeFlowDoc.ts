@@ -101,13 +101,13 @@ export const welcomeFlowDoc = addKeyword<BaileysProvider, MemoryDB>(EVENTS.DOCUM
         } finally {
             // Limpieza de archivos temporales
             for (const imgPath of imagenesGeneradas) {
-                try { if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath); } catch (e) {}
+                try { if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath); } catch (e) { /* ignore */ }
             }
             if (outputDir && fs.existsSync(outputDir)) {
-                try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) {}
+                try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
             }
             if (localPath && fs.existsSync(localPath)) {
-                try { fs.unlinkSync(localPath); } catch (e) {}
+                try { fs.unlinkSync(localPath); } catch (e) { /* ignore */ }
             }
         }
     });

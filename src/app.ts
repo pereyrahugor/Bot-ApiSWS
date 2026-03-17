@@ -6,6 +6,7 @@ import path from 'path';
 import serve from 'serve-static';
 import { Server } from 'socket.io';
 import fs from 'fs';
+import multer from 'multer';
 import polka from 'polka';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
@@ -42,6 +43,9 @@ import { userQueues, userLocks, handleQueue, registerProcessCallback } from "./u
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Instancia global de WebChatManager para sesiones webchat
 const webChatManager = new WebChatManager();
+
+// Multer config para subida de archivos
+const upload = multer({ dest: 'uploads/' });
 
 /** Puerto en el que se ejecutará el servidor (Railway usa 8080 por defecto) */
 const PORT = process.env.PORT || 8080;
@@ -705,6 +709,33 @@ const main = async () => {
         }
     });
 
+    // --- Worker de Inactividad Humana ---
+    // Reactiva el bot si el humano no responde en 15 minutos
+    setInterval(async () => {
+        try {
+            const now = new Date();
+            const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+            
+            // Usamos query cruda a Supabase para mayor eficiencia
+            const { data: inactiveChats, error } = await (HistoryHandler as any).supabase
+                .from('chats')
+                .select('id')
+                .eq('project_id', process.env.RAILWAY_PROJECT_ID)
+                .eq('bot_enabled', false)
+                .or(`last_human_message_at.lte.${fifteenMinutesAgo.toISOString()},last_human_message_at.is.null`);
+
+            if (error) throw error;
+
+            for (const chat of inactiveChats) {
+                console.log(`[WORKER] Reactivando bot para ${chat.id} por inactividad humana`);
+                await HistoryHandler.toggleBot(chat.id, true);
+                historyEvents.emit('bot_toggled', { chatId: chat.id, enabled: true });
+            }
+        } catch (e) {
+            console.error('[WORKER] Error checking human inactivity:', e);
+        }
+    }, 60000); // Revisar cada minuto
+
     // APIs Privadas
     app.get('/api/backoffice/chats', backofficeAuth, async (req, res) => {
         const chats = await HistoryHandler.listChats();
@@ -732,10 +763,12 @@ const main = async () => {
         res.json(result);
     });
 
-    app.post('/api/backoffice/send-message', backofficeAuth, async (req, res) => {
+    app.post('/api/backoffice/send-message', backofficeAuth, upload.single('file'), async (req, res) => {
         try {
             const { chatId, message } = req.body;
-            if (!chatId || !message) return res.status(400).json({ success: false, error: 'chatId and message are required' });
+            const file = req.file;
+
+            if (!chatId) return res.status(400).json({ success: false, error: 'chatId is required' });
 
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
             
@@ -747,22 +780,69 @@ const main = async () => {
                 return res.status(503).json({ success: false, error: 'WhatsApp provider not ready' });
             }
 
-            // Enviar vía Baileys
-            const sent = await adapterProvider.sendMessage(jid, message, {});
+            let sent;
+            if (file) {
+                // Enviar archivo
+                sent = await adapterProvider.sendMessage(jid, message || '', {
+                    media: file.path
+                });
+                // Borrar archivo temporal
+                fs.unlinkSync(file.path);
+            } else {
+                // Enviar texto
+                sent = await adapterProvider.sendMessage(jid, message, {});
+            }
             
             if (!sent) {
                 console.warn(`[BACKOFFICE] Advertencia: sendMessage retornó vacío para ${jid}`);
             }
 
             // Guardar en historial como assistant
-            await HistoryHandler.saveMessage(chatId, 'assistant', message, 'text');
+            await HistoryHandler.saveMessage(chatId, 'assistant', message || (file ? '[Archivo multimedia]' : ''), file ? 'media' : 'text');
             
+            // Actualizar timestamp de última actividad humana
+            await HistoryHandler.updateLastHumanMessage(chatId);
+
             console.log(`✅ [BACKOFFICE] Mensaje enviado y guardado para ${jid}`);
             res.json({ success: true });
         } catch (e) {
-            console.error(`❌ [BACKOFFICE] Error enviando mensaje:`, e);
+            console.error('[BACKOFFICE] Error enviando mensaje:', e);
             res.status(500).json({ success: false, error: e.message });
         }
+    });
+
+    // --- Rutas de Etiquetas (Tags) ---
+    app.get('/api/backoffice/tags', backofficeAuth, async (req, res) => {
+        const tags = await HistoryHandler.getTags();
+        res.json(tags);
+    });
+
+    app.post('/api/backoffice/tags', backofficeAuth, async (req, res) => {
+        const { name, color } = req.body;
+        const result = await HistoryHandler.createTag(name, color);
+        res.json(result);
+    });
+
+    app.put('/api/backoffice/tags/:id', backofficeAuth, async (req, res) => {
+        const { name, color } = req.body;
+        const result = await HistoryHandler.updateTag(req.params.id, name, color);
+        res.json(result);
+    });
+
+    app.delete('/api/backoffice/tags/:id', backofficeAuth, async (req, res) => {
+        const result = await HistoryHandler.deleteTag(req.params.id);
+        res.json(result);
+    });
+
+    app.post('/api/backoffice/chats/:chatId/tags', backofficeAuth, async (req, res) => {
+        const { tagId } = req.body;
+        const result = await HistoryHandler.addTagToChat(req.params.chatId, tagId);
+        res.json(result);
+    });
+
+    app.delete('/api/backoffice/chats/:chatId/tags/:tagId', backofficeAuth, async (req, res) => {
+        const result = await HistoryHandler.removeTagFromChat(req.params.chatId, req.params.tagId);
+        res.json(result);
     });
 
     // API Endpoints
