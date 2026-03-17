@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import moment from "moment-timezone";
 import { JsonBlockFinder } from "../API_SWS/JsonBlockFinder";
 import util from "util";
 import { ClientesApi } from "../API_SWS/ClientesApi";
@@ -148,6 +149,150 @@ export async function waitForActiveRuns(threadId: string) {
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
 }
+
+/**
+ * Nueva versión de toAsk con soporte nativo para OpenAI Function Calling (Tools)
+ * Reemplaza la necesidad de parsear bloques JSON [API] manualmente.
+ */
+export async function askWithFunctions(assistantId: string, message: string, state: any) {
+    let threadId = state?.get('thread_id');
+
+    // 1. Obtener o crear Thread
+    if (!threadId) {
+        const thread = await openai.beta.threads.create();
+        threadId = thread.id;
+        await state.update({ thread_id: threadId });
+    }
+
+    // 2. Enviar mensaje del Usuario
+    await openai.beta.threads.messages.create(threadId, {
+        role: "user",
+        content: message,
+    });
+
+    // 3. Crear el Run
+    let run = await openai.beta.threads.runs.create(threadId, {
+        assistant_id: assistantId,
+    });
+
+    // 4. Polling del estado del Run
+    while (["queued", "in_progress", "cancelling"].includes(run.status)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        run = await openai.beta.threads.runs.retrieve(threadId, run.id);
+    }
+
+    // 5. Manejar "requires_action" (Ejecución de Funciones)
+    if (run.status === 'requires_action') {
+        const toolCalls = run.required_action?.submit_tool_outputs.tool_calls || [];
+        const toolOutputs = [];
+
+        for (const toolCall of toolCalls) {
+            const functionName = toolCall.function.name;
+            const args = JSON.parse(toolCall.function.arguments);
+            
+            console.log(`[askWithFunctions] Ejecutando tool: ${functionName}`, args);
+            let output = "";
+
+            try {
+                // =========================================================
+                // 🚨 AQUÍ MAPEAR Y EJECUTAR TUS FUNCIONES REALES DEL BACKEND
+                // =========================================================
+                
+                if (functionName === "obtenerDatosCliente") {
+                    const res = await ClientesApi.obtenerDatosCliente(args.cliente_id);
+                    output = JSON.stringify(res.data);
+                } else if (functionName === "buscarCliente") {
+                    const res = await ClientesApi.busquedaRapida(args);
+                    output = JSON.stringify(res.data);
+                } else if (functionName === "crearIncidencia") {
+                    // Forzar campos fijos como se hacía en el procesador original
+                    const payload = { 
+                        ...args, 
+                        centroDistribucion_id: 1,
+                        usuarioResponsable_id: getUsuarioId() || null,
+                        fechaCierreEstimado: getFechaCierreEstimado(),
+                        estadoIncidente_ids: 1
+                    };
+                    const res = await IncidentesApi.crearTicket(payload);
+                    output = JSON.stringify(res.data);
+                } else if (functionName === "buscarIncidencia" || functionName === "BUSCAR_INCIDENCIA") {
+                    const today = moment().tz("America/Argentina/Buenos_Aires");
+                    const fechaHasta = today.format("DD/MM/YYYY");
+                    const fechaDesde = today.clone().subtract(7, 'days').format("DD/MM/YYYY");
+                    
+                    const payload = {
+                        cliente_id: args.cliente_id || args.cliente,
+                        tipoIncidente_id: args.tipoIncidente_id || args.tipo,
+                        ordenarDescendente: true,
+                        fechaDesde,
+                        fechaHasta
+                    };
+                    const res = await IncidentesApi.obtenerIncidentesCliente(payload);
+                    output = JSON.stringify(res.data);
+                } else if (functionName === "obtenerSaldoCuenta" || functionName === "SALDO_CUENTA") {
+                    const cId = args.cliente_id || args.cliente || args.clienteId;
+                    const res = await MovimientosApi.obtenerSaldosDeCliente(cId);
+                    const datos = res.data || {};
+                    if (datos.saldos) {
+                        const consumo = Number(datos.saldos.saldoCuentaConsumo || 0);
+                        const facturacion = Number(datos.saldos.saldoCuentaFacturacion || 0);
+                        const saldoReal = consumo + facturacion;
+                        output = `Saldo total: ${saldoReal}`;
+                    } else {
+                        output = "No se pudieron obtener los saldos.";
+                    }
+                } else if (functionName === "crearCliente" || functionName === "REGISTRAR_CLIENTE") {
+                    const { nombre, apellido, ...resto } = args;
+                    const nombreCompleto = `${nombre || ''} ${apellido || ''}`.trim().toUpperCase();
+                    const payload = {
+                        cliente: {
+                            ...resto,
+                            nombre: nombreCompleto
+                        },
+                        reparto_id: args.reparto_id || 1
+                    };
+                    const res = await ClientesApi.crearNuevoCliente(payload);
+                    output = JSON.stringify(res.data);
+                } else {
+                    output = JSON.stringify({ error: "Función no implementada en el bot" });
+                }
+
+            } catch (error: any) {
+                console.error(`Error ejecutando ${functionName}:`, error);
+                output = JSON.stringify({ error: error.message });
+            }
+
+            toolOutputs.push({
+                tool_call_id: toolCall.id,
+                output: output,
+            });
+        }
+
+        // Enviar resultados de vuelta a OpenAI
+        run = await openai.beta.threads.runs.submitToolOutputs(threadId, run.id, {
+            tool_outputs: toolOutputs,
+        });
+
+        // Esperar a que el asistente procese los resultados
+        while (["queued", "in_progress", "cancelling"].includes(run.status)) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            run = await openai.beta.threads.runs.retrieve(threadId, run.id);
+        }
+    }
+
+    // 6. Obtener y devolver el texto final del asistente
+    const messages = await openai.beta.threads.messages.list(threadId);
+    const lastMessage = messages.data
+        .filter((msg) => msg.run_id === run.id && msg.role === "assistant")
+        .pop();
+
+    if (lastMessage && lastMessage.content[0].type === 'text') {
+        return lastMessage.content[0].text.value;
+    }
+
+    return "Lo siento, hubo un error procesando la respuesta.";
+}
+
 
 
 /**
@@ -702,11 +847,11 @@ export class AssistantResponseProcessor {
                     const clienteRaw = (jsonData.payload && jsonData.payload.cliente) ? jsonData.payload.cliente : {};
                     let nombreCompleto = '';
                     if (clienteRaw.nombre && clienteRaw.apellido) {
-                        nombreCompleto = `${clienteRaw.nombre} ${clienteRaw.apellido}`.trim();
+                        nombreCompleto = `${clienteRaw.nombre} ${clienteRaw.apellido}`.trim().toUpperCase();
                     } else if (clienteRaw.nombre) {
-                        nombreCompleto = String(clienteRaw.nombre).trim();
+                        nombreCompleto = String(clienteRaw.nombre).trim().toUpperCase();
                     } else if (clienteRaw.apellido) {
-                        nombreCompleto = String(clienteRaw.apellido).trim();
+                        nombreCompleto = String(clienteRaw.apellido).trim().toUpperCase();
                     }
                     
                     // --- NORMALIZACIÓN DE DIRECCIÓN ---
@@ -799,7 +944,19 @@ export class AssistantResponseProcessor {
 
                 // BUSCAR_INCIDENCIA
                 if (tipo === "BUSCAR_INCIDENCIA") {
-                    const apiResponse = await IncidentesApi.obtenerIncidentesCliente(jsonData);
+                    const today = moment().tz("America/Argentina/Buenos_Aires");
+                    const fechaHasta = today.format("DD/MM/YYYY");
+                    const fechaDesde = today.clone().subtract(7, 'days').format("DD/MM/YYYY");
+
+                    const payload = {
+                        cliente_id: jsonData.cliente_id ?? jsonData.cliente ?? jsonData.ClienteId,
+                        tipoIncidente_id: jsonData.tipoIncidente_id ?? jsonData.tipo ?? jsonData.TipoIncidenteId,
+                        ordenarDescendente: true,
+                        fechaDesde,
+                        fechaHasta
+                    };
+
+                    const apiResponse = await IncidentesApi.obtenerIncidentesCliente(payload);
                     logApiResponse("BUSCAR_INCIDENCIA", apiResponse);
                     const datos = apiResponse.data || {};
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Incidentes encontrados: ${JSON.stringify(datos, null, 2)}` : "No se encontraron incidentes para el cliente.";
@@ -1081,7 +1238,9 @@ export class AssistantResponseProcessor {
                         console.log(`[API Logic] Saldo Real calculado: ${datos.saldos.saldoReal}`);
                     }
 
-                    const resumen = esRespuestaExitosa(datos, apiResponse) ? `Saldo de cuenta: ${JSON.stringify(datos)}` : "No se pudo obtener el saldo de cuenta.";
+                    const resumen = esRespuestaExitosa(datos, apiResponse) 
+                        ? (datos.saldos ? `Saldo total: ${datos.saldos.saldoReal}` : `Saldo de cuenta: ${JSON.stringify(datos)}`) 
+                        : "No se pudo obtener el saldo de cuenta.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
                     return;

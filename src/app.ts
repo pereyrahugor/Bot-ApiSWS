@@ -17,7 +17,7 @@ import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@buil
 import { MemoryDB } from "@builderbot/bot";
 import { BaileysProvider } from "builderbot-provider-sherpa";
 import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb, isSessionInDb } from "./utils/sessionSync";
-import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
+import { httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
@@ -26,7 +26,7 @@ import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
-import { AssistantResponseProcessor, waitForActiveRuns, cancelRun } from "./utils/AssistantResponseProcessor";
+import { AssistantResponseProcessor, waitForActiveRuns, cancelRun, askWithFunctions } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 import { ErrorReporter } from "./utils/errorReporter";
 import { HistoryHandler, historyEvents } from "./utils/historyHandler";
@@ -38,28 +38,16 @@ import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
 import { RailwayApi } from "./Api-RailWay/Railway";
 import { userQueues, userLocks, handleQueue, registerProcessCallback } from "./utils/queueManager";
 
-
-//import { imgResponseFlow } from "./Flows/imgResponse";
-//import { listImg } from "./addModule/listImg";
-//import { testAuth } from './utils/test-google-auth.js';
-
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Instancia global de WebChatManager para sesiones webchat
 const webChatManager = new WebChatManager();
-// Eliminado: processUserMessageWeb. Usar lógica principal para ambos canales.
 
 /** Puerto en el que se ejecutará el servidor (Railway usa 8080 por defecto) */
 const PORT = process.env.PORT || 8080;
 /** ID del asistente de OpenAI */
 export const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? "";
-
-
-
-
-
-
 
 // Listener para generar el archivo QR manualmente cuando se solicite
 export let adapterProvider;
@@ -103,13 +91,13 @@ async function renewThreadAndRetry(assistantId: string, message: string, state: 
             await state.update({ thread_id: newThread.id });
         }
         
-        return await toAsk(assistantId, message, state);
+        // Aquí también usamos askWithFunctions para ser consistentes (Recomendación 2)
+        return await askWithFunctions(assistantId, message, state);
     } catch (error) {
         console.error('[Reconexión] Error crítico en renewThreadAndRetry:', error);
         throw error;
     }
 }
-
 // Wrapper seguro para toAsk que SIEMPRE verifica runs activos e inyecta contexto (Fecha/Hora/Contacto)
 export const safeToAsk = async (
     assistantId: string, 
@@ -129,6 +117,12 @@ export const safeToAsk = async (
     if (effectiveUserId) {
         contextHeader += `\n- Contacto: ${effectiveUserId}`;
     }
+
+    // Novedad: Inyectamos el texto de refuerzo si existe en el .env (Recomendación 5)
+    if (process.env.EXTRA_SYSTEM_PROMPT) {
+        contextHeader += `\n- Instrucción de refuerzo: ${process.env.EXTRA_SYSTEM_PROMPT}`;
+    }
+    
     contextHeader += `\n[/CONTEXTO_SISTEMA]`;
 
     const finalMessage = `${contextHeader}\n\n${message}`;
@@ -140,7 +134,8 @@ export const safeToAsk = async (
             if (threadId) {
                 await waitForActiveRuns(threadId);
             }
-            return await toAsk(assistantId, finalMessage, state);
+            // En lugar de usar toAsk de BuilderBot, usamos nuestra versión con Function Calling (Recomendación 2)
+            return await askWithFunctions(assistantId, finalMessage, state);
         } catch (err: any) {
             lastError = err;
             const errorMessage = err?.message || String(err);
@@ -294,8 +289,8 @@ export const processUserMessage = async (
         const response = (await getAssistantResponse(ASSISTANT_ID, ctx.body, state, "Por favor, reenvia el msj anterior ya que no llego al usuario.", ctx.from, ctx.thread_id)) as string;
         console.log('🔍 DEBUG RAW ASSISTANT MSG (WhatsApp):', JSON.stringify(response));
 
-        // Delegar procesamiento al AssistantResponseProcessor (Maneja DB_QUERY y envios)
-        await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+        // Delegar procesamiento al AssistantResponseProcessor (Maneja herramientas y envíos)
+        await AssistantResponseProcessor.procesarRespuestaAsistente(
             response,
             ctx,
             flowDynamic,
