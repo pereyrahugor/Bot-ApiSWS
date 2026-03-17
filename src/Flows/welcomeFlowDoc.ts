@@ -7,6 +7,7 @@ import { processImageWithVision } from "../utils/processImageWithVision";
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { HistoryHandler } from "../utils/historyHandler";
 
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
 
@@ -44,13 +45,13 @@ export const welcomeFlowDoc = addKeyword<BaileysProvider, MemoryDB>(EVENTS.DOCUM
                 return;
             }
 
-            // Asegurar que la carpeta temp exista
-            if (!fs.existsSync("./temp/")) {
-                fs.mkdirSync("./temp/", { recursive: true });
+            // Asegurar que la carpeta uploads exista
+            if (!fs.existsSync("./uploads/")) {
+                fs.mkdirSync("./uploads/", { recursive: true });
             }
-
-            // Guardar el PDF en temp
-            localPath = await provider.saveFile(ctx, { path: "./temp/" });
+            
+            // Guardar el PDF en uploads
+            localPath = await provider.saveFile(ctx, { path: "./uploads/" });
             if (!localPath) {
                 await flowDynamic("No se pudo guardar el documento recibido.");
                 return;
@@ -82,6 +83,10 @@ export const welcomeFlowDoc = addKeyword<BaileysProvider, MemoryDB>(EVENTS.DOCUM
                 imagenesGeneradas.push(imgPath);
             }
 
+            // Guardar en el historial para que sea visible en el backoffice
+            const fileName = path.basename(localPath);
+            await HistoryHandler.saveMessage(ctx.from, 'user', `/uploads/${fileName}`, 'document');
+
             // Integrar el contenido del PDF en el flujo principal del asistente
             ctx.body = `[Documento PDF recibido]:\n${descripcionConsolidada}`;
 
@@ -106,8 +111,6 @@ export const welcomeFlowDoc = addKeyword<BaileysProvider, MemoryDB>(EVENTS.DOCUM
             if (outputDir && fs.existsSync(outputDir)) {
                 try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
             }
-            if (localPath && fs.existsSync(localPath)) {
-                try { fs.unlinkSync(localPath); } catch (e) { /* ignore */ }
-            }
+            // NO borramos el localPath del PDF para que sea accesible desde el backoffice
         }
     });

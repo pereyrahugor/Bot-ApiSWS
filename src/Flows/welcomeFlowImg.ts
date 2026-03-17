@@ -5,6 +5,7 @@ import { userQueues, userLocks, handleQueue } from "../utils/queueManager";
 import { processImageWithVision } from "../utils/processImageWithVision";
 import fs from 'fs';
 import path from 'path';
+import { HistoryHandler } from "../utils/historyHandler";
 
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
 
@@ -41,8 +42,8 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
                 return;
             }
 
-            // Guardar imagen en temp
-            const localPath = await provider.saveFile(ctx, { path: "./temp/" });
+            // Guardar imagen en uploads para que sea persistente y accesible desde el backoffice
+            const localPath = await provider.saveFile(ctx, { path: "./uploads/" });
             if (!localPath) {
                 await flowDynamic("No se pudo guardar la imagen recibida.");
                 return;
@@ -57,6 +58,10 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
             await state.update({ lastImage: localPath });
             const buffer = fs.readFileSync(localPath);
             
+            // Guardar en el historial para que sea visible en el backoffice
+            const fileName = path.basename(localPath);
+            await HistoryHandler.saveMessage(ctx.from, 'user', `/uploads/${fileName}`, 'image');
+
             await flowDynamic("Analizando imagen...");
 
             // Usar la utilidad centralizada processImageWithVision

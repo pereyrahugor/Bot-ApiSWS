@@ -30,7 +30,7 @@ import { locationFlow } from "./Flows/locationFlow";
 import { AssistantResponseProcessor, waitForActiveRuns, cancelRun, askWithFunctions } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 import { ErrorReporter } from "./utils/errorReporter";
-import { HistoryHandler, historyEvents } from "./utils/historyHandler";
+import { HistoryHandler, historyEvents, supabase } from "./utils/historyHandler";
 import * as sessionSync from "./utils/sessionSync";
 // import { AssistantBridge } from './utils-web/AssistantBridge';
 import { WebChatManager } from './utils-web/WebChatManager';
@@ -45,7 +45,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webChatManager = new WebChatManager();
 
 // Multer config para subida de archivos
-const upload = multer({ dest: 'uploads/' });
+// Multer config para subida de archivos (manteniendo extensiones)
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = 'uploads/';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        const fileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+        cb(null, fileName);
+    }
+});
+const upload = multer({ storage });
 
 /** Puerto en el que se ejecutará el servidor (Railway usa 8080 por defecto) */
 const PORT = process.env.PORT || 8080;
@@ -642,6 +655,7 @@ const main = async () => {
     app.use("/js", serve(path.join(process.cwd(), "src", "js")));
     app.use("/style", serve(path.join(process.cwd(), "src", "style")));
     app.use("/assets", serve(path.join(process.cwd(), "src", "assets")));
+    app.use("/uploads", serve(path.join(process.cwd(), "uploads")));
 
     // Servir el código QR
     app.get("/qr.png", (req, res) => {
@@ -717,10 +731,10 @@ const main = async () => {
             const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
             
             // Usamos query cruda a Supabase para mayor eficiencia
-            const { data: inactiveChats, error } = await (HistoryHandler as any).supabase
+            const { data: inactiveChats, error } = await supabase
                 .from('chats')
                 .select('id')
-                .eq('project_id', process.env.RAILWAY_PROJECT_ID)
+                .eq('project_id', process.env.RAILWAY_PROJECT_ID || 'default_project')
                 .eq('bot_enabled', false)
                 .or(`last_human_message_at.lte.${fifteenMinutesAgo.toISOString()},last_human_message_at.is.null`);
 
@@ -751,9 +765,16 @@ const main = async () => {
         try {
             const jid = req.params.chatId.includes('@') ? req.params.chatId : `${req.params.chatId}@s.whatsapp.net`;
             const url = await adapterProvider.vendor.profilePictureUrl(jid, 'image');
-            res.json({ url });
+            if (url) {
+                res.writeHead(302, { 'Location': url });
+                res.end();
+            } else {
+                res.statusCode = 404;
+                res.end('Not found');
+            }
         } catch (e) {
-            res.json({ url: null });
+            res.statusCode = 404;
+            res.end('Not found');
         }
     });
 
@@ -781,13 +802,15 @@ const main = async () => {
             }
 
             let sent;
+            let fileUrl = '';
+            
             if (file) {
                 // Enviar archivo
                 sent = await adapterProvider.sendMessage(jid, message || '', {
                     media: file.path
                 });
-                // Borrar archivo temporal
-                fs.unlinkSync(file.path);
+                // NO borramos el archivo para que sea accesible vía URL en el backoffice
+                fileUrl = `/uploads/${file.filename}`;
             } else {
                 // Enviar texto
                 sent = await adapterProvider.sendMessage(jid, message, {});
@@ -798,13 +821,16 @@ const main = async () => {
             }
 
             // Guardar en historial como assistant
-            await HistoryHandler.saveMessage(chatId, 'assistant', message || (file ? '[Archivo multimedia]' : ''), file ? 'media' : 'text');
+            const finalContent = file ? fileUrl : (message || '');
+            const finalType = file ? 'media' : 'text';
+            
+            await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType as any);
             
             // Actualizar timestamp de última actividad humana
             await HistoryHandler.updateLastHumanMessage(chatId);
 
             console.log(`✅ [BACKOFFICE] Mensaje enviado y guardado para ${jid}`);
-            res.json({ success: true });
+            res.json({ success: true, fileUrl: file ? fileUrl : undefined });
         } catch (e) {
             console.error('[BACKOFFICE] Error enviando mensaje:', e);
             res.status(500).json({ success: false, error: e.message });

@@ -8,6 +8,8 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseKey = process.env.SUPABASE_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
+export { supabase };
+
 
 // Emitter para notificar cambios en tiempo real a otros módulos (como el de WebSockets)
 export const historyEvents = new EventEmitter();
