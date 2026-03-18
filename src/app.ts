@@ -686,15 +686,26 @@ const main = async () => {
     });
 
     // --- API Backoffice Middleware y Rutas ---
-    // Sección 8: Fix de autenticación - parsea correctamente token=VALUE, Bearer VALUE, y VALUE directo
+    // Sección 8: Fix de autenticación - Soporte Polka + Bearer/Token prefix
     const backofficeAuth = (req, res, next) => {
-        let token = req.headers['authorization'] || req.query.token || '';
+        // En Polka req.query puede ser undefined, parseamos manualmente si es necesario
+        if (!req.query && req.url && req.url.includes('?')) {
+            try {
+                const url = new URL(req.url, 'http://localhost');
+                const qry: any = {};
+                url.searchParams.forEach((v, k) => qry[k] = v);
+                req.query = qry;
+            } catch (e) { req.query = {}; }
+        }
+
+        let token = req.headers['authorization'] || (req.query && (req.query as any).token) || '';
         if (typeof token === 'string') {
             if (token.startsWith('token=')) token = token.slice(6);
             else if (token.startsWith('Bearer ')) token = token.slice(7);
         }
+        
         const expectedToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
-        if (token === expectedToken) {
+        if (token && token === expectedToken) {
             return next();
         }
         res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -739,30 +750,35 @@ const main = async () => {
         }
     });
 
-    // --- Worker de Inactividad Humana ---
+    // --- Worker de Inactividad Humana (Sección 6) ---
     // Reactiva el bot si el humano no responde en 15 minutos
     setInterval(async () => {
         try {
-            const now = new Date();
-            const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
-            
-            // Usamos query cruda a Supabase para mayor eficiencia
-            const { data: inactiveChats, error } = await supabase
+            const { data: chats } = await supabase
                 .from('chats')
-                .select('id')
+                .select('*')
                 .eq('project_id', process.env.RAILWAY_PROJECT_ID || 'default_project')
-                .eq('bot_enabled', false)
-                .or(`last_human_message_at.lte.${fifteenMinutesAgo.toISOString()},last_human_message_at.is.null`);
+                .eq('bot_enabled', false);
 
-            if (error) throw error;
-
-            for (const chat of inactiveChats) {
-                console.log(`[WORKER] Reactivando bot para ${chat.id} por inactividad humana`);
-                await HistoryHandler.toggleBot(chat.id, true);
-                historyEvents.emit('bot_toggled', { chatId: chat.id, enabled: true });
+            const now = new Date();
+            for (const chat of (chats || [])) {
+                if (chat.last_human_message_at) {
+                    const lastHuman = new Date(chat.last_human_message_at);
+                    const diffMin = (now.getTime() - lastHuman.getTime()) / 60000;
+                    
+                    if (diffMin >= 15) {
+                        console.log(`🕒 [Worker] Reactivando bot para ${chat.id} (${Math.round(diffMin)} min inactivo)`);
+                        await HistoryHandler.toggleBot(chat.id, true);
+                        historyEvents.emit('bot_toggled', { chatId: chat.id, enabled: true });
+                    }
+                } else {
+                    // Si no hay fecha (null), reactivamos por precaución
+                    await HistoryHandler.toggleBot(chat.id, true);
+                    historyEvents.emit('bot_toggled', { chatId: chat.id, enabled: true });
+                }
             }
         } catch (e) {
-            console.error('[WORKER] Error checking human inactivity:', e);
+            console.error('[Worker] Error checking human inactivity:', e);
         }
     }, 60000); // Revisar cada minuto
 
@@ -809,34 +825,29 @@ const main = async () => {
 
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
             
-            console.log(`[BACKOFFICE] Intentando enviar mensaje a ${jid}...`);
-
-            // Verificar si el proveedor está listo
+            // Sección 10: Robustez en Envío
             if (!adapterProvider || !adapterProvider.vendor) {
-                console.error('[BACKOFFICE] Error: Proveedor no inicializado');
-                return res.status(503).json({ success: false, error: 'WhatsApp provider not ready' });
+                console.error('[BACKOFFICE] Error: Proveedor no inicializado o desconectado');
+                return res.status(503).json({ success: false, error: 'WhatsApp provider not connected' });
             }
 
-            let sent;
-            let fileUrl = '';
-            
+            console.log(`[BACKOFFICE] Enviando mensaje a ${jid}...`);
+
             if (file) {
-                // Enviar archivo
-                sent = await adapterProvider.sendMessage(jid, message || '', {
-                    media: file.path
-                });
-                // NO borramos el archivo para que sea accesible vía URL en el backoffice
-                fileUrl = `/uploads/${file.filename}`;
+                await adapterProvider.sendMessage(jid, message || '', { media: file.path });
             } else {
-                // Enviar texto
-                sent = await adapterProvider.sendMessage(jid, message, {});
+                // Fallback de métodos según el provider (Sección 10)
+                if (typeof adapterProvider.sendMessage === 'function') {
+                    await adapterProvider.sendMessage(jid, message, {});
+                } else if (typeof (adapterProvider as any).sendText === 'function') {
+                    await (adapterProvider as any).sendText(jid, message);
+                } else {
+                    throw new Error('No se encontró método de envío en el provider');
+                }
             }
             
-            if (!sent) {
-                console.warn(`[BACKOFFICE] Advertencia: sendMessage retornó vacío para ${jid}`);
-            }
-
             // Guardar en historial como assistant
+            const fileUrl = file ? `/uploads/${file.filename}` : '';
             const finalContent = file ? fileUrl : (message || '');
             const finalType = file ? 'media' : 'text';
             
@@ -859,11 +870,10 @@ const main = async () => {
                 console.error('[CONTEXTO] Error inyectando mensaje operador al thread:', e);
             }
 
-            console.log(`✅ [BACKOFFICE] Mensaje enviado y guardado para ${jid}`);
             res.json({ success: true, fileUrl: file ? fileUrl : undefined });
-        } catch (e) {
-            console.error('[BACKOFFICE] Error enviando mensaje:', e);
-            res.status(500).json({ success: false, error: e.message });
+        } catch (err: any) {
+            console.error('[BACKOFFICE] Error crítico enviando mensaje:', err);
+            res.status(500).json({ success: false, error: err.message });
         }
     });
 

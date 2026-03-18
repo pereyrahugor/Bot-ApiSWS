@@ -672,32 +672,68 @@
 
         async function sendMessage() {
             const input = document.getElementById('message-input');
+            const sendBtn = document.getElementById('send-btn');
+            const attachBtn = document.getElementById('attach-btn');
             const content = input.value.trim();
+            
             if (!content && !selectedFile) return;
-            if (!activeChatId) return;
+            if (!activeChatId) {
+                alert('Por favor selecciona un chat primero.');
+                return;
+            }
 
-            const formData = new FormData();
-            formData.append('chatId', activeChatId);
-            if (content) formData.append('message', content);
-            if (selectedFile) formData.append('file', selectedFile);
+            // Estado de Carga (Sección 10)
+            const originalBtnHtml = sendBtn.innerHTML;
+            const originalPlaceholder = input.placeholder;
+            
+            try {
+                input.disabled = true;
+                sendBtn.disabled = true;
+                attachBtn.disabled = true;
+                sendBtn.innerHTML = '⌛'; // Indicador de carga simple (emoji reloj)
+                input.placeholder = "Enviando...";
 
-            const res = await fetch('/api/backoffice/send-message', {
-                method: 'POST',
-                headers: { 
-                    'Authorization': 'token=' + token
-                },
-                body: formData
-            });
+                const formData = new FormData();
+                formData.append('chatId', activeChatId);
+                if (content) formData.append('message', content);
+                if (selectedFile) {
+                    formData.append('file', selectedFile);
+                    console.log('Enviando archivo:', selectedFile.name);
+                }
 
-            if (res.ok) {
-                input.value = '';
-                input.placeholder = "Escribe un mensaje...";
-                selectedFile = null;
-                document.getElementById('file-input').value = '';
-                fetchMessages(activeChatId);
-            } else {
-                const errorData = await res.json();
-                alert('Error al enviar mensaje: ' + (errorData.error || 'Error desconocido'));
+                const res = await fetch('/api/backoffice/send-message', {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': 'token=' + token
+                    },
+                    body: formData
+                });
+
+                const result = await res.json();
+
+                if (res.ok && result.success) {
+                    input.value = '';
+                    input.placeholder = "Escribe un mensaje...";
+                    selectedFile = null;
+                    document.getElementById('file-input').value = '';
+                    fetchMessages(activeChatId);
+                } else {
+                    // Errores de servidor descriptivos (Sección 10)
+                    const errorMsg = result.error || 'Error desconocido del servidor';
+                    alert(`⚠️ No se pudo enviar el mensaje:\n${errorMsg}`);
+                }
+            } catch (err) {
+                // Errores de red (Sección 10)
+                console.error('Error de red:', err);
+                alert(`❌ Error de red: Asegúrate de que el servidor esté encendido y tengas conexión.`);
+            } finally {
+                // Restaurar UI
+                input.disabled = false;
+                sendBtn.disabled = false;
+                attachBtn.disabled = false;
+                sendBtn.innerHTML = originalBtnHtml;
+                input.placeholder = originalPlaceholder;
+                input.focus();
             }
         }
 
