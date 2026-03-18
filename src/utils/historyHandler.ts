@@ -413,6 +413,51 @@ export class HistoryHandler {
             console.error('[HistoryHandler] Error en updateLastHumanMessage:', err);
         }
     }
+
+    // --- Thread ID Persistence (Sección 9.1 del documento de mejoras) ---
+
+    static async saveThreadId(chatId: string, threadId: string) {
+        try {
+            // Leer metadata actual y mergear el thread_id
+            const { data } = await supabase
+                .from('chats')
+                .select('metadata')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+
+            const currentMetadata = data?.metadata || {};
+            const updatedMetadata = { ...currentMetadata, thread_id: threadId };
+
+            const { error } = await supabase
+                .from('chats')
+                .update({ metadata: updatedMetadata })
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID);
+
+            if (error) throw error;
+            console.log(`[HistoryHandler] thread_id guardado para ${chatId}: ${threadId}`);
+        } catch (err) {
+            console.error('[HistoryHandler] Error en saveThreadId:', err);
+        }
+    }
+
+    static async getThreadId(chatId: string): Promise<string | null> {
+        try {
+            const { data, error } = await supabase
+                .from('chats')
+                .select('metadata')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+
+            if (error) throw error;
+            return data?.metadata?.thread_id || null;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getThreadId:', err);
+            return null;
+        }
+    }
 }
 
 HistoryHandler.initDatabase();

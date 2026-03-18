@@ -269,10 +269,23 @@ export const processUserMessage = async (
             return state;
         }
 
-        // Si el bot está apagado para este usuario, ignorar
+        // Si el bot está apagado para este usuario, inyectar mensaje al thread SIN run y salir
         const isEnabled = await HistoryHandler.isBotEnabled(ctx.from);
         if (!isEnabled || !botEnabled) {
-            return;
+            // Sección 9.2: Inyectar mensaje del usuario al thread de OpenAI (sin crear run)
+            try {
+                const threadId = await HistoryHandler.getThreadId(ctx.from);
+                if (threadId) {
+                    await openai.beta.threads.messages.create(threadId, {
+                        role: 'user',
+                        content: body || '[Media]'
+                    });
+                    console.log(`[CONTEXTO] Mensaje usuario inyectado al thread ${threadId} (bot desactivado)`);
+                }
+            } catch (e) {
+                console.error('[CONTEXTO] Error inyectando mensaje usuario al thread:', e);
+            }
+            return state;
         }
 
         // Ignorar mensajes de listas de difusión, newsletters, canales o contactos @lid
@@ -318,9 +331,12 @@ export const processUserMessage = async (
             ASSISTANT_ID
         );
 
-        // Si es un contacto con nombre, intentamos guardar el nombre (si no lo tenemos)
-        // en algún lugar, o manejarlo como variable de sesión.
-        // Aquí podrías agregar lógica para actualizar nombre en sheet si el asistente lo extrajo.
+        // Sección 9.1: Persistir el thread_id actual en Supabase para contexto durante intervención humana
+        const currentThreadId = state && typeof state.get === 'function' ? state.get('thread_id') : null;
+        if (currentThreadId && ctx.from) {
+            await HistoryHandler.saveThreadId(ctx.from, currentThreadId);
+        }
+
         return state;
 
     } catch (error) {
@@ -670,18 +686,18 @@ const main = async () => {
     });
 
     // --- API Backoffice Middleware y Rutas ---
+    // Sección 8: Fix de autenticación - parsea correctamente token=VALUE, Bearer VALUE, y VALUE directo
     const backofficeAuth = (req, res, next) => {
-        const tokenHeader = req.headers['authorization'] || '';
-        const tokenQuery = req.query.token || '';
-        const serverToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
-        
-        // Soportar "token=VALOR" o simplemente "VALOR"
-        const cleanToken = (t: string) => t.replace('token=', '').trim();
-        
-        if (cleanToken(tokenHeader) === serverToken || cleanToken(tokenQuery as string) === serverToken) {
+        let token = req.headers['authorization'] || req.query.token || '';
+        if (typeof token === 'string') {
+            if (token.startsWith('token=')) token = token.slice(6);
+            else if (token.startsWith('Bearer ')) token = token.slice(7);
+        }
+        const expectedToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
+        if (token === expectedToken) {
             return next();
         }
-        res.status(401).json({ error: 'Unauthorized' });
+        res.status(401).json({ success: false, error: 'Unauthorized' });
     };
 
     // APIs Públicas de Acceso
@@ -828,6 +844,20 @@ const main = async () => {
             
             // Actualizar timestamp de última actividad humana
             await HistoryHandler.updateLastHumanMessage(chatId);
+
+            // Sección 9.3: Inyectar mensaje del operador al thread de OpenAI (sin crear run)
+            try {
+                const threadId = await HistoryHandler.getThreadId(chatId);
+                if (threadId && message) {
+                    await openai.beta.threads.messages.create(threadId, {
+                        role: 'assistant',
+                        content: `[Mensaje enviado por operador humano]: ${message}`
+                    });
+                    console.log(`[CONTEXTO] Mensaje operador inyectado al thread ${threadId}`);
+                }
+            } catch (e) {
+                console.error('[CONTEXTO] Error inyectando mensaje operador al thread:', e);
+            }
 
             console.log(`✅ [BACKOFFICE] Mensaje enviado y guardado para ${jid}`);
             res.json({ success: true, fileUrl: file ? fileUrl : undefined });
