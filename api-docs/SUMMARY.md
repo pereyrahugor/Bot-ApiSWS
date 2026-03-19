@@ -57,5 +57,8 @@
 * [Variables de Entorno](referencia/variables-entorno.md)
 * [Ejemplos Completos](referencia/ejemplos.md)
 
+## Backoffice
+* [Gestión de Chats y API Backoffice](backoffice.md)
+
 ## Instrucciones de Uso en Prompt
 * [Instrucciones de Uso en Prompt](Etiquetas%20Prompt/Biblioteca%20Api.md)

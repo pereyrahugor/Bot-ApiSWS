@@ -24,8 +24,11 @@
 - Buscador por número de teléfono o nombre en la lista de chats.
 - Filtro por etiquetas para segmentar chats rápidamente.
 
+## 6. Retorno Automático a Modo Bot
+- Implementación de un worker en el backend que revisa la inactividad humana.
+- Si pasan 15 minutos sin que un humano envíe mensajes en un chat con intervención activa, el bot se reactiva automáticamente.
+- El worker revisa cada minuto.
 - Enviar un mensaje desde el backoffice actualiza el timestamp de "última actividad humana" para reiniciar el contador de 15 minutos.
-- **Modularización**: El código del worker fue extraído de `app.ts` a su propio módulo responsable: `src/workers/humanInactivity.worker.ts`.
 
 - **Código del Worker (en `app.ts`):**
 ```typescript
@@ -214,10 +217,17 @@ const processSendMessage = async (req, res, chatId, message, file) => {
 - Se agregaron estilos CSS para que los archivos adjuntos se vean integrados en las burbujas de chat con un fondo distintivo.
 - Se agregaron protecciones contra contenido nulo para evitar que el bucle de renderizado se detenga si hay un mensaje mal formado.
 
-## 12. Priorización de Rutas y Master Interceptor (Refactorizado 🏗️)
-- **Evolución**: El concepto original del "Master Interceptor" ha evolucionado hacia una arquitectura de middlewares modulares.
-- **Smart Body Parser**: Se implementó un middleware global en `src/middleware/global.ts` que decide dinámicamente cómo parsear el cuerpo de la petición basándose en la ruta y el `Content-Type`.
-- **Aislamiento de Streams**: Las rutas críticas (como `/api/backoffice/send-message`) ahora se registran en Polka *antes* de cualquier middleware que consuma el stream de forma global (como `bodyParser.json()` tradicional), garantizando que Multer pueda capturar los bytes de los archivos sin interferencias.
+## 12. Priorización de Rutas y Master Interceptor (Fix Crítico ✅)
+- **Problema**: El error `Unexpected end of form` persistía incluso intentando registrar la ruta antes que otros middlewares. Plugins internos de BuilderBot (como `httpInject`) actúan como middlewares globales (`app.use`) y consumen el stream de bytes del archivo multimedia antes de que Polka llegue a la definición de la ruta.
+- **Solución Definitiva**: Implementar un **Master Interceptor Early** (el primer `app.use` de todos) que tome control total de la petición.
+- **Implementación**:
+    1. El interceptor detecta la petición a `/api/backoffice/send-message`.
+    2. Realiza la autenticación localmente (con `backofficeAuth`).
+    3. Detecta el `Content-Type`:
+        - Si es `multipart/form-data`: ejecuta `Multer` manualmente.
+        - Si es `application/json`: ejecuta `bodyParser.json()` regionalmente.
+    4. Procesa y envía el mensaje invocando a `processSendMessage`.
+    5. **CRÍTICO:** Finaliza la respuesta y **NO llama a next()**. Al no llamar a `next()`, el flujo del servidor se corta para esa petición, impidiendo que cualquier otro middleware o plugin global tenga contacto con el stream de datos ya consumido.
 
 - **Diagrama del Flujo:**
 ```
@@ -238,48 +248,9 @@ Este patrón garantiza compatibilidad total con BuilderBot sin interferir en sus
 - **Sincronización Silenciosa**: El intervalo de actualización de chats (cada 30s) ahora también refresca el estado del bot del chat que esté abierto en ese momento. Si el bot se reactiva automáticamente por inactividad, la interfaz reflejará el cambio sin intervención del usuario.
 - **Prevención de Duplicados**: Se optimizó el flag `isSending` para cubrir fallos de red y errores de validación, eliminando listeners duplicados en la tecla Enter.
 
-## 14. Arquitectura de Frontend: Separación de Concerns (Update ✅)
-- **Desacoplamiento Total**: Se eliminaron los estilos `<style>` y scripts `<script>` embebidos en los archivos HTML (`backoffice.html`, `login.html`, `dashboard.html`, `variables.html`).
-- **Nuevos Módulos**:
-    - `src/style/*.css` — Hojas de estilo específicas por vista.
-    - `src/js/*.js` — Lógica de cliente JavaScript separada.
-- **Modernización del DOM**:
-    - Se reemplazaron los atributos de evento en línea (`onclick`, `onchange`, etc.) por escuchas de eventos dinámicos (`addEventListener`) en los archivos JS.
-    - Uso de **Delegación de Eventos** en la lista de chats para mejorar el rendimiento y simplificar el código.
-- **Organización de Recursos**: Consolidación de rutas estáticas en el backend para servir estos recursos desde `/style` y `/js`.
-
-## 15. Seguridad y Limpieza UI ✅
-- **Autenticación en Login**: Refactorización de la página de login para usar archivos externos, mejorando la seguridad y ocultando la lógica de validación de tokens del DOM directo.
-- **Eliminación de Estilos Inline**: Se crearon clases utilitarias como `.hidden-input` y se movieron estilos de layout complejos a las hojas de estilo correspondientes, eliminando el uso de `style="..."` en el HTML.
-- **Persistencia de Sesión**: Validación mejorada en el cliente para redireccionar automáticamente al `/login` si el token de backoffice no está presente.
-
-## 16. Refactorización Modular del Backend (Arquitectura Limpia ✅)
-- **Extracción de app.ts**: El archivo monolítico de más de 600 líneas se redujo a un orquestador minimalista de < 100 líneas.
-- **Estructura de Directorios**:
-    - `src/middleware/`: Lógica de interceptación (Auth, Global Handlers).
-    - `src/routes/`: Definición de endpoints segmentada por contexto (Backoffice, Railway, Static, WebChat).
-    - `src/sockets/`: Gestión de Socket.IO con **Inyección de Dependencias**.
-    - `src/workers/`: Tareas en segundo plano (Inactividad Humana).
-    - `src/utils/`: Utilidades core (HistoryHandler, ErrorReporter).
-- **Inyección de Dependencias**: El gestor de sockets y las rutas ahora reciben las dependencias necesarias (como `historyEvents` o la instancia del bot) de forma explícita, facilitando el testing y la mantenibilidad.
-- **Manejo de Errores Centralizado**: Uso de `ErrorReporter` en todos los módulos refactorizados para una observabilidad consistente.
-
 ---
 
 ## Requisitos Técnicos Actualizados
-- **Archivos Estáticos**: Todos los assets de frontend ahora residen en `src/js` y `src/style`, servidos mediante `serve-static`.
 - **Backend Architecture**: Rutas prioritarias antes de middleware global de body-parsing.
 - **Multer Middleware**: Invocación manual dentro del handler de ruta para evitar conflictos con otros parsers.
 - **Polling + Sockets**: Combinación de WebSockets (actualización inmediata) y Polling (respaldo de estado consistente).
-- **Socket.IO Dependency Injection**: Mejora en la modularidad del gestor de sockets mediante inyección de dependencias para el manejo del historial (`historyEvents`).
-
-## 17. Refactorización de Flows (Importaciones ✅)
-- **Problema de Dependencia Circular**: Se resolvieron los errores de compilación (`TS2305: Module '../app' has no exported member 'safeToAsk'`) al extraer las utilidades de OpenAI.
-- **Acción**: Los archivos de flujos (`src/Flows/idleFlow.ts`, `src/Flows/reconectionFlow.ts`, etc.) ahora deben importar las utilidades de la siguiente manera:
-    - `import { safeToAsk } from "../utils/openaiHelper";`
-    - `import { errorReporter } from "../app";` (si se reportan errores al grupo).
-- **Consistencia de Tipos**: Se eliminaron las referencias a `any` en las importaciones críticas de `app.ts` dentro de los flows, favoreciendo rutas relativas o alias configurados (`~/`).
-
-## 18. Persistencia de Sesión (Base de Datos) ✅
-- **Carga Temprana**: Se aseguró que `await restoreSessionFromDb()` sea la primera acción del método `main()` en `app.ts`, garantizando que el bot inicie con la sesión recuperada de Supabase antes de instanciar el proveedor.
-- **Sincronización Continua**: El proceso `startSessionSync()` se ejecuta después de la inicialización del bot para mantener el token de Baileys siempre actualizado en la nube.

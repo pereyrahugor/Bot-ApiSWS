@@ -15,37 +15,36 @@ El archivo principal actualmente mezcla múltiples capas de la aplicación:
 
 ## 🗺️ Plan de Ataque (Ejecución por Fases)
 
-### Fase 1: Middlewares y Utilidades ✅
+### Fase 1: Middlewares y Utilidades
 **Objetivo:** Extraer la lógica de interceptación de peticiones antes de tocar las rutas.
-* [x] Crear el directorio `src/middleware/`.
-* [x] Extraer el middleware `backofficeAuth` a `src/middleware/auth.ts`.
-* [x] Extraer la capa de compatibilidad y cualquier otro middleware global a `src/middleware/global.ts`.
-* [x] **Nota para el Agente:** Prestar especial atención a cómo los middlewares leen o consumen el cuerpo de la petición (*request body/stream*), ya que esto es la causa probable del error de *form-data*.
+* [ ] Crear el directorio `src/middleware/`.
+* [ ] Extraer el middleware `backofficeAuth` a `src/middleware/auth.ts`.
+* [ ] Extraer la capa de compatibilidad y cualquier otro middleware global a `src/middleware/global.ts`.
+* [ ] **Nota para el Agente:** Prestar especial atención a cómo los middlewares leen o consumen el cuerpo de la petición (*request body/stream*), ya que esto es la causa probable del error de *form-data*.
 
-### Fase 2: Extracción de Rutas API ✅
+### Fase 2: Extracción de Rutas API
 **Objetivo:** Limpiar el archivo principal de endpoints HTTP.
-* [x] Crear el directorio `src/routes/`.
-* [x] Mover las rutas del Backoffice a `src/routes/backoffice.routes.ts`.
-* [x] Mover las rutas de Railway a `src/routes/railway.routes.ts`.
-* [x] Configurar un enrutador o función exportable en cada archivo para inyectarlos limpiamente en Polka dentro de `app.ts`.
+* [ ] Crear el directorio `src/routes/`.
+* [ ] Mover las rutas del Backoffice a `src/routes/backoffice.routes.ts`.
+* [ ] Mover las rutas de Railway a `src/routes/railway.routes.ts`.
+* [ ] Configurar un enrutador o función exportable en cada archivo para inyectarlos limpiamente en Polka dentro de `app.ts`.
 
-### Fase 3: Aislamiento de Socket.IO ✅
+### Fase 3: Aislamiento de Socket.IO
 **Objetivo:** Separar la comunicación en tiempo real (WebChat) del servidor HTTP estático.
-* [x] Crear el directorio `src/sockets/` o `src/services/`.
-* [x] Extraer toda la inicialización y manejo de eventos de Socket.IO a `src/sockets/index.ts`. (Implementado como `src/sockets/socket.manager.ts` con inyección de dependencias para `historyEvents`).
-* [x] La función exportada debe recibir la instancia del servidor HTTP (`http.Server`) generado por Polka para acoplarse.
+* [ ] Crear el directorio `src/sockets/` o `src/services/`.
+* [ ] Extraer toda la inicialización y manejo de eventos de Socket.IO a `src/sockets/index.ts`.
+* [ ] La función exportada debe recibir la instancia del servidor HTTP (`http.Server`) generado por Polka para acoplarse.
 
-### Fase 4: Limpieza y Orquestación de `app.ts` ✅
+### Fase 4: Limpieza y Orquestación de `app.ts`
 **Objetivo:** Reducir `app.ts` a un archivo de configuración e inyección de dependencias.
-* [x] Refactorizar `app.ts` para que importe las rutas, middlewares y sockets.
-* [x] El flujo en `app.ts` debe ser estrictamente secuencial:
+* [ ] Refactorizar `app.ts` para que importe las rutas, middlewares y sockets.
+* [ ] El flujo en `app.ts` debe ser estrictamente secuencial:
   1. Inicializar Bot.
   2. Inicializar Polka.
   3. Aplicar Middlewares globales.
   4. Registrar Rutas (inyectando dependencias del bot si es necesario).
   5. Levantar servidor HTTP.
   6. Inicializar Socket.IO sobre el servidor HTTP.
-* [x] **Importante**: Se refactorizaron las importaciones en `src/Flows/` para evitar dependencias circulares con `app.ts`, moviendo utilidades de AI a `src/utils/openaiHelper.ts`.
 
 ## ⚠️ Reglas Estrictas para el Agente
 1. **Paso a paso:** Ejecutar una fase a la vez y confirmar que el proyecto sigue compilando en TypeScript antes de avanzar a la siguiente.

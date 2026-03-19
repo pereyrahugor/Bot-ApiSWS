@@ -8,6 +8,17 @@ let botTags = [];
 let selectedFile = null;
 let isSending = false;
 
+// Paginación
+let chatOffset = 0;
+const CHAT_LIMIT = 20;
+let loadingChats = false;
+let allChatsLoaded = false;
+
+let messageOffset = 0;
+const MSG_LIMIT = 50;
+let loadingMessages = false;
+let allMessagesLoaded = false;
+
 // Inicializar Socket.IO para tiempo real
 const socket = io();
 
@@ -18,30 +29,56 @@ socket.on('connect', () => {
 socket.on('new_message', (payload) => {
     console.log('📡 Nuevo mensaje recibido:', payload);
     if (activeChatId === payload.chatId) {
-        fetchMessages(activeChatId);
+        // En lugar de recargar todo, podríamos simplemente insertar el mensaje si estamos al final
+        // Pero para simplificar y asegurar consistencia con paginación, recargamos la primera página o el estado actual
+        // Aquí optamos por un refresh "suave" si es el chat activo
+        fetchMessages(activeChatId, true);
     }
-    fetchChats();
+    // Para la lista de chats, si el chat no está en la vista actual, fetchChats(true) lo traerá al principio
+    fetchChats(true);
 });
 
 socket.on('bot_toggled', (payload) => {
     console.log('📡 Bot toggled:', payload);
     if (activeChatId === payload.chatId) {
         const toggle = document.getElementById('bot-toggle');
-        toggle.checked = payload.enabled;
+        if (toggle) toggle.checked = payload.enabled;
         updateBotStatusText(payload.enabled);
         updateInputState(payload.enabled);
     }
-    fetchChats();
+    fetchChats(true);
 });
 
-async function fetchChats() {
+async function fetchChats(refresh = false) {
+    if (loadingChats) return;
+    if (refresh) {
+        chatOffset = 0;
+        allChatsLoaded = false;
+    }
+    if (allChatsLoaded && !refresh) return;
+
+    loadingChats = true;
     try {
-        const res = await fetch(`/api/backoffice/chats?token=${token}`);
+        const res = await fetch(`/api/backoffice/chats?token=${token}&limit=${CHAT_LIMIT}&offset=${chatOffset}`);
         if (res.status === 401) logout();
-        chats = await res.json();
+        const newChats = await res.json();
+        
+        if (newChats.length < CHAT_LIMIT) {
+            allChatsLoaded = true;
+        }
+
+        if (refresh) {
+            chats = newChats;
+        } else {
+            // Evitar duplicados si llegaron por socket mientras cargábamos
+            const existingIds = chats.map(c => c.id);
+            const filteredNew = newChats.filter(nc => !existingIds.includes(nc.id));
+            chats = [...chats, ...filteredNew];
+        }
+
+        chatOffset = chats.length;
         handleSearch();
         
-        // Si hay un chat activo, actualizar su estado (por si el worker cambió bot_enabled)
         if (activeChatId) {
             const activeChat = chats.find(c => c.id === activeChatId);
             if (activeChat) {
@@ -51,7 +88,11 @@ async function fetchChats() {
                 if (toggle) toggle.checked = activeChat.bot_enabled;
             }
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        console.error(e); 
+    } finally {
+        loadingChats = false;
+    }
 }
 
 async function fetchBotTags() {
@@ -67,6 +108,8 @@ function handleSearch() {
     const query = document.getElementById('search-input').value.toLowerCase();
     const tagFilter = document.getElementById('filter-tag').value;
     
+    // NOTA: La búsqueda local solo funciona sobre lo ya cargado. 
+    // Si se requiere búsqueda global, habría que implementar un endpoint de búsqueda con paginación.
     const filtered = chats.filter(chat => {
         const matchesSearch = chat.id.toLowerCase().includes(query) || (chat.name && chat.name.toLowerCase().includes(query));
         const matchesTag = !tagFilter || (chat.tags && chat.tags.some(t => t.id === tagFilter));
@@ -86,6 +129,13 @@ function renderFilterDropdown() {
 
 function renderChatList(listToRender = chats) {
     const list = document.getElementById('chat-list');
+    
+    // Si no hay chats, mostrar mensaje
+    if (listToRender.length === 0) {
+        list.innerHTML = '<div style="padding:20px; text-align:center; opacity:0.5;">No se encontraron chats</div>';
+        return;
+    }
+
     list.innerHTML = listToRender.map(chat => {
         const initial = (chat.name || chat.id).charAt(0).toUpperCase();
         const avatarUrl = `/api/backoffice/profile-pic/${chat.id}?token=${token}`;
@@ -99,7 +149,7 @@ function renderChatList(listToRender = chats) {
             : `<span style="color: #f87171; font-size: 0.75rem;">👤 Humano</span>`;
 
         return `
-            <div class="chat-item ${activeChatId === chat.id ? 'active' : ''}" onclick="selectChat('${chat.id}')">
+            <div id="chat-item-${chat.id}" class="chat-item ${activeChatId === chat.id ? 'active' : ''}" onclick="selectChat('${chat.id}')">
                 <div class="chat-avatar">
                     <span style="position:relative; z-index:1;">${initial}</span>
                     <img src="${avatarUrl}" onerror="this.style.display='none'">
@@ -115,11 +165,23 @@ function renderChatList(listToRender = chats) {
             </div>
         `;
     }).join('');
+
+    // Agregar indicador de carga si hay más
+    if (!allChatsLoaded) {
+        const loader = document.createElement('div');
+        loader.id = 'chat-list-loader';
+        loader.style.padding = '10px';
+        loader.style.textAlign = 'center';
+        loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        list.appendChild(loader);
+    }
 }
 
 async function selectChat(id) {
+    if (activeChatId === id) return;
     activeChatId = id;
     const chat = chats.find(c => c.id === id);
+    if (!chat) return;
     
     document.getElementById('active-chat-phone').innerText = chat.id.split('@')[0];
     document.getElementById('active-chat-name').innerText = chat.name || 'Sin nombre';
@@ -144,8 +206,18 @@ async function selectChat(id) {
         renderTagManager();
     }
 
-    renderChatList();
-    fetchMessages(id);
+    // Actualizar visual de activo en la lista
+    const items = document.querySelectorAll('.chat-item');
+    items.forEach(it => it.classList.remove('active'));
+    const activeItem = document.getElementById(`chat-item-${id}`);
+    if (activeItem) activeItem.classList.add('active');
+
+    // Resetear mensajes
+    messageOffset = 0;
+    allMessagesLoaded = false;
+    document.getElementById('messages').innerHTML = '';
+    
+    fetchMessages(id, true);
 }
 
 function renderActiveChatTags() {
@@ -195,51 +267,97 @@ function updateInputState(botEnabled) {
     }
 }
 
-async function fetchMessages(chatId) {
-    const res = await fetch(`/api/backoffice/messages/${chatId}?token=${token}`);
-    const messages = await res.json();
+async function fetchMessages(chatId, refresh = false) {
+    if (loadingMessages) return;
+    if (refresh) {
+        messageOffset = 0;
+        allMessagesLoaded = false;
+    }
+    if (allMessagesLoaded && !refresh) return;
+
+    loadingMessages = true;
     const container = document.getElementById('messages');
     
-    let html = '';
-    let lastDate = null;
+    // Si es refresh, mostrar loader
+    if (refresh) {
+        container.innerHTML = '<div style="flex:1; display:flex; align-items:center; justify-content:center;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+    }
 
-    messages.forEach(m => {
-        const date = new Date(m.created_at);
-        const dateStr = date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+    try {
+        const res = await fetch(`/api/backoffice/messages/${chatId}?token=${token}&limit=${MSG_LIMIT}&offset=${messageOffset}`);
+        const messages = await res.json();
         
-        if (dateStr !== lastDate) {
-            html += `<div class="date-separator"><span>${dateStr}</span></div>`;
-            lastDate = dateStr;
+        if (messages.length < MSG_LIMIT) {
+            allMessagesLoaded = true;
         }
 
-        const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        // El backend devuelve los mensajes en orden cronológico (reverse del range)
+        // [Viejo, ..., Nuevo]
         
-        let contentHtml = m.content || '';
-        const type = m.type || 'text';
+        let html = '';
+        let lastDate = null;
         
-        const isImageUrl = type === 'image' || contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)/i));
-        const isVideoUrl = type === 'video' || contentHtml.match(/\.(mp4|webm|ogg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(mp4|webm|ogg)/i));
-        const isFileUrl = type === 'document' || (contentHtml.includes('/uploads/') && !isImageUrl && !isVideoUrl);
+        // Guardar el scrollHeight antes de insertar para mantener posición si es carga de históricos
+        const oldScrollHeight = container.scrollHeight;
 
-        if (isImageUrl && contentHtml) {
-            contentHtml = `<div class="msg-media"><img src="${contentHtml}" alt="imagen"></div>`;
-        } else if (isVideoUrl && contentHtml) {
-            contentHtml = `<div class="msg-media"><video src="${contentHtml}" controls></video></div>`;
-        } else if (isFileUrl && contentHtml) {
-            const fileName = contentHtml.split('/').pop();
-            contentHtml = `<div class="msg-file"><a href="${contentHtml}" target="_blank">📄 Documento adjunto (${fileName})</a></div>`;
+        // Renderizar mensajes
+        messages.forEach(m => {
+            const date = new Date(m.created_at);
+            const dateStr = date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+            
+            if (dateStr !== lastDate) {
+                html += `<div class="date-separator"><span>${dateStr}</span></div>`;
+                lastDate = dateStr;
+            }
+
+            const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            let contentHtml = m.content || '';
+            const type = m.type || 'text';
+            
+            const isImageUrl = type === 'image' || contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)/i));
+            const isVideoUrl = type === 'video' || contentHtml.match(/\.(mp4|webm|ogg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(mp4|webm|ogg)/i));
+            const isFileUrl = type === 'document' || (contentHtml.includes('/uploads/') && !isImageUrl && !isVideoUrl);
+
+            if (isImageUrl && contentHtml) {
+                contentHtml = `<div class="msg-media"><img src="${contentHtml}" alt="imagen" onclick="window.open(this.src)"></div>`;
+            } else if (isVideoUrl && contentHtml) {
+                contentHtml = `<div class="msg-media"><video src="${contentHtml}" controls></video></div>`;
+            } else if (isFileUrl && contentHtml) {
+                const fileName = contentHtml.split('/').pop();
+                contentHtml = `<div class="msg-file"><a href="${contentHtml}" target="_blank">📄 Documento adjunto (${fileName})</a></div>`;
+            }
+            
+            html += `
+                <div class="msg ${m.role}">
+                    <div class="msg-content">${contentHtml}</div>
+                    <span class="msg-time">${time}</span>
+                </div>
+            `;
+        });
+
+        if (refresh) {
+            container.innerHTML = html;
+            container.scrollTop = container.scrollHeight;
+        } else {
+            // Carga de antiguos (scroll up)
+            const firstChild = container.firstChild;
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            while (tempDiv.firstChild) {
+                container.insertBefore(tempDiv.firstChild, firstChild);
+            }
+            // Ajustar scroll para que el usuario no pierda donde estaba
+            container.scrollTop = container.scrollHeight - oldScrollHeight;
         }
-        
-        html += `
-            <div class="msg ${m.role}">
-                <div class="msg-content">${contentHtml}</div>
-                <span class="msg-time">${time}</span>
-            </div>
-        `;
-    });
 
-    container.innerHTML = html;
-    container.scrollTop = container.scrollHeight;
+        messageOffset += messages.length;
+
+    } catch (e) {
+        console.error('Error fetching messages:', e);
+    } finally {
+        loadingMessages = false;
+    }
 }
 
 async function toggleBot(enabled) {
@@ -463,6 +581,30 @@ function logout() {
     window.location.href = '/login';
 }
 
-setInterval(fetchChats, 30000);
+setInterval(() => fetchChats(true), 60000); // Refresh cada minuto para ver nuevos chats
 fetchChats();
 fetchBotTags();
+
+// --- Listeners de Scroll para Infinite Scroll ---
+
+document.getElementById('chat-list').addEventListener('scroll', function() {
+    const { scrollTop, scrollHeight, clientHeight } = this;
+    // Si llegamos cerca del fondo (20px de margen)
+    if (scrollTop + clientHeight >= scrollHeight - 20) {
+        if (!loadingChats && !allChatsLoaded) {
+            console.log('🔄 Cargando más chats...');
+            fetchChats();
+        }
+    }
+});
+
+document.getElementById('messages').addEventListener('scroll', function() {
+    const { scrollTop } = this;
+    // Para mensajes, cargamos históricos al subir (scrollTop cercano a 0)
+    if (scrollTop < 50) {
+        if (!loadingMessages && !allMessagesLoaded && activeChatId) {
+            console.log('🔄 Cargando mensajes históricos...');
+            fetchMessages(activeChatId);
+        }
+    }
+});
