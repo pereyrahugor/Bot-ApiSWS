@@ -76,4 +76,14 @@ export const registerStaticRoutes = (app: any, { __dirname }: { __dirname: strin
         }
     });
 
+    app.get("/groups-qr.png", (req: any, res: any) => {
+        const qrPath = path.join(process.cwd(), 'bot.groups.qr.png');
+        if (fs.existsSync(qrPath)) {
+            res.setHeader('Content-Type', 'image/png');
+            fs.createReadStream(qrPath).pipe(res);
+        } else {
+            res.status(404).send('QR not found');
+        }
+    });
+
 };

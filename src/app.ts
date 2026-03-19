@@ -30,7 +30,8 @@ import { startHumanInactivityWorker } from "./workers/humanInactivity.worker";
 import { AiManager } from "./utils/ai.manager";
 import { smartBodyParser, compatibilityLayer, rootRedirect } from "./middleware/global";
 import { backofficeAuth } from "./middleware/auth";
-import bodyParser from 'body-parser';
+import * as pkgBodyParser from 'body-parser';
+const bodyParser = (pkgBodyParser as any).default || pkgBodyParser;
 
 
 // --- Flows ---
@@ -237,16 +238,22 @@ const main = async () => {
                     console.log("[App] 🗑️ Carpeta bot_sessions eliminada.");
                 }
 
-                // 3. Borrar el archivo QR existente si lo hay
-                const qrPath = path.join(process.cwd(), 'bot.qr.png');
-                if (fs.existsSync(qrPath)) {
-                    fs.unlinkSync(qrPath);
-                }
+                // 3. Borrar el archivo QR existente
+                ['bot.qr.png', 'bot.groups.qr.png'].forEach(f => {
+                    const p = path.join(process.cwd(), f);
+                    if (fs.existsSync(p)) fs.unlinkSync(p);
+                });
 
                 res.json({ success: true, message: 'Sesión eliminada. El bot se reiniciará para generar un nuevo QR.' });
                 
-                // Opcional: Podrías forzar un restart del proceso, o dejar que el usuario lo vea
-                // En Railway, se suele reiniciar manualmente o si el proceso detecta el cambio.
+                // Solicitar reinicio automático en Railway
+                try {
+                    const { RailwayApi } = await import("./Api-RailWay/Railway");
+                    console.log("[App] 🔄 Solicitando reinicio de Railway tras borrado de sesión...");
+                    await RailwayApi.restartActiveDeployment();
+                } catch (re) {
+                    console.error("[App] ⚠️ Error al solicitar reinicio automático:", re);
+                }
             } catch (err: any) {
                 res.status(500).json({ success: false, error: err.message });
             }

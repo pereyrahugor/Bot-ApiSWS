@@ -71,9 +71,10 @@ async function fetchStatus() {
                 sessionInfo.style.display = 'none';
             }
             
-            // Intentar recargar el QR
+            // Intentar recargar el QR (Baileys usa /groups-qr.png, YCloud no usa QR)
             const qrImg = document.querySelector('.qr');
-            qrImg.src = '/qr.png?t=' + Date.now();
+            const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
+            qrImg.src = qrUrl + '?t=' + Date.now();
             qrImg.style.display = 'inline-block';
             qrImg.nextElementSibling.style.display = 'none';
         }

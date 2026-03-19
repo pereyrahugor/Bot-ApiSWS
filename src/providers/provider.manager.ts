@@ -25,8 +25,9 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 else if (payload.code) qrString = payload.code;
             }
             if (qrString && typeof qrString === 'string') {
-                console.log(`${prefix} Generando QR...`);
-                const qrPath = path.join(process.cwd(), 'bot.qr.png');
+                console.log(`${prefix} ⚡ QR detectado. Generando imagen...`);
+                const qrFilename = isGroupProvider ? 'bot.groups.qr.png' : 'bot.qr.png';
+                const qrPath = path.join(process.cwd(), qrFilename);
                 await QRCode.toFile(qrPath, qrString, {
 
                     color: { dark: '#000000', light: '#ffffff' },
@@ -162,17 +163,16 @@ export const hasActiveSession = async (provider: any) => {
         }
 
         const remoteActive = await isSessionInDb();
-        if (remoteActive) {
-            return {
-                active: false,
-                hasRemote: true,
-                providerType: 'baileys',
-                message: 'Sesión remota detectada. Descargando...'
-            };
-        }
+        const qrFilename = (isYCloud) ? 'bot.qr.png' : 'bot.groups.qr.png';
+        const hasQr = fs.existsSync(path.join(process.cwd(), qrFilename));
 
-
-        return { active: false, hasRemote: false };
+        return { 
+            active: false, 
+            hasRemote: remoteActive, 
+            qr: hasQr,
+            providerType: isYCloud ? 'ycloud' : 'baileys',
+            message: remoteActive ? 'Sesión remota detectada. Descargando...' : (hasQr ? 'Esperando vinculación' : 'Iniciando motor...')
+        };
     } catch (error) {
         return { active: false, error: error instanceof Error ? error.message : String(error) };
     }
