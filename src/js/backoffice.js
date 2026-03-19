@@ -503,7 +503,8 @@ async function createTag() {
 
     if (res.ok) {
         document.getElementById('new-tag-name').value = '';
-        fetchBotTags();
+        await fetchBotTags();
+        if (activeChatId) renderTagManager();
     }
 }
 
@@ -513,7 +514,10 @@ async function deleteTag(id) {
         method: 'DELETE',
         headers: { 'Authorization': 'token=' + token }
     });
-    if (res.ok) fetchBotTags();
+    if (res.ok) {
+        await fetchBotTags();
+        await fetchChats(true); // Refrescar chats para ver el cambio de la etiqueta eliminada
+    }
 }
 
 async function addTagToChat(tagId) {
@@ -526,7 +530,7 @@ async function addTagToChat(tagId) {
         body: JSON.stringify({ tagId })
     });
     if (res.ok) {
-        await fetchChats();
+        await fetchChats(true);
         renderActiveChatTags();
         renderTagManager();
     }
@@ -538,7 +542,7 @@ async function removeTagFromChat(tagId) {
         headers: { 'Authorization': 'token=' + token }
     });
     if (res.ok) {
-        await fetchChats();
+        await fetchChats(true);
         renderActiveChatTags();
         renderTagManager();
     }
