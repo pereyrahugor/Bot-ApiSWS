@@ -24,11 +24,8 @@
 - Buscador por número de teléfono o nombre en la lista de chats.
 - Filtro por etiquetas para segmentar chats rápidamente.
 
-## 6. Retorno Automático a Modo Bot
-- Implementación de un worker en el backend que revisa la inactividad humana.
-- Si pasan 15 minutos sin que un humano envíe mensajes en un chat con intervención activa, el bot se reactiva automáticamente.
-- El worker revisa cada minuto.
 - Enviar un mensaje desde el backoffice actualiza el timestamp de "última actividad humana" para reiniciar el contador de 15 minutos.
+- **Modularización**: El código del worker fue extraído de `app.ts` a su propio módulo responsable: `src/workers/humanInactivity.worker.ts`.
 
 - **Código del Worker (en `app.ts`):**
 ```typescript
@@ -156,46 +153,122 @@ Intervención Humana:
 Bot Activo → el asistente VE todo lo que se habló y continúa con contexto completo
 ```
 
-## 10. Robustez en Envío de Mensajes
-- Se mejoró el endpoint `/api/backoffice/send-message` para verificar que el proveedor tiene el `vendor` listo antes de intentar enviar.
-- Se implementó un fallback: si `sendMessage` no existe o falla para texto, intenta usar `sendText`.
-- Se agregaron logs detallados en el backend para trazar intentos de envío y errores.
-- Se agregó un estado de carga (loading) en el botón de envío del frontend para mejorar el feedback al usuario.
-- Se incluyó manejo de errores de red y de servidor con alertas descriptivas.
+## 10. Robustez en Envío de Mensajes y Multimedia (Update ✅)
+- **Separación de Content-Types**: El endpoint `/api/backoffice/send-message` maneja de forma separada solicitudes `application/json` (texto simple) y `multipart/form-data` (archivos). Esto evita el error de Multer `Unexpected end of form`.
+- **Feedback Instantáneo (Save-then-Send)**: Se invirtió el orden de ejecución en `processSendMessage`. El mensaje se guarda en el historial de Supabase **antes** de intentar enviarlo a WhatsApp.
+    - Esto permite que el operador vea su mensaje (incluyendo archivos adjuntos) de inmediato en el Backoffice.
+    - Si el envío a WhatsApp falla (por falta de conexión o QR no escaneado), el mensaje ya está persistido localmente y el sistema devuelve un éxito parcial con una advertencia (`warning`).
+- **Manejo de Multimedia Inteligente**: 
+    - `sendImage(jid, path, caption)` para imágenes.
+    - `sendVideo(jid, path, caption)` para videos.
+    - `sendFile(jid, path, fileName)` para documentos (PDF, etc.).
+- **Feedback al Usuario**: El Backoffice ahora detecta el campo `warning` en la respuesta del servidor y muestra un `alert()` informativo si el mensaje no pudo llegar a WhatsApp, pero confirmando que fue registrado en el historial.
 
 - **Código del envío mejorado (en `app.ts`):**
 ```typescript
-app.post('/api/backoffice/send-message', upload.single('file'), backofficeAuth, async (req, res) => {
-    try {
-        const { chatId, message } = req.body;
-        const file = req.file;
-
-        if (!adapterProvider || !adapterProvider.vendor) {
-            return res.status(503).json({ success: false, error: 'WhatsApp provider not connected' });
-        }
-
-        const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
-        
-        if (file) {
-            await adapterProvider.sendMessage(jid, message || '', { media: file.path });
-        } else {
-            if (typeof adapterProvider.sendMessage === 'function') {
-                await adapterProvider.sendMessage(jid, message, {});
-            } else if (typeof (adapterProvider as any).sendText === 'function') {
-                await (adapterProvider as any).sendText(jid, message);
-            }
-        }
-        // ... persistencia e inyección en thread ...
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+const processSendMessage = async (req, res, chatId, message, file) => {
+    // 1. Determinar tipo y contenido
+    let finalType: 'text' | 'image' | 'video' | 'document' = 'text';
+    let finalContent = message || '';
+    if (file) {
+        finalContent = `/uploads/${file.filename}`;
+        if (file.mimetype.startsWith('image/')) finalType = 'image';
+        else if (file.mimetype.startsWith('video/')) finalType = 'video';
+        else finalType = 'document';
     }
-});
+
+    // 2. GUARDAR PRIMERO (Feedback instantáneo)
+    await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType);
+    await HistoryHandler.updateLastHumanMessage(chatId);
+
+    // 3. ENVIAR A WHATSAPP
+    try {
+        const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+        if (file) {
+            const absolutePath = path.resolve(file.path);
+            if (finalType === 'image') {
+                await adapterProvider.sendImage(jid, absolutePath, message || '');
+            } else if (finalType === 'video') {
+                await adapterProvider.sendVideo(jid, absolutePath, message || '');
+            } else {
+                await adapterProvider.sendFile(jid, absolutePath, message || file.originalname);
+            }
+        } else {
+            await adapterProvider.sendMessage(jid, message, {});
+        }
+        res.json({ success: true });
+    } catch (waError) {
+        console.error('[BACKOFFICE] Error enviando a Whatsapp:', waError);
+        res.json({ 
+            success: true, 
+            warning: 'El mensaje se guardó en el historial pero falló el envío a WhatsApp (¿Bot conectado?)' 
+        });
+    }
+};
 ```
 
-## Requisitos Técnicos
-- Base de datos: Tablas `tags` y `chat_tags` en Supabase. Columna `last_human_message_at` en `chats`. Campo `thread_id` dentro de `chats.metadata` (JSONB).
-- Backend: `multer` para subida de archivos, nuevas rutas de API para tags, worker de inactividad, y middleware de auth con parseo manual de query para Polka y prefijo `token=`.
-- Frontend: JavaScript nativo con Socket.IO para actualizaciones en tiempo real, CSS Variables y Flexbox/Grid para el layout fluido.
-- OpenAI: Uso de `openai.beta.threads.messages.create()` sin `runs.create()` para inyectar mensajes al thread sin generar respuesta del asistente.
-- Proveedores: Compatibilidad verificada con `builderbot-provider-sherpa` y `BaileysProvider`.
+## 11. Visualización de Documentos y Multimedia (UI)
+- Se mejoró el renderizado de mensajes en el Backoffice para detectar archivos mediante la extensión y el campo `type` de la base de datos.
+- **Imágenes y Videos**: Se previsualizan directamente en las burbujas de chat.
+- **Documentos (PDF, etc.)**: Se muestran con un icono descriptivo (📄) y un enlace de descarga directo.
+- Se agregaron estilos CSS para que los archivos adjuntos se vean integrados en las burbujas de chat con un fondo distintivo.
+- Se agregaron protecciones contra contenido nulo para evitar que el bucle de renderizado se detenga si hay un mensaje mal formado.
+
+## 12. Priorización de Rutas y Master Interceptor (Refactorizado 🏗️)
+- **Evolución**: El concepto original del "Master Interceptor" ha evolucionado hacia una arquitectura de middlewares modulares.
+- **Smart Body Parser**: Se implementó un middleware global en `src/middleware/global.ts` que decide dinámicamente cómo parsear el cuerpo de la petición basándose en la ruta y el `Content-Type`.
+- **Aislamiento de Streams**: Las rutas críticas (como `/api/backoffice/send-message`) ahora se registran en Polka *antes* de cualquier middleware que consuma el stream de forma global (como `bodyParser.json()` tradicional), garantizando que Multer pueda capturar los bytes de los archivos sin interferencias.
+
+- **Diagrama del Flujo:**
+```
+HTTP POST (/api/backoffice/send-message)
+  ↓
+[app.ts] → [Master Interceptor]
+             |
+             ├── Auth Check (PASS)
+             ├── Multer Engine (Parse File Stream)
+             ├── processSendMessage()
+             └── res.end() (Request COMPLETE - no next())
+```
+Este patrón garantiza compatibilidad total con BuilderBot sin interferir en sus propios flujos internos. 🛡️
+
+
+## 13. Robustez de la Interfaz (UI Improvements ✅)
+- **Bloqueo de Input Estricto**: Se mejoró la lógica de `updateInputState` en el frontend para asegurar que el área de escritura se bloquee visualmente y funcionalmente si el bot está activo.
+- **Sincronización Silenciosa**: El intervalo de actualización de chats (cada 30s) ahora también refresca el estado del bot del chat que esté abierto en ese momento. Si el bot se reactiva automáticamente por inactividad, la interfaz reflejará el cambio sin intervención del usuario.
+- **Prevención de Duplicados**: Se optimizó el flag `isSending` para cubrir fallos de red y errores de validación, eliminando listeners duplicados en la tecla Enter.
+
+## 14. Arquitectura de Frontend: Separación de Concerns (Update ✅)
+- **Desacoplamiento Total**: Se eliminaron los estilos `<style>` y scripts `<script>` embebidos en los archivos HTML (`backoffice.html`, `login.html`, `dashboard.html`, `variables.html`).
+- **Nuevos Módulos**:
+    - `src/style/*.css` — Hojas de estilo específicas por vista.
+    - `src/js/*.js` — Lógica de cliente JavaScript separada.
+- **Modernización del DOM**:
+    - Se reemplazaron los atributos de evento en línea (`onclick`, `onchange`, etc.) por escuchas de eventos dinámicos (`addEventListener`) en los archivos JS.
+    - Uso de **Delegación de Eventos** en la lista de chats para mejorar el rendimiento y simplificar el código.
+- **Organización de Recursos**: Consolidación de rutas estáticas en el backend para servir estos recursos desde `/style` y `/js`.
+
+## 15. Seguridad y Limpieza UI ✅
+- **Autenticación en Login**: Refactorización de la página de login para usar archivos externos, mejorando la seguridad y ocultando la lógica de validación de tokens del DOM directo.
+- **Eliminación de Estilos Inline**: Se crearon clases utilitarias como `.hidden-input` y se movieron estilos de layout complejos a las hojas de estilo correspondientes, eliminando el uso de `style="..."` en el HTML.
+- **Persistencia de Sesión**: Validación mejorada en el cliente para redireccionar automáticamente al `/login` si el token de backoffice no está presente.
+
+## 16. Refactorización Modular del Backend (Arquitectura Limpia ✅)
+- **Extracción de app.ts**: El archivo monolítico de más de 600 líneas se redujo a un orquestador minimalista de < 100 líneas.
+- **Estructura de Directorios**:
+    - `src/middleware/`: Lógica de interceptación (Auth, Global Handlers).
+    - `src/routes/`: Definición de endpoints segmentada por contexto (Backoffice, Railway, Static, WebChat).
+    - `src/sockets/`: Gestión de Socket.IO con **Inyección de Dependencias**.
+    - `src/workers/`: Tareas en segundo plano (Inactividad Humana).
+    - `src/utils/`: Utilidades core (HistoryHandler, ErrorReporter).
+- **Inyección de Dependencias**: El gestor de sockets y las rutas ahora reciben las dependencias necesarias (como `historyEvents` o la instancia del bot) de forma explícita, facilitando el testing y la mantenibilidad.
+- **Manejo de Errores Centralizado**: Uso de `ErrorReporter` en todos los módulos refactorizados para una observabilidad consistente.
+
+---
+
+## Requisitos Técnicos Actualizados
+- **Archivos Estáticos**: Todos los assets de frontend ahora residen en `src/js` y `src/style`, servidos mediante `serve-static`.
+- **Backend Architecture**: Rutas prioritarias antes de middleware global de body-parsing.
+- **Multer Middleware**: Invocación manual dentro del handler de ruta para evitar conflictos con otros parsers.
+- **Polling + Sockets**: Combinación de WebSockets (actualización inmediata) y Polling (respaldo de estado consistente).
+- **Socket.IO Dependency Injection**: Mejora en la modularidad del gestor de sockets mediante inyección de dependencias para el manejo del historial (`historyEvents`).

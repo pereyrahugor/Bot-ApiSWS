@@ -5,363 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Backoffice - {{ASSISTANT_NAME}}</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style/backoffice.css">
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
-    <style>
-        :root {
-            --wa-bg-dark: #0b141a;
-            --wa-sidebar: #111b21;
-            --wa-panel-header: #202c33;
-            --wa-chat-bg: #0c141a;
-            --wa-search-bg: #202c33;
-            --wa-text: #e9edef;
-            --wa-text-secondary: #8696a0;
-            --wa-bubble-out: #005c4b;
-            --wa-bubble-in: #202c33;
-            --wa-accent: #00a884;
-            --wa-active: #2a3942;
-            --primary: #00a884;
-        }
-
-        body {
-            margin: 0; padding: 0;
-            font-family: 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-            background-color: var(--wa-bg-dark);
-            color: var(--wa-text);
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-        }
-        
-        /* Sidebar */
-        #sidebar {
-            width: 400px;
-            background: var(--wa-sidebar);
-            border-right: 1px solid rgba(134, 150, 160, 0.15);
-            display: flex;
-            flex-direction: column;
-            z-index: 10;
-        }
-        .sidebar-header {
-            padding: 10px 16px;
-            background: var(--wa-panel-header);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            min-height: 60px;
-        }
-        .search-container {
-            padding: 7px 12px;
-            background: var(--wa-sidebar);
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .search-wrapper {
-            position: relative;
-            background: var(--wa-search-bg);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            padding: 0 12px;
-        }
-        .search-input {
-            background: transparent;
-            border: none;
-            padding: 8px 10px;
-            color: var(--wa-text);
-            font-size: 0.9rem;
-            width: 100%;
-            outline: none;
-        }
-        .search-input::placeholder { color: var(--wa-text-secondary); }
-
-        #chat-list {
-            flex: 1;
-            overflow-y: auto;
-            background: var(--wa-sidebar);
-        }
-        /* CustomScrollbar */
-        #chat-list::-webkit-scrollbar { width: 6px; }
-        #chat-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
-
-        .chat-item {
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(134, 150, 160, 0.08);
-            cursor: pointer;
-            transition: background 0.1s;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            height: 72px;
-        }
-        .chat-item:hover { background: #202c33; }
-        .chat-item.active { background: var(--wa-active); }
-        
-        .chat-avatar { 
-            width: 49px; 
-            height: 49px; 
-            border-radius: 50%; 
-            background: #6a7175; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-weight: 500; 
-            font-size: 1.2rem; 
-            flex-shrink: 0; 
-            overflow: hidden;
-            position: relative; 
-            color: white;
-        }
-        .chat-avatar img {
-            width: 100%; height: 100%;
-            object-fit: cover;
-        }
-
-        .chat-info { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
-        .chat-phone { font-weight: 500; font-size: 1.05rem; color: var(--wa-text); }
-        .chat-name-small { 
-            font-size: 0.85rem; 
-            color: var(--wa-text-secondary); 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
-        }
-
-        .tag-pill {
-            display: inline-block;
-            padding: 1px 6px;
-            border-radius: 3px;
-            font-size: 0.65rem;
-            margin-right: 4px;
-            margin-top: 2px;
-            color: white;
-            font-weight: 500;
-            text-transform: uppercase;
-        }
-        
-        /* Main Chat Area */
-        #main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background-color: var(--wa-chat-bg);
-            background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
-            background-blend-mode: overlay;
-            position: relative;
-        }
-        #chat-header {
-            padding: 10px 16px;
-            background: var(--wa-panel-header);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            min-height: 60px;
-            z-index: 5;
-        }
-        .header-user { display: flex; align-items: center; gap: 15px; }
-        
-        /* Intervention Switch */
-        .switch-container { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--wa-text-secondary); }
-        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3b4a54; transition: .3s; border-radius: 20px; }
-        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: #aebac1; transition: .3s; border-radius: 50%; }
-        input:checked + .slider { background-color: var(--wa-accent); }
-        input:checked + .slider:before { transform: translateX(20px); background-color: white; }
-
-        #messages {
-            flex: 1;
-            padding: 20px 5% 20px 5%;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        #messages::-webkit-scrollbar { width: 6px; }
-        #messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
-
-        .date-separator {
-            text-align: center;
-            margin: 12px 0;
-            display: flex;
-            justify-content: center;
-        }
-        .date-separator span {
-            background: #182229;
-            padding: 6px 12px;
-            border-radius: 7px;
-            font-size: 0.8rem;
-            color: var(--wa-text-secondary);
-            box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
-            text-transform: uppercase;
-        }
-
-        .msg { 
-            max-width: 65%; 
-            padding: 6px 7px 8px 9px; 
-            border-radius: 7.5px; 
-            line-height: 1.4; 
-            font-size: 0.9rem; 
-            position: relative;
-            box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
-            margin-bottom: 2px;
-        }
-        .msg.user { 
-            align-self: flex-start; 
-            background: var(--wa-bubble-in); 
-            color: var(--wa-text); 
-            border-top-left-radius: 0;
-            margin-left: 8px;
-        }
-        .msg.user::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: -8px;
-            width: 8px;
-            height: 13px;
-            background: var(--wa-bubble-in);
-            clip-path: polygon(100% 0, 0 0, 100% 100%);
-        }
-        .msg.assistant { 
-            align-self: flex-end; 
-            background: var(--wa-bubble-out); 
-            color: var(--wa-text); 
-            border-top-right-radius: 0;
-            margin-right: 8px;
-        }
-        .msg.assistant::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            right: -8px;
-            width: 8px;
-            height: 13px;
-            background: var(--wa-bubble-out);
-            clip-path: polygon(0 0, 0 100%, 100% 0);
-        }
-        
-        .msg-media img, .msg-media video {
-            max-width: 100%;
-            border-radius: 6px;
-            display: block;
-            margin-top: 2px;
-        }
-
-        .msg-time {
-            font-size: 0.65rem;
-            color: var(--wa-text-secondary);
-            margin-left: 8px;
-            float: right;
-            margin-top: 4px;
-        }
-
-        #input-area {
-            padding: 10px 16px;
-            background: var(--wa-panel-header);
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            min-height: 62px;
-        }
-        .input-wrapper {
-            flex: 1;
-            background: #2a3942;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            padding: 0 12px;
-        }
-        #message-input {
-            width: 100%;
-            background: transparent;
-            border: none;
-            padding: 9px 0;
-            color: var(--wa-text);
-            outline: none;
-            font-size: 0.95rem;
-        }
-        #message-input:disabled { color: var(--wa-text-secondary); }
-
-        .btn-icon {
-            background: none;
-            border: none;
-            color: #aebac1;
-            font-size: 1.4rem;
-            cursor: pointer;
-            padding: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: color 0.2s;
-        }
-        .btn-icon:hover { color: #d1d7db; }
-        .btn-icon:disabled { opacity: 0.3; cursor: not-allowed; }
-
-        /* Tag Manager Panel */
-        #tag-manager {
-            width: 350px;
-            background: var(--wa-sidebar);
-            border-left: 1px solid rgba(134, 150, 160, 0.15);
-            padding: 0;
-            display: none;
-            flex-direction: column;
-            z-index: 10;
-        }
-        .tag-manager-header {
-            padding: 10px 16px;
-            background: var(--wa-panel-header);
-            min-height: 60px;
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-        .tag-manager-content {
-            padding: 20px;
-            flex: 1;
-            overflow-y: auto;
-        }
-        .tag-item-edit {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            padding: 10px 12px;
-            background: #202c33;
-            border-radius: 8px;
-        }
-        
-        /* Status colors */
-        .status-bot { color: var(--wa-accent); font-weight: bold; }
-        .status-human { color: #f87171; font-weight: bold; }
-
-        /* Scrollbars customization */
-        *::-webkit-scrollbar { width: 6px; height: 6px; }
-        *::-webkit-scrollbar-track { background: transparent; }
-        *::-webkit-scrollbar-thumb { background: #374045; }
-        *::-webkit-scrollbar-thumb:hover { background: #51585c; }
-    </style>
 </head>
 <body>
     <div id="sidebar">
         <div class="sidebar-header">
-            <div class="chat-avatar" style="width: 40px; height: 40px; background: #6a7175;">
+            <div class="chat-avatar" id="user-avatar-placeholder">
                 <span>👤</span>
             </div>
-            <div style="display:flex; gap:15px;">
-                <button onclick="toggleTagManager()" class="btn-icon" title="Gestionar Etiquetas">🏷️</button>
-                <div style="width: 20px;"></div>
-                <button onclick="logout()" class="btn-icon" style="font-size: 0.9rem; color: #f87171;">Salir</button>
+            <div class="sidebar-header-actions">
+                <button id="toggle-tag-manager-btn" class="btn-icon" title="Gestionar Etiquetas">🏷️</button>
+                <div class="header-spacer"></div>
+                <button id="logout-btn" class="btn-icon logout-btn">Salir</button>
             </div>
         </div>
         <div class="search-container">
             <div class="search-wrapper">
-                <span style="color:var(--wa-text-secondary); margin-right: 10px;">🔍</span>
-                <input type="text" id="search-input" class="search-input" placeholder="Buscar o empezar un nuevo chat" oninput="handleSearch()">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" class="search-input" placeholder="Buscar o empezar un nuevo chat">
             </div>
-            <div class="search-wrapper" style="margin-top: 4px;">
-                <span style="color:var(--wa-text-secondary); margin-right: 10px;">🏷️</span>
-                <select id="filter-tag" class="search-input" onchange="handleSearch()" style="cursor: pointer;">
+            <div class="search-wrapper filter-container">
+                <span class="filter-icon">🏷️</span>
+                <select id="filter-tag" class="search-input filter-select">
                     <option value="">Todas las etiquetas</option>
                 </select>
             </div>
@@ -378,14 +44,14 @@
                 <div class="chat-info">
                     <div id="active-chat-phone" class="chat-phone">Selecciona un chat</div>
                     <div id="active-chat-name" class="chat-name-small">---</div>
-                    <div id="active-chat-tags" style="display:flex; flex-wrap:wrap; margin-top:2px;"></div>
+                    <div id="active-chat-tags" class="active-chat-tags"></div>
                 </div>
             </div>
             <div class="intervention-status">
                 <div class="switch-container">
                     <span id="bot-status-text">Bot Activo</span>
                     <label class="switch">
-                        <input type="checkbox" id="bot-toggle" disabled onchange="toggleBot(this.checked)">
+                        <input type="checkbox" id="bot-toggle" disabled>
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -397,30 +63,30 @@
         </div>
 
         <div id="input-area">
-            <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(this)">
-            <button class="btn-icon" id="attach-btn" onclick="document.getElementById('file-input').click()" disabled>📎</button>
+            <input type="file" id="file-input" class="hidden-input">
+            <button class="btn-icon" id="attach-btn" disabled>📎</button>
             <div class="input-wrapper">
-                <input type="text" id="message-input" placeholder="Escribe un mensaje aquí" disabled onkeypress="if(event.key === 'Enter') sendMessage()">
+                <input type="text" id="message-input" placeholder="Escribe un mensaje aquí" disabled>
             </div>
-            <button class="btn-icon" id="send-btn" onclick="sendMessage()" disabled style="color: var(--wa-accent);">
-                <span style="transform: rotate(45deg); display: inline-block; margin-bottom: 2px;">➤</span>
+            <button class="btn-icon send-btn-active" id="send-btn" disabled>
+                <span class="send-icon">➤</span>
             </button>
         </div>
     </div>
 
     <div id="tag-manager">
         <div class="tag-manager-header">
-            <button onclick="toggleTagManager()" class="btn-icon">✕</button>
-            <h3 style="margin:0; font-size: 1.1rem; font-weight: 500;">Etiquetas</h3>
+            <button id="close-tag-manager-btn" class="btn-icon">✕</button>
+            <h3 class="tag-manager-title">Etiquetas</h3>
         </div>
         
         <div class="tag-manager-content">
-            <div style="margin-bottom:2rem; background: #202c33; padding: 15px; border-radius: 10px;">
-                <h4 style="margin: 0 0 10px 0; font-weight: 500; font-size: 0.9rem; color: var(--wa-accent);">Nueva Etiqueta</h4>
-                <input type="text" id="new-tag-name" class="search-input" placeholder="Nombre" style="background: #2a3942; border-radius: 6px; margin-bottom: 8px; border: 1px solid #3b4a54;">
-                <div style="display:flex; gap: 10px; align-items: center;">
-                    <input type="color" id="new-tag-color" style="width:40px; height:30px; border:none; background:none; cursor:pointer;" value="#00a884">
-                    <button onclick="createTag()" class="btn-icon" style="background: var(--wa-accent); color: white; border-radius: 6px; padding: 4px 15px; font-size: 0.9rem; flex: 1;">Crear</button>
+            <div class="tag-creation-box">
+                <h4 class="tag-section-title">Nueva Etiqueta</h4>
+                <input type="text" id="new-tag-name" class="search-input new-tag-input" placeholder="Nombre">
+                <div class="new-tag-controls">
+                    <input type="color" id="new-tag-color" class="new-tag-color" value="#00a884">
+                    <button id="create-tag-btn" class="btn-icon create-tag-btn">Crear</button>
                 </div>
             </div>
 
@@ -428,424 +94,15 @@
                 <!-- Lista de etiquetas para editar -->
             </div>
 
-            <div id="current-chat-tags-section" style="display:none; margin-top: 2rem;">
-                <h4 style="margin: 0 0 10px 0; font-weight: 500; font-size: 0.9rem; color: var(--wa-accent);">Asignar a este chat</h4>
-                <div id="available-tags-to-assign" style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+            <div id="current-chat-tags-section" class="assign-tags-section" style="display:none;">
+                <h4 class="tag-section-title">Asignar a este chat</h4>
+                <div id="available-tags-to-assign" class="assign-tags-list">
                     <!-- Etiquetas disponibles para asignar -->
                 </div>
             </div>
         </div>
     </div>
 
-    <script>
-        const token = localStorage.getItem('backoffice_token');
-        if (!token) window.location.href = '/login';
-
-        let activeChatId = null;
-        let chats = [];
-        let botTags = [];
-        let selectedFile = null;
-
-        // Inicializar Socket.IO para tiempo real
-        const socket = io();
-
-        socket.on('connect', () => {
-            console.log('✅ Conectado al servidor de tiempo real');
-        });
-
-        socket.on('new_message', (payload) => {
-            console.log('📡 Nuevo mensaje recibido:', payload);
-            if (activeChatId === payload.chatId) {
-                fetchMessages(activeChatId);
-            }
-            fetchChats();
-        });
-
-        socket.on('bot_toggled', (payload) => {
-            console.log('📡 Bot toggled:', payload);
-            if (activeChatId === payload.chatId) {
-                const toggle = document.getElementById('bot-toggle');
-                toggle.checked = payload.enabled;
-                updateBotStatusText(payload.enabled);
-                updateInputState(payload.enabled);
-            }
-            fetchChats();
-        });
-
-        async function fetchChats() {
-            try {
-                const res = await fetch(`/api/backoffice/chats?token=${token}`);
-                if (res.status === 401) logout();
-                chats = await res.json();
-                handleSearch();
-            } catch (e) { console.error(e); }
-        }
-
-        async function fetchBotTags() {
-            try {
-                const res = await fetch(`/api/backoffice/tags?token=${token}`);
-                botTags = await res.json();
-                renderTagManager();
-                renderFilterDropdown();
-            } catch (e) { console.error(e); }
-        }
-
-        function handleSearch() {
-            const query = document.getElementById('search-input').value.toLowerCase();
-            const tagFilter = document.getElementById('filter-tag').value;
-            
-            const filtered = chats.filter(chat => {
-                const matchesSearch = chat.id.toLowerCase().includes(query) || (chat.name && chat.name.toLowerCase().includes(query));
-                const matchesTag = !tagFilter || (chat.tags && chat.tags.some(t => t.id === tagFilter));
-                return matchesSearch && matchesTag;
-            });
-
-            renderChatList(filtered);
-        }
-
-        function renderFilterDropdown() {
-            const select = document.getElementById('filter-tag');
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">Todas las etiquetas</option>' + 
-                botTags.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-            select.value = currentValue;
-        }
-
-        function renderChatList(listToRender = chats) {
-            const list = document.getElementById('chat-list');
-            list.innerHTML = listToRender.map(chat => {
-                const initial = (chat.name || chat.id).charAt(0).toUpperCase();
-                const avatarUrl = `/api/backoffice/profile-pic/${chat.id}?token=${token}`;
-                
-                const tagsHtml = (chat.tags || []).map(t => 
-                    `<span class="tag-pill" style="background:${t.color || '#6366f1'}">${t.name}</span>`
-                ).join('');
-
-                const statusBadge = chat.bot_enabled 
-                    ? `<span style="color: var(--wa-accent); font-size: 0.75rem;">🤖 Bot</span>`
-                    : `<span style="color: #f87171; font-size: 0.75rem;">👤 Humano</span>`;
-
-                return `
-                    <div class="chat-item ${activeChatId === chat.id ? 'active' : ''}" onclick="selectChat('${chat.id}')">
-                        <div class="chat-avatar">
-                            <span style="position:relative; z-index:1;">${initial}</span>
-                            <img src="${avatarUrl}" onerror="this.style.display='none'">
-                        </div>
-                        <div class="chat-info">
-                            <div style="display:flex; justify-content:space-between; align-items: baseline;">
-                                <div class="chat-phone">${chat.id.split('@')[0]}</div>
-                                ${statusBadge}
-                            </div>
-                            <div class="chat-name-small">${chat.name || ''}</div>
-                            <div class="chat-tags-list" style="display:flex; flex-wrap:wrap; margin-top:2px;">${tagsHtml}</div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        async function selectChat(id) {
-            activeChatId = id;
-            const chat = chats.find(c => c.id === id);
-            
-            document.getElementById('active-chat-phone').innerText = chat.id.split('@')[0];
-            document.getElementById('active-chat-name').innerText = chat.name || 'Sin nombre';
-            
-            const headerAvatar = document.getElementById('active-chat-avatar');
-            const initial = (chat.name || chat.id).charAt(0).toUpperCase();
-            const avatarUrl = `/api/backoffice/profile-pic/${chat.id}?token=${token}`;
-            
-            headerAvatar.innerHTML = `
-                <span style="position:relative; z-index:1;">${initial}</span>
-                <img src="${avatarUrl}" style="width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0; z-index:2;" onerror="this.style.display='none'">
-            `;
-            
-            const botToggle = document.getElementById('bot-toggle');
-            botToggle.disabled = false;
-            botToggle.checked = chat.bot_enabled;
-            updateBotStatusText(chat.bot_enabled);
-            updateInputState(chat.bot_enabled);
-
-            renderActiveChatTags();
-            if (document.getElementById('tag-manager').style.display === 'block') {
-                renderTagManager();
-            }
-
-            renderChatList();
-            fetchMessages(id);
-        }
-
-        function renderActiveChatTags() {
-            const chat = chats.find(c => c.id === activeChatId);
-            const container = document.getElementById('active-chat-tags');
-            if (chat && chat.tags) {
-                container.innerHTML = chat.tags.map(t => 
-                    `<span class="tag-pill" style="background:${t.color}">${t.name}</span>`
-                ).join('');
-            } else {
-                container.innerHTML = '';
-            }
-        }
-
-        function updateBotStatusText(enabled) {
-            const txt = document.getElementById('bot-status-text');
-            txt.innerText = enabled ? 'Bot Activo' : 'Intervención Humana';
-            txt.className = enabled ? 'status-bot' : 'status-human';
-        }
-
-        function updateInputState(botEnabled) {
-            const input = document.getElementById('message-input');
-            const btn = document.getElementById('send-btn');
-            const attachBtn = document.getElementById('attach-btn');
-            input.disabled = botEnabled;
-            btn.disabled = botEnabled;
-            attachBtn.disabled = botEnabled;
-        }
-
-        async function fetchMessages(chatId) {
-            const res = await fetch(`/api/backoffice/messages/${chatId}?token=${token}`);
-            const messages = await res.json();
-            const container = document.getElementById('messages');
-            
-            let html = '';
-            let lastDate = null;
-
-            messages.forEach(m => {
-                const date = new Date(m.created_at);
-                const dateStr = date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
-                
-                if (dateStr !== lastDate) {
-                    html += `<div class="date-separator"><span>${dateStr}</span></div>`;
-                    lastDate = dateStr;
-                }
-
-                const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                
-                let contentHtml = m.content;
-                const isImageUrl = m.content.match(/\.(jpeg|jpg|gif|png|webp)$/i) || m.content.includes('/assets/');
-                const isVideoUrl = m.content.match(/\.(mp4|webm|ogg)$/i);
-
-                if (isImageUrl) {
-                    contentHtml = `<div class="msg-media"><img src="${m.content}" alt="imagen"></div>` + (m.content.startsWith('http') ? '' : m.content);
-                } else if (isVideoUrl) {
-                    contentHtml = `<div class="msg-media"><video src="${m.content}" controls></video></div>`;
-                }
-                
-                html += `
-                    <div class="msg ${m.role}">
-                        <div class="msg-content">${contentHtml}</div>
-                        <span class="msg-time">${time}</span>
-                    </div>
-                `;
-            });
-
-            container.innerHTML = html;
-            container.scrollTop = container.scrollHeight;
-        }
-
-        async function toggleBot(enabled) {
-            const res = await fetch('/api/backoffice/toggle-bot', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': 'token=' + token
-                },
-                body: JSON.stringify({ chatId: activeChatId, enabled })
-            });
-
-            if (res.ok) {
-                const chat = chats.find(c => c.id === activeChatId);
-                chat.bot_enabled = enabled;
-                updateBotStatusText(enabled);
-                updateInputState(enabled);
-                renderChatList();
-            }
-        }
-
-        function handleFileSelect(input) {
-            if (input.files && input.files[0]) {
-                selectedFile = input.files[0];
-                document.getElementById('message-input').placeholder = `Archivo: ${selectedFile.name} (Escribe un comentario opcional)`;
-                document.getElementById('message-input').focus();
-            }
-        }
-
-        async function sendMessage() {
-            const input = document.getElementById('message-input');
-            const sendBtn = document.getElementById('send-btn');
-            const attachBtn = document.getElementById('attach-btn');
-            const content = input.value.trim();
-            
-            if (!content && !selectedFile) return;
-            if (!activeChatId) {
-                alert('Por favor selecciona un chat primero.');
-                return;
-            }
-
-            // Estado de Carga (Sección 10)
-            const originalBtnHtml = sendBtn.innerHTML;
-            const originalPlaceholder = input.placeholder;
-            
-            try {
-                input.disabled = true;
-                sendBtn.disabled = true;
-                attachBtn.disabled = true;
-                sendBtn.innerHTML = '⌛'; // Indicador de carga simple (emoji reloj)
-                input.placeholder = "Enviando...";
-
-                const formData = new FormData();
-                formData.append('chatId', activeChatId);
-                if (content) formData.append('message', content);
-                if (selectedFile) {
-                    formData.append('file', selectedFile);
-                    console.log('Enviando archivo:', selectedFile.name);
-                }
-
-                const res = await fetch('/api/backoffice/send-message', {
-                    method: 'POST',
-                    headers: { 
-                        'Authorization': 'token=' + token
-                    },
-                    body: formData
-                });
-
-                const result = await res.json();
-
-                if (res.ok && result.success) {
-                    input.value = '';
-                    input.placeholder = "Escribe un mensaje...";
-                    selectedFile = null;
-                    document.getElementById('file-input').value = '';
-                    fetchMessages(activeChatId);
-                } else {
-                    // Errores de servidor descriptivos (Sección 10)
-                    const errorMsg = result.error || 'Error desconocido del servidor';
-                    alert(`⚠️ No se pudo enviar el mensaje:\n${errorMsg}`);
-                }
-            } catch (err) {
-                // Errores de red (Sección 10)
-                console.error('Error de red:', err);
-                alert(`❌ Error de red: Asegúrate de que el servidor esté encendido y tengas conexión.`);
-            } finally {
-                // Restaurar UI
-                input.disabled = false;
-                sendBtn.disabled = false;
-                attachBtn.disabled = false;
-                sendBtn.innerHTML = originalBtnHtml;
-                input.placeholder = originalPlaceholder;
-                input.focus();
-            }
-        }
-
-        // Tag Management Functions
-        function toggleTagManager() {
-            const panel = document.getElementById('tag-manager');
-            panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-            if (panel.style.display === 'block') {
-                renderTagManager();
-            }
-        }
-
-        async function createTag() {
-            const name = document.getElementById('new-tag-name').value;
-            const color = document.getElementById('new-tag-color').value;
-            if (!name) return;
-
-            const res = await fetch('/api/backoffice/tags', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': 'token=' + token
-                },
-                body: JSON.stringify({ name, color })
-            });
-
-            if (res.ok) {
-                document.getElementById('new-tag-name').value = '';
-                fetchBotTags();
-            }
-        }
-
-        async function deleteTag(id) {
-            if (!confirm('¿Eliminar esta etiqueta?')) return;
-            const res = await fetch(`/api/backoffice/tags/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': 'token=' + token }
-            });
-            if (res.ok) fetchBotTags();
-        }
-
-        async function addTagToChat(tagId) {
-            const res = await fetch(`/api/backoffice/chats/${activeChatId}/tags`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': 'token=' + token
-                },
-                body: JSON.stringify({ tagId })
-            });
-            if (res.ok) {
-                await fetchChats(); // Refresh tags in list
-                renderActiveChatTags();
-                renderTagManager();
-            }
-        }
-
-        async function removeTagFromChat(tagId) {
-            const res = await fetch(`/api/backoffice/chats/${activeChatId}/tags/${tagId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': 'token=' + token }
-            });
-            if (res.ok) {
-                await fetchChats();
-                renderActiveChatTags();
-                renderTagManager();
-            }
-        }
-
-        function renderTagManager() {
-            const editorList = document.getElementById('tag-list-editor');
-            editorList.innerHTML = botTags.map(t => `
-                <div class="tag-item-edit">
-                    <span class="tag-pill" style="background:${t.color}">${t.name}</span>
-                    <button onclick="deleteTag('${t.id}')" style="background:none; border:none; color:#f87171; cursor:pointer;">del</button>
-                </div>
-            `).join('');
-
-            const assignSection = document.getElementById('current-chat-tags-section');
-            if (activeChatId) {
-                assignSection.style.display = 'block';
-                const chat = chats.find(c => c.id === activeChatId);
-                const assignedTagIds = (chat.tags || []).map(t => t.id);
-                
-                const assignList = document.getElementById('available-tags-to-assign');
-                assignList.innerHTML = botTags.map(t => {
-                    const isAssigned = assignedTagIds.includes(t.id);
-                    return `
-                        <div onclick="${isAssigned ? 'removeTagFromChat' : 'addTagToChat'}('${t.id}')" 
-                             class="tag-pill" 
-                             style="background:${t.color}; cursor:pointer; opacity:${isAssigned ? 1 : 0.4}; border:${isAssigned ? '2px solid white' : 'none'}">
-                            ${t.name} ${isAssigned ? '✓' : '+'}
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                assignSection.style.display = 'none';
-            }
-        }
-
-        function logout() {
-            localStorage.removeItem('backoffice_token');
-            window.location.href = '/login';
-        }
-
-        setInterval(fetchChats, 30000);
-        fetchChats();
-        fetchBotTags();
-
-        document.getElementById('message-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
-    </script>
+    <script src="/js/backoffice.js"></script>
 </body>
 </html>
