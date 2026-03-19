@@ -4,7 +4,32 @@ async function fetchStatus() {
         const data = await res.json();
         
         const statusEl = document.getElementById('session-status');
+        const adapterStatusEl = document.getElementById('adapter-status');
+        const groupStatusEl = document.getElementById('group-status');
+        
+        // Estado YCloud (Adapter)
+        if (data.adapter && data.adapter.active) {
+            adapterStatusEl.textContent = '✅ Conectado (API)';
+            adapterStatusEl.style.color = '#28a745';
+        } else {
+            adapterStatusEl.textContent = '❌ Sin Configurar';
+            adapterStatusEl.style.color = '#ef4444';
+        }
+
+        // Estado Baileys (Groups)
+        if (data.group && data.group.active) {
+            groupStatusEl.textContent = '✅ Conectado';
+            groupStatusEl.style.color = '#28a745';
+        } else if (data.group && data.group.hasRemote) {
+            groupStatusEl.textContent = '⏳ Restaurando...';
+            groupStatusEl.style.color = '#ffc107';
+        } else {
+            groupStatusEl.textContent = '⏳ Esperando QR';
+            groupStatusEl.style.color = '#ffc107';
+        }
+
         const qrSection = document.getElementById('qr-section');
+
         const sessionInfo = document.getElementById('session-info');
         const sessionError = document.getElementById('session-error');
         const wsLinkContainer = document.getElementById('whatsapp-link-container');

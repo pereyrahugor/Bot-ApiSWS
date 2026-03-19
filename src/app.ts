@@ -7,6 +7,9 @@ import OpenAI from "openai";
 import { BaileysProvider } from "builderbot-provider-sherpa";
 import { createBot, createProvider, createFlow, MemoryDB } from "@builderbot/bot";
 import { httpInject } from "@builderbot-plugins/openai-assistants";
+import { YCloudProvider } from "./providers/YCloudProvider";
+import { setAdapterProvider, setGroupProvider } from "./providers/instances";
+
 
 // --- Utils & Handlers ---
 import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
@@ -43,8 +46,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Global instances
 export let adapterProvider: any;
+export let groupProvider: any;
 export let errorReporter: any;
 export let aiManagerInstance: AiManager;
+
 const webChatManager = new WebChatManager();
 const openaiMain = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const openaiVision = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
@@ -86,20 +91,28 @@ const main = async () => {
     await restoreSessionFromDb();
     const qrPath = path.join(process.cwd(), "bot.qr.png");
 
-    // 2. Initialize Provider
-    adapterProvider = createProvider(BaileysProvider, {
+    // 2. Initialize Providers
+    // Proveedor principal (YCloud)
+    adapterProvider = createProvider(YCloudProvider, {});
+    setAdapterProvider(adapterProvider);
+
+    // Proveedor de grupos (Baileys)
+    groupProvider = createProvider(BaileysProvider, {
         version: [2, 3000, 1030817285],
         groupsIgnore: false,
         readStatus: false,
         disableHttpServer: true,
     });
+    setGroupProvider(groupProvider);
 
     // 3. Register Provider Events
-    registerProviderEvents(adapterProvider);
+    registerProviderEvents(adapterProvider); // YCloud
+    registerProviderEvents(groupProvider, true); // Baileys Grupos
 
     // 4. Initialize Data and Error Reporter
-    errorReporter = new ErrorReporter(adapterProvider, process.env.ID_GRUPO_RESUMEN || "");
+    errorReporter = new ErrorReporter(groupProvider, process.env.ID_GRUPO_RESUMEN || "");
     await updateMain();
+
 
     const app = adapterProvider.server;
     if (app) {
@@ -114,10 +127,13 @@ const main = async () => {
         // APLICAR COMPATIBILIDAD AL INICIO
         app.use(compatibilityLayer);
         // MASTER-INTERCEPTOR DE STREAMS (CRÍTICO)
-        // Usamos middleware global (sin prefijo en app.use) para tener el req.url ORIGINAL completo.
         app.use(async (req: any, res: any, next: any) => {
             const fullUrl = req.url.split('?')[0];
             
+            if (fullUrl === '/webhook' && req.method === 'POST') {
+                return adapterProvider.handleWebhook(req, res);
+            }
+
             if (fullUrl === '/api/backoffice/send-message' && req.method === 'POST') {
                 console.log("🛡️ [MASTER-INTERCEPTOR] Captura detectada de envío. Procesando bypass total...");
                 
@@ -145,7 +161,7 @@ const main = async () => {
             }
             next();
         });
-
+        
         app.use(rootRedirect);
         
         registerBackofficeRoutes(app, {
@@ -198,7 +214,16 @@ const main = async () => {
         // API Health & Info
         app.get("/health", (_req: any, res: any) => res.json({ status: "ok", time: new Date().toISOString() }));
         app.get("/api/assistant-name", (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
-        app.get("/api/dashboard-status", async (_req: any, res: any) => res.json(await hasActiveSession(adapterProvider)));
+        app.get("/api/dashboard-status", async (_req: any, res: any) => {
+            const adapterStatus = await hasActiveSession(adapterProvider);
+            const groupStatus = await hasActiveSession(groupProvider);
+            res.json({
+                ...groupStatus, // Prioridad al de grupos por el QR de Baileys
+                adapter: adapterStatus,
+                group: groupStatus
+            });
+        });
+
 
         // API Session Control
         app.post("/api/delete-session", async (_req: any, res: any) => {

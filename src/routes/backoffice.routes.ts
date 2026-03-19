@@ -2,6 +2,8 @@ import path from 'path';
 import fs from 'fs';
 import bodyParser from 'body-parser';
 import { backofficeAuth } from "../middleware/auth";
+import { getGroupProvider } from '../providers/instances';
+
 
 /**
  * Registra las rutas del backoffice en la instancia de Polka.
@@ -57,31 +59,39 @@ export const processSendMessage = async (
 
         // 4. ENVIAR A WHATSAPP
         try {
+            const isGroup = chatId.includes('@g.us');
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+            
+            // Decidir qué proveedor usar
+            const providerToSend = isGroup ? (getGroupProvider() || adapterProvider) : adapterProvider;
+
             if (file) {
+
                 const absolutePath = path.resolve(file.path);
                 if (finalType === 'image') {
-                    if (typeof adapterProvider.sendImage === 'function') {
-                        await adapterProvider.sendImage(jid, absolutePath, message || '');
+                    if (typeof (providerToSend as any).sendImage === 'function') {
+                        await (providerToSend as any).sendImage(jid, absolutePath, message || '');
                     } else {
-                        await adapterProvider.sendMessage(jid, message || '', { media: absolutePath });
+                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
                     }
                 } else if (finalType === 'video') {
-                    if (typeof (adapterProvider as any).sendVideo === 'function') {
-                        await (adapterProvider as any).sendVideo(jid, absolutePath, message || '');
+                    if (typeof (providerToSend as any).sendVideo === 'function') {
+                        await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
                     } else {
-                        await adapterProvider.sendMessage(jid, message || '', { media: absolutePath });
+                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
                     }
                 } else {
-                    if (typeof (adapterProvider as any).sendFile === 'function') {
-                        await (adapterProvider as any).sendFile(jid, absolutePath, message || file.originalname);
+                    if (typeof (providerToSend as any).sendFile === 'function') {
+                        await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
                     } else {
-                        await adapterProvider.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
+                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
                     }
                 }
+
             } else {
-                await adapterProvider.sendMessage(jid, message, {});
+                await providerToSend.sendMessage(jid, message, {});
             }
+
             res.json({ success: true, fileUrl: file ? fileUrl : undefined });
         } catch (waError) {
             console.error('[BACKOFFICE] Error enviando a Whatsapp:', waError);

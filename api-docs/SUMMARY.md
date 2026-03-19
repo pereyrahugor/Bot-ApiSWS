@@ -59,6 +59,7 @@
 
 ## Backoffice
 * [Gestión de Chats y API Backoffice](backoffice.md)
+* [Guía de Refactorización y Correcciones](REFACCION_TOTAL.md)
 
 ## Instrucciones de Uso en Prompt
 * [Instrucciones de Uso en Prompt](Etiquetas%20Prompt/Biblioteca%20Api.md)

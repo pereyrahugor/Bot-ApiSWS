@@ -15,7 +15,13 @@
         <div class="left-column">
             <div class="card">
                 <h2>📈 Estado del Bot</h2>
-                <p>Estado de Sesión: <span class="status" id="session-status">Cargando...</span></p>
+                <div class="status-group">
+                    <p>WhatsApp (YCloud/Individual): <span class="status" id="adapter-status">Cargando...</span></p>
+                    <p>WhatsApp (Baileys/Grupos): <span class="status" id="group-status">Cargando...</span></p>
+                </div>
+                <!-- ID para compatibilidad con JS antiguo -->
+                <span id="session-status" style="display:none"></span>
+
                 <div id="session-error"></div>
                 <div id="qr-section" style="display:none">
                     <div class="qr-container">

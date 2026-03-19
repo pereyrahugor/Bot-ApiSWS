@@ -1,14 +1,12 @@
-import { EVENTS } from "@builderbot/bot";
-import { BaileysProvider } from "@builderbot/provider-baileys";
-
 class ErrorReporter {
-    private provider: BaileysProvider;
+    private provider: any;
     private groupId: string;
 
-    constructor(provider: BaileysProvider, groupId: string) {
+    constructor(provider: any, groupId: string) {
         this.provider = provider;
         this.groupId = groupId;
     }
+
 
     async reportError(error: Error, userId: string, userLink: string) {
         const errorMessage = `Error externo, se interrumpio la conexion con OpenAI. Verificar el chat manualmente\n${userLink}`;
