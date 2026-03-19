@@ -226,12 +226,31 @@ const main = async () => {
         // API Session Control
         app.post("/api/delete-session", async (_req: any, res: any) => {
             try {
+                // 1. Borrar de la DB (Nube)
                 await deleteSessionFromDb();
-                res.json({ success: true });
+                
+                // 2. Borrar carpeta local bot_sessions para forzar nuevo QR
+                const sessionPath = path.join(process.cwd(), 'bot_sessions');
+                if (fs.existsSync(sessionPath)) {
+                    fs.rmSync(sessionPath, { recursive: true, force: true });
+                    console.log("[App] 🗑️ Carpeta bot_sessions eliminada.");
+                }
+
+                // 3. Borrar el archivo QR existente si lo hay
+                const qrPath = path.join(process.cwd(), 'bot.qr.png');
+                if (fs.existsSync(qrPath)) {
+                    fs.unlinkSync(qrPath);
+                }
+
+                res.json({ success: true, message: 'Sesión eliminada. El bot se reiniciará para generar un nuevo QR.' });
+                
+                // Opcional: Podrías forzar un restart del proceso, o dejar que el usuario lo vea
+                // En Railway, se suele reiniciar manualmente o si el proceso detecta el cambio.
             } catch (err: any) {
                 res.status(500).json({ success: false, error: err.message });
             }
         });
+
     }
         
     // 10. Workers Initialization

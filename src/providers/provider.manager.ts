@@ -152,16 +152,25 @@ export const hasActiveSession = async (provider: any) => {
 
         if (isReady) return { active: true, source: 'connected', providerType: 'baileys' };
 
-        if (localActive) return { active: true, source: 'local' };
+        if (localActive) {
+            return { 
+                active: false, 
+                source: 'local', 
+                providerType: 'baileys', 
+                message: 'Conectando con WhatsApp (Local)...' 
+            };
+        }
 
         const remoteActive = await isSessionInDb();
         if (remoteActive) {
             return {
                 active: false,
                 hasRemote: true,
-                message: 'Sesión encontrada en la nube. Restaurando...'
+                providerType: 'baileys',
+                message: 'Sesión remota detectada. Descargando...'
             };
         }
+
 
         return { active: false, hasRemote: false };
     } catch (error) {
