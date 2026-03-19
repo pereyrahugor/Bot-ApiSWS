@@ -66,29 +66,29 @@ export const processSendMessage = async (
             const providerToSend = isGroup ? (getGroupProvider() || adapterProvider) : adapterProvider;
 
             if (file) {
+                const domain = process.env.RAILWAY_PUBLIC_DOMAIN || req.headers.host || 'http://localhost:3000';
+                const protocol = (domain.includes('localhost') || domain.includes('0.0.0.0')) ? 'http' : 'https';
+                const base = domain.startsWith('http') ? domain : `${protocol}://${domain}`;
+                const absolutePublicUrl = `${base}${fileUrl}`;
+                const absoluteLocalPath = path.resolve(file.path);
 
-                const absolutePath = path.resolve(file.path);
+                // YCloud necesita URL pública. Baileys puede usar local.
+                const isYCloud = (providerToSend as any).constructor?.name === 'YCloudProvider' || !(providerToSend as any).globalVendorArgs?.sock;
+                const mediaPath = isYCloud ? absolutePublicUrl : absoluteLocalPath;
+
                 if (finalType === 'image') {
-                    if (typeof (providerToSend as any).sendImage === 'function') {
-                        await (providerToSend as any).sendImage(jid, absolutePath, message || '');
-                    } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
-                    }
+                    await (providerToSend as any).sendImage(jid, mediaPath, message || '');
                 } else if (finalType === 'video') {
-                    if (typeof (providerToSend as any).sendVideo === 'function') {
-                        await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
-                    } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
-                    }
+                    await (providerToSend as any).sendVideo(jid, mediaPath, message || '');
                 } else {
                     if (typeof (providerToSend as any).sendFile === 'function') {
-                        await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
+                        await (providerToSend as any).sendFile(jid, mediaPath, message || file.originalname);
                     } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
+                        await providerToSend.sendMessage(jid, message || '', { media: mediaPath, fileName: file.originalname });
                     }
                 }
-
             } else {
+
                 await providerToSend.sendMessage(jid, message, {});
             }
 

@@ -50,17 +50,36 @@ class YCloudProvider extends ProviderClass {
         const url = 'https://api.ycloud.com/v2/whatsapp/messages';
         const cleanNumber = number.replace(/\D/g, '');
 
-        const body: any = {
+        let body: any = {
             from: fromNumber.replace(/\D/g, ''),
-            to: cleanNumber,
-            type: 'text',
-            text: { body: message }
+            to: cleanNumber
         };
 
-        // Soporte básico para archivos si se implementa en el futuro
+        // Soporte para archivos (Imágenes, documentos, etc.)
         if (options.media) {
-            console.warn('⚠️ [YCloudProvider] El envío de media directo no está implementado aún en este adaptador.');
+            const mediaUrl = typeof options.media === 'string' ? options.media : options.media.url;
+            const mimeType = options.media.mimetype || '';
+
+            if (mimeType.includes('image')) {
+                body.type = 'image';
+                body.image = { link: mediaUrl, caption: message || '' };
+            } else if (mimeType.includes('pdf') || mimeType.includes('document')) {
+                body.type = 'document';
+                body.document = { link: mediaUrl, filename: 'documento.pdf', caption: message || '' };
+            } else if (mimeType.includes('video')) {
+                body.type = 'video';
+                body.video = { link: mediaUrl, caption: message || '' };
+            } else {
+                // Por defecto tratamos como archivo genérico
+                body.type = 'document';
+                body.document = { link: mediaUrl, filename: 'archivo', caption: message || '' };
+            }
+        } else {
+            // Mensaje de texto estándar
+            body.type = 'text';
+            body.text = { body: message };
         }
+
 
         try {
             const response = await axios.post(url, body, {
@@ -81,9 +100,22 @@ class YCloudProvider extends ProviderClass {
 
     }
 
+    public async sendImage(number: string, media: string, caption: string = ''): Promise<any> {
+        return this.sendMessage(number, caption, { media: { url: media, mimetype: 'image/png' } });
+    }
+
+    public async sendVideo(number: string, media: string, caption: string = ''): Promise<any> {
+        return this.sendMessage(number, caption, { media: { url: media, mimetype: 'video/mp4' } });
+    }
+
+    public async sendFile(number: string, media: string, caption: string = ''): Promise<any> {
+        return this.sendMessage(number, caption, { media: { url: media, mimetype: 'application/pdf' } });
+    }
+
     /**
      * Procesa el Webhook entrante
      */
+
     public handleWebhook = (req: any, res: any) => {
         try {
             const body = req.body;
