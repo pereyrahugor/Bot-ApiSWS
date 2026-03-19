@@ -1,18 +1,23 @@
-import { restoreSessionFromDb } from './src/utils/sessionSync';
+
+import 'dotenv/config';
+import { restoreSessionFromDb } from './src/utils/sessionSync.js';
 import fs from 'fs';
 import path from 'path';
 
-async function test() {
-    console.log('--- Probando restoreSessionFromDb ---');
+async function testRestore() {
+    console.log('--- TEST RESTORE ---');
     await restoreSessionFromDb();
     
-    if (fs.existsSync('bot_sessions')) {
-        const files = fs.readdirSync('bot_sessions');
-        console.log(`✅ Carpetas de sesión encontradas: ${files.length} archivos.`);
-        files.forEach(f => console.log(` - ${f}`));
+    const sessDir = 'bot_sessions';
+    if (fs.existsSync(sessDir)) {
+        const files = fs.readdirSync(sessDir);
+        console.log(`Archivos restaurados en ${sessDir}: ${files.length}`);
+        if (files.length > 0) {
+            console.log('Primeros 5 archivos:', files.slice(0, 5));
+        }
     } else {
-        console.log('❌ No se encontró la carpeta bot_sessions.');
+        console.log('La carpeta bot_sessions no existe.');
     }
 }
 
-test();
+testRestore();
