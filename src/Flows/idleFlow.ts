@@ -1,5 +1,6 @@
 import { addKeyword, EVENTS } from '@builderbot/bot';
-import { safeToAsk, errorReporter } from '../app';
+import { errorReporter } from '../app';
+import { safeToAsk } from '../utils/openaiHelper';
 import { GenericResumenData, extraerDatosResumen } from '~/utils/extractJsonData';
 import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';

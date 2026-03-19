@@ -1,5 +1,6 @@
 // Clase para manejar la lógica de reconexión cuando el campo nombre está vacío
-import { safeToAsk, errorReporter } from '../app';
+import { errorReporter } from '../app';
+import { safeToAsk } from '../utils/openaiHelper';
 import { extraerDatosResumen, GenericResumenData } from '~/utils/extractJsonData';
 import { downloadFileFromDrive } from '~/utils/googleDriveHandler';
 import fs from 'fs';
