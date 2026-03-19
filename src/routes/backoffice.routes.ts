@@ -184,23 +184,8 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- SEND MESSAGE & TOGGLE BOT ---
 
-    app.post('/api/backoffice/send-message', backofficeAuth, (req, res, next) => {
-        if (req.body && Object.keys(req.body).length > 0) {
-            console.warn("⚠️ [BACKOFFICE] Cuerpo detectado ANTES de Multer. Posible conflicto de stream.");
-        }
+    // --- SEND MESSAGE (AHORA GESTIONADO POR EL MASTER INTERCEPTOR EN APP.TS) ---
 
-        upload.single('file')(req, res, (err: any) => {
-            if (err) {
-                console.error("❌ [BACKOFFICE] Error de Multer:", err);
-                return res.status(400).json({ success: false, error: `Error de archivo: ${err.message}` });
-            }
-            const { chatId, message } = req.body;
-            if (!chatId) return res.status(400).json({ success: false, error: 'chatId is required' });
-            
-            // Pasamos deps como sexto argumento
-            processSendMessage(req, res, chatId, message, (req as any).file, deps);
-        });
-    });
 
     app.post('/api/backoffice/toggle-bot', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { chatId, enabled } = req.body;
