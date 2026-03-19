@@ -12,8 +12,7 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
     let isGeneratingQR = false;
     const prefix = isGroupProvider ? '[GroupProvider]' : '[AdapterProvider]';
 
-    // Listen para generar el archivo QR (Solo relevante para Baileys)
-    provider.on('require_action', async (payload: any) => {
+    const handleQR = async (payload: any) => {
         try {
             if (isGeneratingQR) return;
             isGeneratingQR = true;
@@ -29,18 +28,23 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 const qrFilename = isGroupProvider ? 'bot.groups.qr.png' : 'bot.qr.png';
                 const qrPath = path.join(process.cwd(), qrFilename);
                 await QRCode.toFile(qrPath, qrString, {
-
                     color: { dark: '#000000', light: '#ffffff' },
                     scale: 4,
                     margin: 2
                 });
+                console.log(`${prefix} ✅ QR guardado en ${qrPath}`);
             }
         } catch (err) {
             console.error(`❌ ${prefix} Error generating QR image:`, err);
         } finally {
             isGeneratingQR = false;
         }
-    });
+    };
+
+    // Registrar escuchas redundantes de QR
+    provider.on('qr', handleQR);
+    provider.on('require_action', handleQR);
+    provider.on('auth_require', handleQR);
 
     provider.on('host_failure', (payload: any) => {
         console.warn(`⚠️ ${prefix} HOST_FAILURE: Problema de conexión con WhatsApp.`, payload);
