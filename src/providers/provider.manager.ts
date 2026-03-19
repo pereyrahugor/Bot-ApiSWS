@@ -163,7 +163,21 @@ export const hasActiveSession = async (provider: any) => {
             localActive = files.includes('creds.json');
         }
 
-        if (isReady) return { active: true, source: 'connected', providerType: 'baileys' };
+        const remoteActive = await isSessionInDb();
+        const qrFilename = (isYCloud) ? 'bot.qr.png' : 'bot.groups.qr.png';
+        const hasQr = fs.existsSync(path.join(process.cwd(), qrFilename));
+
+        if (isReady) return { active: true, source: 'connected', providerType: isYCloud ? 'ycloud' : 'baileys' };
+
+        // PRIORIDAD: Si hay un QR generado, mostrarlo SIEMPRE (significa que el motor lo requiere)
+        if (hasQr) {
+            return {
+                active: false,
+                qr: true,
+                providerType: isYCloud ? 'ycloud' : 'baileys',
+                message: 'Esperando vinculación'
+            };
+        }
 
         if (localActive) {
             return { 
@@ -174,16 +188,12 @@ export const hasActiveSession = async (provider: any) => {
             };
         }
 
-        const remoteActive = await isSessionInDb();
-        const qrFilename = (isYCloud) ? 'bot.qr.png' : 'bot.groups.qr.png';
-        const hasQr = fs.existsSync(path.join(process.cwd(), qrFilename));
-
         return { 
             active: false, 
             hasRemote: remoteActive, 
-            qr: hasQr,
+            qr: false,
             providerType: isYCloud ? 'ycloud' : 'baileys',
-            message: remoteActive ? 'Sesión remota detectada. Descargando...' : (hasQr ? 'Esperando vinculación' : 'Iniciando motor...')
+            message: remoteActive ? 'Sesión remota detectada. Descargando...' : 'Iniciando motor...'
         };
     } catch (error) {
         return { active: false, error: error instanceof Error ? error.message : String(error) };

@@ -1,7 +1,8 @@
 import fs from 'fs';
 
 import path from 'path';
-import bodyParser from 'body-parser';
+import * as pkgBodyParser from 'body-parser';
+const bodyParser = (pkgBodyParser as any).default || pkgBodyParser;
 
 /**
  * Middleware de compatibilidad para Polka.

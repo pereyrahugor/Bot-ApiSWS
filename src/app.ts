@@ -111,16 +111,31 @@ const main = async () => {
     registerProviderEvents(adapterProvider); // YCloud
     registerProviderEvents(groupProvider, true); // Baileys Grupos
 
-    // 🚀 Iniciar motor secundario manualmente
+    // 🚀 Iniciar motor secundario manualmente (Baileys para Grupos)
+    // Usamos 5 segundos para que YCloud (el motor principal) ya esté estable.
     setTimeout(async () => {
         try {
-            console.log('📡 [GroupSync] Iniciando motor de grupos...');
-            if (groupProvider.initVendor) await groupProvider.initVendor();
-            else if (groupProvider.init) await groupProvider.init();
+            if (!groupProvider) {
+                console.error('❌ [GroupSync] groupProvider no existe al momento de iniciar.');
+                return;
+            }
+            console.log('📡 [GroupSync] Creando entorno de motor secundario...');
+            
+            // Forzar el inicio si tiene el método initVendor ( Builderbot 1.3.5 )
+            if (groupProvider.initVendor) {
+                console.log('🚀 [GroupSync] Llamando a initVendor()...');
+                await groupProvider.initVendor();
+                console.log('✅ [GroupSync] .initVendor() ejecutado exitosamente.');
+            } else if ((groupProvider as any).init) {
+                console.log('🚀 [GroupSync] Llamando a .init()...');
+                await (groupProvider as any).init();
+            } else {
+                console.warn('⚠️ [GroupSync] El proveedor no contiene métodos de inicio (initVendor/init).');
+            }
         } catch (err) {
-            console.error('❌ [GroupSync] Error al iniciar motor de grupos:', err);
+            console.error('❌ [GroupSync] Error crítico al arrancar motor de grupos:', err);
         }
-    }, 2000);
+    }, 5000);
 
     // 4. Initialize Data and Error Reporter
     errorReporter = new ErrorReporter(groupProvider, process.env.ID_GRUPO_RESUMEN || "");
