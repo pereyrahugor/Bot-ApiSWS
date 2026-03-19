@@ -69,12 +69,16 @@ class YCloudProvider extends ProviderClass {
                     'Content-Type': 'application/json'
                 }
             });
-            console.log(`📤 [YCloudProvider] Mensaje enviado a ${cleanNumber}`);
+            // Log mínimo solo para seguimiento
+            if (response.status !== 200 && response.status !== 201) {
+                console.warn(`📤 [YCloud] Status: ${response.status} para ${cleanNumber}`);
+            }
             return response.data;
         } catch (error: any) {
-            console.error('❌ [YCloudProvider] Error enviando mensaje:', JSON.stringify(error?.response?.data || error.message, null, 2));
+            console.error('❌ [YCloud] Error API:', error?.response?.data || error.message);
             return null;
         }
+
     }
 
     /**

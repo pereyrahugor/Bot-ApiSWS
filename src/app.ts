@@ -126,41 +126,39 @@ const main = async () => {
 
         // APLICAR COMPATIBILIDAD AL INICIO
         app.use(compatibilityLayer);
-        // MASTER-INTERCEPTOR DE STREAMS (CRÍTICO)
-        app.use(async (req: any, res: any, next: any) => {
+
+        // 🛡️ MASTER-INTERCEPTOR (Síncrono para evitar loop de Polka)
+        app.use((req: any, res: any, next: any) => {
             const fullUrl = req.url.split('?')[0];
             
+            // WEBHOOK YCLOUD (Bypass Total)
             if (fullUrl === '/webhook' && req.method === 'POST') {
                 return adapterProvider.handleWebhook(req, res);
             }
 
+            // BACKOFFICE SEND-MESSAGE (Bypass Total para evitar consumo de stream)
             if (fullUrl === '/api/backoffice/send-message' && req.method === 'POST') {
-                console.log("🛡️ [MASTER-INTERCEPTOR] Captura detectada de envío. Procesando bypass total...");
-                
                 return backofficeAuth(req, res, () => {
                     const deps: BackofficeDependencies = { adapterProvider, HistoryHandler, openaiMain, upload };
                     const contentType = req.headers['content-type'] || '';
 
                     if (contentType.includes('multipart/form-data')) {
-                        return upload.single('file')(req, res, (err: any) => {
-                            if (err) {
-                                console.error("❌ [MASTER-INTERCEPTOR] Multer Error:", err.message);
-                                return res.status(400).end(JSON.stringify({ success: false, error: `Error de archivo: ${err.message}` }));
-                            }
+                        upload.single('file')(req, res, (err: any) => {
+                            if (err) return res.status(errorReporter ? 500 : 400).json({ success: false, error: err.message });
                             const { chatId, message } = req.body;
-                            console.log(`📡 [MASTER-INTERCEPTOR] Datos recibidos: chatId=${chatId}, messageLen=${message?.length || 0}, hasFile=${!!(req as any).file}`);
-                            return processSendMessage(req, res, chatId, message, (req as any).file, deps);
+                            processSendMessage(req, res, chatId || '', message || '', (req as any).file, deps);
                         });
                     } else {
-                        return bodyParser.json()(req, res, () => {
+                        bodyParser.json()(req, res, () => {
                             const { chatId, message } = req.body;
-                            return processSendMessage(req, res, chatId || '', message || '', null, deps);
+                            processSendMessage(req, res, chatId || '', message || '', null, deps);
                         });
                     }
                 });
             }
             next();
         });
+
         
         app.use(rootRedirect);
         
