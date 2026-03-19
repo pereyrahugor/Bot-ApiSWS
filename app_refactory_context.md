@@ -45,6 +45,7 @@ El archivo principal actualmente mezcla múltiples capas de la aplicación:
   4. Registrar Rutas (inyectando dependencias del bot si es necesario).
   5. Levantar servidor HTTP.
   6. Inicializar Socket.IO sobre el servidor HTTP.
+* [x] **Importante**: Se refactorizaron las importaciones en `src/Flows/` para evitar dependencias circulares con `app.ts`, moviendo utilidades de AI a `src/utils/openaiHelper.ts`.
 
 ## ⚠️ Reglas Estrictas para el Agente
 1. **Paso a paso:** Ejecutar una fase a la vez y confirmar que el proyecto sigue compilando en TypeScript antes de avanzar a la siguiente.

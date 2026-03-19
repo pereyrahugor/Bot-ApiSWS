@@ -272,3 +272,14 @@ Este patrón garantiza compatibilidad total con BuilderBot sin interferir en sus
 - **Multer Middleware**: Invocación manual dentro del handler de ruta para evitar conflictos con otros parsers.
 - **Polling + Sockets**: Combinación de WebSockets (actualización inmediata) y Polling (respaldo de estado consistente).
 - **Socket.IO Dependency Injection**: Mejora en la modularidad del gestor de sockets mediante inyección de dependencias para el manejo del historial (`historyEvents`).
+
+## 17. Refactorización de Flows (Importaciones ✅)
+- **Problema de Dependencia Circular**: Se resolvieron los errores de compilación (`TS2305: Module '../app' has no exported member 'safeToAsk'`) al extraer las utilidades de OpenAI.
+- **Acción**: Los archivos de flujos (`src/Flows/idleFlow.ts`, `src/Flows/reconectionFlow.ts`, etc.) ahora deben importar las utilidades de la siguiente manera:
+    - `import { safeToAsk } from "../utils/openaiHelper";`
+    - `import { errorReporter } from "../app";` (si se reportan errores al grupo).
+- **Consistencia de Tipos**: Se eliminaron las referencias a `any` en las importaciones críticas de `app.ts` dentro de los flows, favoreciendo rutas relativas o alias configurados (`~/`).
+
+## 18. Persistencia de Sesión (Base de Datos) ✅
+- **Carga Temprana**: Se aseguró que `await restoreSessionFromDb()` sea la primera acción del método `main()` en `app.ts`, garantizando que el bot inicie con la sesión recuperada de Supabase antes de instanciar el proveedor.
+- **Sincronización Continua**: El proceso `startSessionSync()` se ejecuta después de la inicialización del bot para mantener el token de Baileys siempre actualizado en la nube.
