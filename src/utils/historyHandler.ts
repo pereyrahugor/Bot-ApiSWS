@@ -2,6 +2,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { EventEmitter } from "events";
 import dotenv from "dotenv";
+import { PROJECT_ID } from "./config";
 
 dotenv.config();
 
@@ -15,7 +16,7 @@ export { supabase };
 export const historyEvents = new EventEmitter();
 
 // Identificador único para este bot específico
-const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "default_project";
+const currentProjectId = PROJECT_ID;
 
 export interface Chat {
     id: string;

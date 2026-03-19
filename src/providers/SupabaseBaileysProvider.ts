@@ -8,6 +8,7 @@ import makeWASocket, {
 import { useSupabaseAuthState } from '../utils/supabaseAdapter';
 import { EventEmitter } from 'events';
 import pino from 'pino';
+import { PROJECT_ID, BOT_NAME } from '../utils/config';
 
 // Logger compatible con Baileys
 const logger = pino({ level: 'error' });
@@ -36,8 +37,8 @@ export class SupabaseBaileysProvider extends BaileysProvider {
         console.log('[SupabaseBaileysProvider] 🚀 Iniciando Provider Personalizado...');
         
         // 1. Cargar Auth State desde Supabase
-        const projectId = process.env.RAILWAY_PROJECT_ID || 'local-dev';
-        const botName = process.env.BOT_NAME || 'Unknown Bot';
+        const projectId = PROJECT_ID;
+        const botName = BOT_NAME;
         console.log(`[SupabaseBaileysProvider] Project ID: ${projectId} - Cargando sesión de Supabase...`);
 
         const { state, saveCreds, clearSession } = await useSupabaseAuthState(

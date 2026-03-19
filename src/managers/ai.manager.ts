@@ -15,17 +15,29 @@ export class AiManager {
     private botEnabledGlobal = true;
 
     constructor(
+        private openaiMain: any,
         private assistantId: string,
         private errorReporter: any,
         private flows: {
             welcomeFlowTxt: any;
             welcomeFlowVoice: any;
-            // ... otros si es necesario
+            welcomeFlowButton?: any;
         }
     ) {}
 
     public getAssistantResponse = async (assistantId: string, message: string, state: any, fallbackMessage: string | undefined, userId: string, thread_id: string | null = null) => {
-        // Si hay un timeout previo, lo limpiamos
+        const currentDatetimeArg = getArgentinaDatetimeString();
+        let systemPrompt = `Fecha, hora y día de la semana de referencia: ${currentDatetimeArg}`;
+        
+        if (process.env.EXTRA_SYSTEM_PROMPT) {
+            systemPrompt += `\nInstrucción de refuerzo: ${process.env.EXTRA_SYSTEM_PROMPT}`;
+        }
+
+        if (fallbackMessage) systemPrompt += `\n${fallbackMessage}`;
+        if (userId) systemPrompt += `\nNúmero de contacto: ${userId}`;
+        
+        const finalMessage = systemPrompt + "\n" + message;
+
         if (this.userTimeouts.has(userId)) {
             clearTimeout(this.userTimeouts.get(userId)!);
             this.userTimeouts.delete(userId);
@@ -33,14 +45,15 @@ export class AiManager {
 
         return new Promise((resolve) => {
             const timeoutId = setTimeout(async () => {
-                console.warn(`⏱ Timeout de ${this.TIMEOUT_MS}ms alcanzado para ${userId}. Reintentando...`);
+                console.warn(`⏱ Timeout de OpenAI (60s) alcanzado para ${userId}.`);
+                // En timeout, intentamos un safeToAsk directo con fallback
                 const result = await safeToAsk(assistantId, fallbackMessage ?? message, state, userId, this.errorReporter);
                 resolve(result);
                 this.userTimeouts.delete(userId);
-            }, this.TIMEOUT_MS);
+            }, this.TIMEOUT_MS * 2); // 60s
             this.userTimeouts.set(userId, timeoutId);
 
-            safeToAsk(assistantId, message, state, userId, this.errorReporter)
+            safeToAsk(assistantId, finalMessage, state, userId, this.errorReporter)
                 .then(result => {
                     if (this.userTimeouts.has(userId)) {
                         clearTimeout(this.userTimeouts.get(userId)!);

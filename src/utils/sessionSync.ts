@@ -7,11 +7,12 @@ import path from 'path';
 const SESSION_DIR = 'bot_sessions';
 const SYNC_INTERVAL_MS = 60 * 60 * 1000; // 1 Hora
 
+import { PROJECT_ID, BOT_NAME } from './config';
+
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_KEY!;
-const projectId = process.env.RAILWAY_PROJECT_ID || 'local-dev';
-// Prioridad: ASSISTANT_NAME (del env), luego BOT_NAME, luego default
-const botName = process.env.ASSISTANT_NAME || process.env.BOT_NAME || 'Unknown Bot';
+const projectId = PROJECT_ID;
+const botName = BOT_NAME;
 
 // Cliente Supabase
 const supabase = createClient(supabaseUrl, supabaseKey);

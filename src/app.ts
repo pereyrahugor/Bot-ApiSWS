@@ -10,7 +10,8 @@ import { httpInject } from "@builderbot-plugins/openai-assistants";
 import * as bodyParser from 'body-parser';
 
 // --- Utils & Handlers ---
-import { restoreSessionFromDb, startSessionSync } from "./utils/sessionSync";
+import { PROJECT_ID, BOT_NAME } from "./utils/config";
+import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
 import { ErrorReporter } from "./utils/errorReporter";
 import { updateMain } from "./addModule/updateMain";
 import { WebChatManager } from "./utils-web/WebChatManager";
@@ -23,10 +24,11 @@ import { registerRailwayRoutes } from "./routes/railway.routes";
 import { registerWebchatRoutes } from "./routes/webchat.routes";
 import { registerStaticRoutes } from "./routes/static.routes";
 import { initSocketIO } from "./sockets/socket.manager";
+import { registerProviderEvents, hasActiveSession } from "./providers/provider.manager.js";
+import { startHumanInactivityWorker } from "./workers/humanInactivity.worker";
 import { AiManager } from "./managers/ai.manager";
 import { smartBodyParser, compatibilityLayer, rootRedirect } from "./middleware/global";
 import { backofficeAuth } from "./middleware/auth";
-import { startHumanInactivityWorker } from "./workers/humanInactivity.worker";
 
 // --- Flows ---
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
@@ -36,6 +38,7 @@ import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
 import { idleFlow } from "./Flows/idleFlow";
+import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -45,9 +48,9 @@ export let errorReporter: any;
 export let aiManagerInstance: AiManager;
 const webChatManager = new WebChatManager();
 const openaiMain = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openaiVision = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG || process.env.OPENAI_API_KEY });
 const ASSISTANT_ID = process.env.ASSISTANT_ID!;
 const PORT = process.env.PORT || 8080;
-const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN || "";
 
 // Multer config
 const storage = multer.diskStorage({
@@ -58,8 +61,7 @@ const storage = multer.diskStorage({
     },
     filename: (_req, file, cb) => {
         const ext = path.extname(file.originalname);
-        const fileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
-        cb(null, fileName);
+        cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
     }
 });
 const upload = multer({ storage });
@@ -77,10 +79,12 @@ function registerSafeErrorHandlers() {
  * Main function for Bot and Server Orchestration
  */
 const main = async () => {
-    // 1. Initial cleanup and session restoration
-    const oldQr = path.join(process.cwd(), 'bot.qr.png');
-    if (fs.existsSync(oldQr)) {
-        try { fs.unlinkSync(oldQr); } catch (e) {}
+    console.log(`🚀Starting bot for Project: ${PROJECT_ID} (Bot Name: ${BOT_NAME})`);
+
+    // 1. Storage cleanup and session restoration
+    const qrPath = path.join(process.cwd(), "bot.qr.png");
+    if (fs.existsSync(qrPath)) {
+        try { fs.unlinkSync(qrPath); } catch (e) { /* silent fail */ }
     }
     await restoreSessionFromDb();
 
@@ -92,28 +96,30 @@ const main = async () => {
         disableHttpServer: true,
     });
 
-    // 3. Initialize Error Reporter and Data
-    errorReporter = new ErrorReporter(adapterProvider, ID_GRUPO_RESUMEN);
+    // 3. Register Provider Events
+    registerProviderEvents(adapterProvider);
+
+    // 4. Initialize Data and Error Reporter
+    errorReporter = new ErrorReporter(adapterProvider, process.env.ID_GRUPO_RESUMEN || "");
     await updateMain();
 
     const app = adapterProvider.server;
     if (app) {
-        // 4. Server configuration & Early Middlewares
+        // 5. Polka/Express Server setup & Early Middlewares
         app.onError = (err: any, _req: any, res: any) => {
             console.error("🔥 [POLKA ERROR]:", err);
             res.statusCode = 500;
             res.end(JSON.stringify({ success: false, error: err.message || "Internal Server Error" }));
         };
 
-        // Compatibility layer (res.json, res.send, etc)
         app.use(compatibilityLayer);
-
+        
         // --- MASTER INTERCEPTOR FOR STREAMS (CRITICAL) ---
         app.use(async (req: any, res: any, next: any) => {
             const fullUrl = req.url.split('?')[0];
             
             if (fullUrl === '/api/backoffice/send-message' && req.method === 'POST') {
-                console.log("🛡️ [MASTER-INTERCEPTOR] Capture detected for /api/backoffice/send-message. Bypassing global parsers...");
+                console.log("🛡️ [MASTER-INTERCEPTOR] Capture detected. Bypassing global parsers...");
                 
                 return backofficeAuth(req, res, () => {
                     const deps: BackofficeDependencies = { adapterProvider, HistoryHandler, openaiMain, upload };
@@ -142,9 +148,9 @@ const main = async () => {
         app.use(rootRedirect);
     }
 
-    // 5. Initialize AI Manager and flows
-    const aiManager = new AiManager(ASSISTANT_ID, errorReporter, {
-        welcomeFlowTxt, welcomeFlowVoice
+    // 6. Initialize AI Manager and flows
+    const aiManager = new AiManager(openaiMain, ASSISTANT_ID, errorReporter, {
+        welcomeFlowTxt, welcomeFlowVoice, welcomeFlowButton
     });
     aiManagerInstance = aiManager;
 
@@ -153,10 +159,11 @@ const main = async () => {
         await aiManager.processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
     });
 
-    // 6. Initialize Bot Instance
+    // 7. Initialize Bot Instance
     const adapterFlow = createFlow([
         welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, 
-        welcomeFlowVideo, welcomeFlowDoc, locationFlow, idleFlow
+        welcomeFlowVideo, welcomeFlowDoc, locationFlow, 
+        idleFlow, welcomeFlowButton
     ]);
     const adapterDB = new MemoryDB();
 
@@ -169,25 +176,37 @@ const main = async () => {
     registerSafeErrorHandlers();
     startSessionSync();
 
-    // 7. Middlewares & Plugins post-Bot
+    // 8. Middlewares y Plugins post-Bot
     if (app) {
         httpInject(app);
         app.use(smartBodyParser);
 
-        // Register Routes
+        // 9. Register Other Routes
         registerBackofficeRoutes(app, { adapterProvider, HistoryHandler, openaiMain, upload });
         registerRailwayRoutes(app, { RailwayApi: (await import("./Api-RailWay/Railway")).RailwayApi });
-        registerWebchatRoutes(app, { webChatManager, openaiVision: openaiMain, ASSISTANT_ID, processUserMessage: aiManager.processUserMessage.bind(aiManager) });
+        registerWebchatRoutes(app, { webChatManager, openaiVision, ASSISTANT_ID, processUserMessage: aiManager.processUserMessage.bind(aiManager) });
         registerStaticRoutes(app, { __dirname });
 
-        // Health Info
+        // API Health & Info
         app.get("/health", (_req: any, res: any) => res.json({ status: "ok", time: new Date().toISOString() }));
-    }
+        app.get("/api/assistant-name", (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
+        app.get("/api/dashboard-status", async (_req: any, res: any) => res.json(await hasActiveSession(adapterProvider)));
 
-    // 8. Start Workers
+        // API Session Control
+        app.post("/api/delete-session", async (_req: any, res: any) => {
+            try {
+                await deleteSessionFromDb();
+                res.json({ success: true });
+            } catch (err: any) {
+                res.status(500).json({ success: false, error: err.message });
+            }
+        });
+    }
+        
+    // 10. Start Workers
     startHumanInactivityWorker(15);
 
-    // 9. Start Server and Socket.IO
+    // 11. Start Server and Sockets
     try {
         httpServer(+PORT);
         setTimeout(() => {
@@ -209,7 +228,8 @@ main().catch(err => {
 });
 
 export {
-    handleQueue, userQueues, userLocks
+    welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowVideo, welcomeFlowDoc, locationFlow,
+    AiManager, handleQueue, userQueues, userLocks
 };
 
 export const processUserMessage = async (ctx: any, items: any) => {
