@@ -2,7 +2,7 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import { BaileysProvider } from "@builderbot/provider-baileys";
 import { MemoryDB } from "@builderbot/bot";
 import { reset } from "~/utils/timeOut";
-import { handleQueue, userQueues, userLocks } from "~/app"; 
+import { userQueues, userLocks, handleQueue } from "~/utils/queueManager"; 
 import { transcribeAudioFile } from "~/utils/audioTranscriptior";
 import path from "path";
 import fs from "fs";
@@ -22,6 +22,14 @@ export const welcomeFlowVoice = addKeyword<BaileysProvider, MemoryDB>(EVENTS.VOI
             /@lid$/.test(userId)
         ) {
             console.log(`Mensaje de voz ignorado por filtro de contacto: ${userId}`);
+            return;
+        }
+
+        // --- FILTRO DE ECO / MENSAJES PROPIOS ---
+        const botNumber = (process.env.YCLOUD_WABA_NUMBER || '').replace(/\D/g, '');
+        const senderNumber = (userId || '').replace(/\D/g, '');
+        
+        if (ctx.key?.fromMe || (botNumber && senderNumber === botNumber)) {
             return;
         }
 

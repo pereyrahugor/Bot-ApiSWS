@@ -2,7 +2,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { EventEmitter } from "events";
 import dotenv from "dotenv";
-import { PROJECT_ID } from "./config";
 
 dotenv.config();
 
@@ -11,12 +10,11 @@ const supabaseKey = process.env.SUPABASE_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 export { supabase };
 
-
 // Emitter para notificar cambios en tiempo real a otros módulos (como el de WebSockets)
 export const historyEvents = new EventEmitter();
 
 // Identificador único para este bot específico
-const currentProjectId = PROJECT_ID;
+const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "default_project";
 
 export interface Chat {
     id: string;
@@ -97,6 +95,7 @@ export class HistoryHandler {
         ];
 
         for (const table of tables) {
+            console.log(`🔍 [HistoryHandler] Procesando tabla: ${table.name}`);
             try {
                 // Verificar si la tabla existe
                 const { error: checkError } = await supabase.from(table.name).select('*').limit(1);
@@ -107,6 +106,9 @@ export class HistoryHandler {
                     
                     if (rpcError) {
                         console.error(`❌ Error al crear tabla '${table.name}':`, rpcError.message);
+                        if (rpcError.message.includes('function') && rpcError.message.includes('does not exist')) {
+                            console.error(`💡 TIP: Debes crear la función 'exec_sql' en el SQL Editor de Supabase.`);
+                        }
                     } else {
                         console.log(`✅ Tabla '${table.name}' creada exitosamente.`);
                     }
@@ -144,13 +146,19 @@ export class HistoryHandler {
                             await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN last_human_message_at TIMESTAMPTZ;` });
                         }
                     }
+
+                    console.log(`✅ Tabla '${table.name}' verificada.`);
                 }
             } catch (fatalErr) {
                 console.error(`❌ Error fatal inicializando tabla '${table.name}':`, fatalErr);
             }
         }
+        console.log('✅ [HistoryHandler] Inicialización completa.');
     }
     
+    /**
+     * Obtiene o crea un registro de chat
+     */
     static async getOrCreateChat(chatId: string, type: 'whatsapp' | 'webchat', name: string | null = null): Promise<Chat | null> {
         try {
             const { data, error } = await supabase
@@ -180,6 +188,7 @@ export class HistoryHandler {
 
             if (error) throw error;
 
+            // Actualizar nombre si es null y ahora tenemos uno
             if (name && !data.name) {
                 await supabase.from('chats').update({ name }).eq('id', chatId).eq('project_id', PROJECT_ID);
             }
@@ -191,8 +200,12 @@ export class HistoryHandler {
         }
     }
 
+    /**
+     * Guarda un mensaje en la base de datos
+     */
     static async saveMessage(chatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null) {
         try {
+            // Asegurar que el chat existe
             await this.getOrCreateChat(chatId, chatId.includes('@') ? 'whatsapp' : 'webchat', contactName);
 
             const { error } = await supabase
@@ -208,26 +221,24 @@ export class HistoryHandler {
 
             if (error) throw error;
 
+            // Actualizar timestamp del último mensaje en el chat
             await supabase
                 .from('chats')
                 .update({ last_message_at: new Date().toISOString() })
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID);
 
-            const messageData = { 
-                chatId, 
-                role, 
-                content, 
-                type, 
-                created_at: new Date().toISOString() 
-            };
-            historyEvents.emit('new_message', messageData);
+            // Emitir evento para WebSockets
+            historyEvents.emit('new_message', { chatId, role, content, type });
 
         } catch (err) {
             console.error('[HistoryHandler] Error en saveMessage:', err);
         }
     }
 
+    /**
+     * Verifica si el bot está habilitado para un usuario
+     */
     static async isBotEnabled(chatId: string): Promise<boolean> {
         try {
             const { data, error } = await supabase
@@ -245,25 +256,37 @@ export class HistoryHandler {
         }
     }
 
+    /**
+     * Cambia el estado del bot (Intervención humana)
+     */
     static async toggleBot(chatId: string, enabled: boolean) {
         try {
+            const updateData: any = { bot_enabled: enabled };
+            if (enabled === false) {
+                updateData.last_human_message_at = new Date().toISOString();
+            }
+
             const { error } = await supabase
                 .from('chats')
-                .update({ bot_enabled: enabled })
+                .update(updateData)
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID);
             
             if (error) throw error;
             
-            historyEvents.emit('bot_toggled', { chatId, bot_enabled: enabled });
+            // Emitir evento para WebSockets
+            historyEvents.emit('bot_toggled', { chatId, enabled });
 
             return { success: true };
-        } catch (err) {
+        } catch (err: any) {
             console.error('[HistoryHandler] Error en toggleBot:', err);
             return { success: false, error: err.message };
         }
     }
 
+    /**
+     * Lista todos los chats activos (con tags incluidos)
+     */
     static async listChats() {
         try {
             const { data, error } = await supabase
@@ -284,6 +307,9 @@ export class HistoryHandler {
         }
     }
 
+    /**
+     * Obtiene los mensajes de un chat específico
+     */
     static async getMessages(chatId: string, limit: number = 50) {
         try {
             const { data, error } = await supabase
@@ -291,11 +317,11 @@ export class HistoryHandler {
                 .select('*')
                 .eq('chat_id', chatId)
                 .eq('project_id', PROJECT_ID)
-                .order('created_at', { ascending: false })
+                .order('created_at', { ascending: false }) // Primero los más nuevos para el LIMIT
                 .limit(limit);
             
             if (error) throw error;
-            return (data || []).reverse();
+            return (data || []).reverse(); // Revertir para orden cronológico
         } catch (err) {
             console.error('[HistoryHandler] Error en getMessages:', err);
             return [];
@@ -328,7 +354,7 @@ export class HistoryHandler {
                 .single();
             if (error) throw error;
             return { success: true, tag: data };
-        } catch (err) {
+        } catch (err: any) {
             return { success: false, error: err.message };
         }
     }
@@ -342,7 +368,7 @@ export class HistoryHandler {
                 .eq('project_id', PROJECT_ID);
             if (error) throw error;
             return { success: true };
-        } catch (err) {
+        } catch (err: any) {
             return { success: false, error: err.message };
         }
     }
@@ -356,7 +382,7 @@ export class HistoryHandler {
                 .eq('project_id', PROJECT_ID);
             if (error) throw error;
             return { success: true };
-        } catch (err) {
+        } catch (err: any) {
             return { success: false, error: err.message };
         }
     }
@@ -368,7 +394,7 @@ export class HistoryHandler {
                 .insert({ chat_id: chatId, tag_id: tagId, project_id: PROJECT_ID });
             if (error) throw error;
             return { success: true };
-        } catch (err) {
+        } catch (err: any) {
             return { success: false, error: err.message };
         }
     }
@@ -383,7 +409,7 @@ export class HistoryHandler {
                 .eq('project_id', PROJECT_ID);
             if (error) throw error;
             return { success: true };
-        } catch (err) {
+        } catch (err: any) {
             return { success: false, error: err.message };
         }
     }
@@ -396,7 +422,7 @@ export class HistoryHandler {
                 .eq('chat_id', chatId)
                 .eq('project_id', PROJECT_ID);
             if (error) throw error;
-            return (data || []).map(item => item.tags);
+            return (data || []).map((item: any) => item.tags);
         } catch (err) {
             console.error('[HistoryHandler] Error en getChatTags:', err);
             return [];
@@ -415,11 +441,12 @@ export class HistoryHandler {
         }
     }
 
-    // --- Thread ID Persistence (Sección 9.1 del documento de mejoras) ---
-
+    /**
+     * Guarda el thread_id de OpenAI en el metadata del chat
+     */
     static async saveThreadId(chatId: string, threadId: string) {
         try {
-            // Leer metadata actual y mergear el thread_id
+            // Primero obtenemos metadata actual
             const { data } = await supabase
                 .from('chats')
                 .select('metadata')
@@ -430,29 +457,28 @@ export class HistoryHandler {
             const currentMetadata = data?.metadata || {};
             const updatedMetadata = { ...currentMetadata, thread_id: threadId };
 
-            const { error } = await supabase
+            await supabase
                 .from('chats')
                 .update({ metadata: updatedMetadata })
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID);
-
-            if (error) throw error;
-            console.log(`[HistoryHandler] thread_id guardado para ${chatId}: ${threadId}`);
         } catch (err) {
             console.error('[HistoryHandler] Error en saveThreadId:', err);
         }
     }
 
+    /**
+     * Obtiene el thread_id de OpenAI del metadata del chat
+     */
     static async getThreadId(chatId: string): Promise<string | null> {
         try {
-            const { data, error } = await supabase
+            const { data } = await supabase
                 .from('chats')
                 .select('metadata')
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID)
                 .maybeSingle();
 
-            if (error) throw error;
             return data?.metadata?.thread_id || null;
         } catch (err) {
             console.error('[HistoryHandler] Error en getThreadId:', err);
@@ -461,4 +487,5 @@ export class HistoryHandler {
     }
 }
 
+// Inicializar base de datos al cargar el modulo
 HistoryHandler.initDatabase();

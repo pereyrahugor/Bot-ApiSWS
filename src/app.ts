@@ -7,15 +7,13 @@ import OpenAI from "openai";
 import { BaileysProvider } from "builderbot-provider-sherpa";
 import { createBot, createProvider, createFlow, MemoryDB } from "@builderbot/bot";
 import { httpInject } from "@builderbot-plugins/openai-assistants";
-import * as bodyParser from 'body-parser';
 
 // --- Utils & Handlers ---
-import { PROJECT_ID, BOT_NAME } from "./utils/config";
 import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
 import { ErrorReporter } from "./utils/errorReporter";
 import { updateMain } from "./addModule/updateMain";
 import { WebChatManager } from "./utils-web/WebChatManager";
-import { HistoryHandler, historyEvents } from "./utils/historyHandler";
+import { HistoryHandler } from "./utils/historyHandler";
 import { registerProcessCallback, handleQueue, userQueues, userLocks } from "./utils/queueManager";
 
 // --- Managers & Routes ---
@@ -24,11 +22,12 @@ import { registerRailwayRoutes } from "./routes/railway.routes";
 import { registerWebchatRoutes } from "./routes/webchat.routes";
 import { registerStaticRoutes } from "./routes/static.routes";
 import { initSocketIO } from "./sockets/socket.manager";
-import { registerProviderEvents, hasActiveSession } from "./providers/provider.manager.js";
+import { registerProviderEvents, hasActiveSession } from "./providers/provider.manager";
 import { startHumanInactivityWorker } from "./workers/humanInactivity.worker";
-import { AiManager } from "./managers/ai.manager";
+import { AiManager } from "./utils/ai.manager";
 import { smartBodyParser, compatibilityLayer, rootRedirect } from "./middleware/global";
 import { backofficeAuth } from "./middleware/auth";
+import * as bodyParser from 'body-parser';
 
 // --- Flows ---
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
@@ -48,25 +47,29 @@ export let errorReporter: any;
 export let aiManagerInstance: AiManager;
 const webChatManager = new WebChatManager();
 const openaiMain = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const openaiVision = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG || process.env.OPENAI_API_KEY });
+const openaiVision = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
 const ASSISTANT_ID = process.env.ASSISTANT_ID!;
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3008;
 
 // Multer config
-const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => {
-        const dir = "uploads/";
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename: (_req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
-    }
+const upload = multer({ 
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => {
+            const dir = "uploads/";
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+            const ext = path.extname(file.originalname);
+            cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
+        }
+    })
 });
-const upload = multer({ storage });
 
+// Error handling setup
 function registerSafeErrorHandlers() {
+    process.removeAllListeners("uncaughtException");
+    process.removeAllListeners("unhandledRejection");
     process.on("uncaughtException", (error) => {
         console.error(`⚠️ [UncaughtException] ${new Date().toISOString()}:`, error);
     });
@@ -79,14 +82,9 @@ function registerSafeErrorHandlers() {
  * Main function for Bot and Server Orchestration
  */
 const main = async () => {
-    console.log(`🚀Starting bot for Project: ${PROJECT_ID} (Bot Name: ${BOT_NAME})`);
-
     // 1. Storage cleanup and session restoration
-    const qrPath = path.join(process.cwd(), "bot.qr.png");
-    if (fs.existsSync(qrPath)) {
-        try { fs.unlinkSync(qrPath); } catch (e) { /* silent fail */ }
-    }
     await restoreSessionFromDb();
+    const qrPath = path.join(process.cwd(), "bot.qr.png");
 
     // 2. Initialize Provider
     adapterProvider = createProvider(BaileysProvider, {
@@ -106,20 +104,22 @@ const main = async () => {
     const app = adapterProvider.server;
     if (app) {
         // 5. Polka/Express Server setup & Early Middlewares
+        console.log("🛠️ [POLKA MIDDLEWARES - INITIAL]:", app.middlewares?.length || 0);
         app.onError = (err: any, _req: any, res: any) => {
             console.error("🔥 [POLKA ERROR]:", err);
             res.statusCode = 500;
             res.end(JSON.stringify({ success: false, error: err.message || "Internal Server Error" }));
         };
 
+        // APLICAR COMPATIBILIDAD AL INICIO
         app.use(compatibilityLayer);
-        
-        // --- MASTER INTERCEPTOR FOR STREAMS (CRITICAL) ---
+        // MASTER-INTERCEPTOR DE STREAMS (CRÍTICO)
+        // Usamos middleware global (sin prefijo en app.use) para tener el req.url ORIGINAL completo.
         app.use(async (req: any, res: any, next: any) => {
             const fullUrl = req.url.split('?')[0];
             
             if (fullUrl === '/api/backoffice/send-message' && req.method === 'POST') {
-                console.log("🛡️ [MASTER-INTERCEPTOR] Capture detected. Bypassing global parsers...");
+                console.log("🛡️ [MASTER-INTERCEPTOR] Captura detectada de envío. Procesando bypass total...");
                 
                 return backofficeAuth(req, res, () => {
                     const deps: BackofficeDependencies = { adapterProvider, HistoryHandler, openaiMain, upload };
@@ -132,6 +132,7 @@ const main = async () => {
                                 return res.status(400).end(JSON.stringify({ success: false, error: `Error de archivo: ${err.message}` }));
                             }
                             const { chatId, message } = req.body;
+                            console.log(`📡 [MASTER-INTERCEPTOR] Datos recibidos: chatId=${chatId}, messageLen=${message?.length || 0}, hasFile=${!!(req as any).file}`);
                             return processSendMessage(req, res, chatId, message, (req as any).file, deps);
                         });
                     } else {
@@ -146,6 +147,13 @@ const main = async () => {
         });
 
         app.use(rootRedirect);
+        
+        registerBackofficeRoutes(app, {
+            adapterProvider,
+            HistoryHandler,
+            openaiMain,
+            upload
+        });
     }
 
     // 6. Initialize AI Manager and flows
@@ -178,13 +186,13 @@ const main = async () => {
 
     // 8. Middlewares y Plugins post-Bot
     if (app) {
+        // Plugins y Middlewares Globales de Body-Parsing
         httpInject(app);
         app.use(smartBodyParser);
 
         // 9. Register Other Routes
-        registerBackofficeRoutes(app, { adapterProvider, HistoryHandler, openaiMain, upload });
         registerRailwayRoutes(app, { RailwayApi: (await import("./Api-RailWay/Railway")).RailwayApi });
-        registerWebchatRoutes(app, { webChatManager, openaiVision, ASSISTANT_ID, processUserMessage: aiManager.processUserMessage.bind(aiManager) });
+        registerWebchatRoutes(app, { webChatManager, openaiVision, ASSISTANT_ID, processUserMessage: aiManager.processUserMessage });
         registerStaticRoutes(app, { __dirname });
 
         // API Health & Info
@@ -201,9 +209,9 @@ const main = async () => {
                 res.status(500).json({ success: false, error: err.message });
             }
         });
-    }
+    };
         
-    // 10. Start Workers
+    // 10. Workers Initialization
     startHumanInactivityWorker(15);
 
     // 11. Start Server and Sockets
@@ -212,20 +220,15 @@ const main = async () => {
         setTimeout(() => {
             if (app?.server) {
                 console.log("✅ [Socket.IO] app.server detected, initializing...");
-                initSocketIO(app.server, { 
-                    processUserMessage: aiManager.processUserMessage.bind(aiManager),
-                    historyEvents
-                });
+                initSocketIO(app.server, { processUserMessage: aiManager.processUserMessage });
             }
-        }, 1500);
+        }, 1000);
     } catch (err) {
         console.error("❌ [FATAL] Error starting server:", err);
     }
 };
 
-main().catch(err => {
-    console.error('❌ [FATAL] Error in main function:', err);
-});
+main().catch(err => console.error("❌ [FATAL MAIN]:", err));
 
 export {
     welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowVideo, welcomeFlowDoc, locationFlow,

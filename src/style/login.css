@@ -4,7 +4,6 @@
     --card: #1e293b;
     --text: #f8fafc;
 }
-
 body {
     margin: 0;
     padding: 0;
@@ -17,7 +16,6 @@ body {
     height: 100vh;
     overflow: hidden;
 }
-
 .login-card {
     background: var(--card);
     padding: 2rem;
@@ -29,10 +27,8 @@ body {
     border: 1px solid rgba(255,255,255,0.1);
     backdrop-filter: blur(10px);
 }
-
 h1 { font-weight: 600; margin-bottom: 0.5rem; font-size: 1.5rem; }
 p { color: #94a3b8; margin-bottom: 2rem; }
-
 input {
     width: 100%;
     padding: 1rem;
@@ -45,9 +41,7 @@ input {
     outline: none;
     transition: border 0.3s;
 }
-
 input:focus { border-color: var(--primary); }
-
 button {
     width: 100%;
     padding: 1rem;
@@ -59,7 +53,5 @@ button {
     cursor: pointer;
     transition: transform 0.2s, opacity 0.2s;
 }
-
 button:hover { transform: translateY(-2px); opacity: 0.9; }
-
 .error { color: #f87171; margin-top: 1rem; font-size: 0.9rem; display: none; }

@@ -1,39 +1,32 @@
-import { supabase, HistoryHandler, historyEvents } from "../utils/historyHandler";
+import { HistoryHandler, supabase } from "../utils/historyHandler";
 
 /**
- * Worker que reactiva el bot si el humano no responde en el tiempo especificado.
+ * Inicia un worker que verifica cada minuto los chats con intervención humana (bot desactivado).
+ * Si no han recibido un mensaje humano en 15 minutos, reactiva el bot automáticamente.
  */
-export const startHumanInactivityWorker = (minutes = 15) => {
-    console.log(`🕒 [Worker] Iniciando monitor de inactividad humana (${minutes} min)...`);
+export const startHumanInactivityWorker = (timeoutMinutes = 15) => {
+    console.log(`🤖 [Worker] Iniciando worker de inactividad humana (${timeoutMinutes} min)...`);
     
-    return setInterval(async () => {
+    setInterval(async () => {
         try {
-            // Obtener chats donde el bot está desactivado
-            const { data: chats } = await supabase
-                .from('chats')
-                .select('*')
-                .eq('project_id', process.env.RAILWAY_PROJECT_ID || 'default_project')
-                .eq('bot_enabled', false);
-
             const now = new Date();
-            for (const chat of (chats || [])) {
-                if (chat.last_human_message_at) {
-                    const lastHuman = new Date(chat.last_human_message_at);
-                    const diffMin = (now.getTime() - lastHuman.getTime()) / 60000;
-                    
-                    if (diffMin >= minutes) {
-                        console.log(`🕒 [Worker] Reactivando bot para ${chat.id} (${Math.round(diffMin)} min inactivo)`);
-                        await HistoryHandler.toggleBot(chat.id, true);
-                        historyEvents.emit('bot_toggled', { chatId: chat.id, enabled: true });
-                    }
-                } else {
-                    // Si no hay fecha (null), reactivamos por precaución
-                    await HistoryHandler.toggleBot(chat.id, true);
-                    historyEvents.emit('bot_toggled', { chatId: chat.id, enabled: true });
-                }
+            const threshold = new Date(now.getTime() - timeoutMinutes * 60 * 1000);
+            
+            const { data: inactiveChats, error } = await supabase
+                .from('chats')
+                .select('id, last_human_message_at')
+                .eq('project_id', process.env.RAILWAY_PROJECT_ID || 'default_project')
+                .eq('bot_enabled', false)
+                .or(`last_human_message_at.lte.${threshold.toISOString()},last_human_message_at.is.null`);
+
+            if (error) throw error;
+
+            for (const chat of (inactiveChats || [])) {
+                console.log(`[WORKER] [${new Date().toLocaleTimeString()}] Auto-activando bot para ${chat.id} (Inactividad > ${timeoutMinutes} min)`);
+                await HistoryHandler.toggleBot(chat.id, true);
             }
         } catch (e) {
-            console.error('[Worker] Error checking human inactivity:', e);
+            console.error('[WORKER] Error checking human inactivity:', e);
         }
-    }, 60000); // Revisar cada minuto
+    }, 60000);
 };

@@ -2,115 +2,93 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import { BaileysProvider } from "@builderbot/provider-baileys";
 import { MemoryDB } from "@builderbot/bot";
 import { reset } from "~/utils/timeOut";
-import { handleQueue, userQueues, userLocks } from "~/app";
+import { userQueues, userLocks, handleQueue } from "~/utils/queueManager";
 import { processImageWithVision } from "../utils/processImageWithVision";
 import fs from 'fs';
 import path from 'path';
+
+
 import { execSync } from 'child_process';
-import { HistoryHandler } from "../utils/historyHandler";
+
+
+
+// Función para convertir PDF a imágenes PNG usando pdftoppm (Poppler)
+function extraerPaginasComoPNG(pdfPath, outputDir) {
+    // Genera imágenes page-1.png, page-2.png, ... en outputDir
+    const outPrefix = path.join(outputDir, 'page');
+    execSync(`pdftoppm -png "${pdfPath}" "${outPrefix}"`);
+    // Buscar los archivos generados
+    const files = fs.readdirSync(outputDir)
+        .filter(f => f.startsWith('page-') && f.endsWith('.png'))
+        .map(f => path.join(outputDir, f));
+    return files;
+}
 
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
 
-// Función para convertir PDF a imágenes PNG usando pdftoppm (Poppler)
-function extraerPaginasComoPNG(pdfPath: string, outputDir: string): string[] {
-    // Genera imágenes page-1.png, page-2.png, ... en outputDir
-    const outPrefix = path.join(outputDir, 'page');
-    try {
-        // En Windows, pdftoppm funciona igual si está en el PATH
-        execSync(`pdftoppm -png "${pdfPath}" "${outPrefix}"`);
-        // Buscar los archivos generados
-        const files = fs.readdirSync(outputDir)
-            .filter(f => f.startsWith('page-') && f.endsWith('.png'))
-            .map(f => path.join(outputDir, f));
-        return files;
-    } catch (e) {
-        // console.error("Error ejecutando pdftoppm:", e);
-        return [];
-    }
-}
-
 export const welcomeFlowDoc = addKeyword<BaileysProvider, MemoryDB>(EVENTS.DOCUMENT)
-    .addAction(async (ctx, { flowDynamic, provider, state, gotoFlow }) => {
-        const userId = ctx.from;
+    .addAction(async (ctx, { flowDynamic, provider }) => {
         let localPath = null;
         let outputDir = null;
         const imagenesGeneradas = [];
-        
         try {
+            let tipo = "desconocido";
             const mimetype = ctx?.media?.mimetype || ctx?.message?.documentMessage?.mimetype;
-            const isPDF = mimetype === "application/pdf";
+            if (mimetype === "application/pdf") tipo = "pdf";
+            else tipo = mimetype || "desconocido";
 
-            if (!isPDF) {
-                // Si no es PDF, lo ignoramos o podrías manejar otros tipos aquí
+            if (tipo !== "pdf") {
+                await flowDynamic("Solo se aceptan archivos PDF en este flujo.");
                 return;
             }
 
-            // Asegurar que la carpeta uploads exista
-            if (!fs.existsSync("./uploads/")) {
-                fs.mkdirSync("./uploads/", { recursive: true });
+            // Asegurar que la carpeta temp exista
+            if (!fs.existsSync("./temp/")) {
+                fs.mkdirSync("./temp/", { recursive: true });
             }
-            
-            // Guardar el PDF en uploads
-            localPath = await provider.saveFile(ctx, { path: "./uploads/" });
+
+            // Guardar el PDF en temp
+            localPath = await provider.saveFile(ctx, { path: "./temp/" });
             if (!localPath) {
-                await flowDynamic("No se pudo guardar el documento recibido.");
+                await flowDynamic("No se pudo guardar el PDF recibido.");
                 return;
             }
-
-            reset(ctx, gotoFlow, setTime);
 
             // Convertir cada página del PDF a imagen (png) usando pdftoppm (Poppler)
             outputDir = path.join("./temp", `pdf_${Date.now()}`);
             fs.mkdirSync(outputDir, { recursive: true });
-            
-            const imagenes = extraerPaginasComoPNG(localPath, outputDir);
-            
+            let imagenes = [];
+            try {
+                imagenes = extraerPaginasComoPNG(localPath, outputDir);
+            } catch (e) {
+                console.error("Error extrayendo páginas como PNG:", e);
+                await flowDynamic("Error al convertir el PDF a imágenes. Asegúrate de que el PDF no esté protegido y que Poppler esté instalado.");
+            }
             if (imagenes.length === 0) {
-                await flowDynamic("Error al leer el PDF. Asegúrate de que no esté protegido.");
+                await flowDynamic("No se pudo convertir el PDF a imágenes.");
                 return;
             }
-
-            await flowDynamic("Procesando documento, un momento por favor...");
-
-            let descripcionConsolidada = "";
-            for (let i = 0; i < imagenes.length; i++) {
-                const imgPath = imagenes[i];
+            for (const imgPath of imagenes) {
                 const imgBuffer = fs.readFileSync(imgPath);
-                
-                // Analizar cada página
-                const result = await processImageWithVision(imgBuffer);
-                descripcionConsolidada += `\n--- Página ${i + 1} ---\n${result}\n`;
-                imagenesGeneradas.push(imgPath);
+                // Procesar la imagen con la lógica de Vision+OpenAI+Imgur
+                await processImageWithVision(imgBuffer, flowDynamic);
             }
-
-            // Guardar en el historial para que sea visible en el backoffice
-            const fileName = path.basename(localPath);
-            await HistoryHandler.saveMessage(ctx.from, 'user', `/uploads/${fileName}`, 'document');
-
-            // Integrar el contenido del PDF en el flujo principal del asistente
-            ctx.body = `[Documento PDF recibido]:\n${descripcionConsolidada}`;
-
-            // Reencolar el mensaje para que lo procese el asistente principal (manteniendo el hilo)
-            if (!userQueues.has(userId)) {
-                userQueues.set(userId, []);
-            }
-            userQueues.get(userId).push({ ctx, flowDynamic, state, provider, gotoFlow });
-            
-            if (!userLocks.get(userId) && userQueues.get(userId).length === 1) {
-                await handleQueue(userId);
-            }
-
+            imagenesGeneradas.push(...imagenes);
         } catch (err) {
-            // console.error("Error procesando PDF:", err);
-            await flowDynamic("Ocurrió un error al procesar el documento.");
+            console.error("Error procesando PDF:", err);
+            await flowDynamic("Ocurrió un error al procesar el PDF.");
         } finally {
-            // Limpieza de archivos temporales
-            for (const imgPath of imagenesGeneradas) {
-                try { if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath); } catch (e) { /* ignore */ }
+            // Limpiar archivos temporales SIEMPRE
+            if (imagenesGeneradas.length > 0) {
+                for (const imgPath of imagenesGeneradas) {
+                    try { fs.unlinkSync(imgPath); } catch (e) { console.error("Ignorado:", e.message); }
+                }
             }
             if (outputDir && fs.existsSync(outputDir)) {
-                try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+                try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) { console.error("Ignorado:", e.message); }
             }
-            // NO borramos el localPath del PDF para que sea accesible desde el backoffice
+            if (localPath && fs.existsSync(localPath)) {
+                try { fs.unlinkSync(localPath); } catch (e) { console.error("Ignorado:", e.message); }
+            }
         }
     });

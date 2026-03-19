@@ -3,102 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Backoffice - {{ASSISTANT_NAME}}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <title>🤖 {{BOT_NAME}} - Backoffice</title>
     <link rel="stylesheet" href="/style/backoffice.css">
-    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
+
     <div id="sidebar">
         <div class="sidebar-header">
-            <div class="chat-avatar" id="user-avatar-placeholder">
-                <span>👤</span>
+            <div class="chat-avatar" style="width: 40px; height: 40px; background: #6a7175;">
+                <span>🤖</span>
             </div>
-            <div class="sidebar-header-actions">
-                <button id="toggle-tag-manager-btn" class="btn-icon" title="Gestionar Etiquetas">🏷️</button>
-                <div class="header-spacer"></div>
-                <button id="logout-btn" class="btn-icon logout-btn">Salir</button>
+            <h2 style="margin:0; font-size:1.2rem; flex:1; margin-left:12px;">{{BOT_NAME}}</h2>
+            <div style="display:flex; gap:12px;">
+                <button class="btn-icon" onclick="toggleTagManager()" title="Gestión Etiquetas"><i class="fas fa-tags"></i></button>
+                <button class="btn-icon" onclick="logout()" title="Cerrar Sesión" style="color:#f87171;"><i class="fas fa-sign-out-alt"></i></button>
             </div>
         </div>
+
         <div class="search-container">
             <div class="search-wrapper">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="search-input" class="search-input" placeholder="Buscar o empezar un nuevo chat">
+                <i class="fas fa-search" style="color:var(--wa-text-secondary); font-size: 0.8rem;"></i>
+                <input type="text" id="search-input" class="search-input" placeholder="Buscar chat por ID o etiqueta..." oninput="handleSearch()">
             </div>
-            <div class="search-wrapper filter-container">
-                <span class="filter-icon">🏷️</span>
-                <select id="filter-tag" class="search-input filter-select">
-                    <option value="">Todas las etiquetas</option>
-                </select>
-            </div>
+            <select id="filter-tag" class="search-input" style="background:var(--wa-search-bg); border-radius:8px; width:100%; border:none; margin-top:2px;" onchange="handleSearch()">
+                <option value="">Todas las etiquetas</option>
+            </select>
         </div>
+
         <div id="chat-list">
-            <!-- Cargando hilos... -->
+            <!-- Cargando chats... -->
         </div>
     </div>
 
     <div id="main-content">
         <div id="chat-header">
             <div class="header-user">
-                <div id="active-chat-avatar" class="chat-avatar">?</div>
-                <div class="chat-info">
-                    <div id="active-chat-phone" class="chat-phone">Selecciona un chat</div>
-                    <div id="active-chat-name" class="chat-name-small">---</div>
-                    <div id="active-chat-tags" class="active-chat-tags"></div>
+                <div class="chat-avatar" id="active-chat-avatar"></div>
+                <div>
+                    <div style="font-weight:600;" id="active-chat-phone">Seleccione un chat</div>
+                    <div style="font-size:0.8rem; color:var(--wa-text-secondary);" id="active-chat-name"></div>
+                    <div id="active-chat-tags" style="display:flex; gap:4px; margin-top:2px;"></div>
                 </div>
             </div>
-            <div class="intervention-status">
-                <div class="switch-container">
-                    <span id="bot-status-text">Bot Activo</span>
-                    <label class="switch">
-                        <input type="checkbox" id="bot-toggle" disabled>
-                        <span class="slider"></span>
-                    </label>
-                </div>
+
+            <div class="switch-container">
+                <span id="bot-status-text">Sin chat seleccionado</span>
+                <label class="switch">
+                    <input type="checkbox" id="bot-toggle" disabled onchange="toggleBot(this.checked)">
+                    <span class="slider"></span>
+                </label>
             </div>
         </div>
 
         <div id="messages">
-            <!-- Mensajes aquí -->
+            <div style="flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; opacity:0.3;">
+                <i class="fas fa-comments" style="font-size:5rem; margin-bottom:1rem;"></i>
+                <h2>Bienvenido al panel de control</h2>
+                <p>Selecciona un chat a la izquierda para comenzar.</p>
+            </div>
         </div>
 
         <div id="input-area">
-            <input type="file" id="file-input" class="hidden-input">
-            <button class="btn-icon" id="attach-btn" disabled>📎</button>
+            <button class="btn-icon" id="attach-btn" title="Adjuntar archivo" disabled onclick="document.getElementById('file-input').click()">
+                <i class="fas fa-paperclip"></i>
+            </button>
+            <input type="file" id="file-input" style="display:none;" onchange="handleFileSelect(this)">
+            
             <div class="input-wrapper">
-                <input type="text" id="message-input" placeholder="Escribe un mensaje aquí" disabled>
+                <input type="text" id="message-input" placeholder="Escribe un mensaje aquí" disabled
+                       onkeydown="if(event.key === 'Enter') sendMessage()">
             </div>
-            <button class="btn-icon send-btn-active" id="send-btn" disabled>
-                <span class="send-icon">➤</span>
+            
+            <button class="btn-icon" id="send-btn" title="Enviar mensaje" onclick="sendMessage()" disabled style="color: var(--wa-accent);">
+                <i class="fas fa-paper-plane"></i>
             </button>
         </div>
     </div>
 
+    <!-- Panel de gestión de etiquetas -->
     <div id="tag-manager">
         <div class="tag-manager-header">
-            <button id="close-tag-manager-btn" class="btn-icon">✕</button>
-            <h3 class="tag-manager-title">Etiquetas</h3>
+            <button class="btn-icon" onclick="toggleTagManager()"><i class="fas fa-arrow-left"></i></button>
+            <h3 style="margin:0;">Etiquetas del Bot</h3>
         </div>
-        
         <div class="tag-manager-content">
-            <div class="tag-creation-box">
-                <h4 class="tag-section-title">Nueva Etiqueta</h4>
-                <input type="text" id="new-tag-name" class="search-input new-tag-input" placeholder="Nombre">
-                <div class="new-tag-controls">
-                    <input type="color" id="new-tag-color" class="new-tag-color" value="#00a884">
-                    <button id="create-tag-btn" class="btn-icon create-tag-btn">Crear</button>
+            <div style="margin-bottom:20px;">
+                <h4 style="margin:0 0 10px 0;">Crear Etiqueta</h4>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="new-tag-name" class="search-input" style="background:#202c33; border-radius:8px;" placeholder="Ej: interesado">
+                    <input type="color" id="new-tag-color" value="#6366f1" style="height:35px; width:35px; border:none; background:none;">
+                    <button class="btn-icon" onclick="createTag()"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
 
-            <div id="tag-list-editor">
-                <!-- Lista de etiquetas para editar -->
-            </div>
+            <h4 style="margin:0 0 10px 0;">Lista de Etiquetas</h4>
+            <div id="tag-list-editor"></div>
 
-            <div id="current-chat-tags-section" class="assign-tags-section" style="display:none;">
-                <h4 class="tag-section-title">Asignar a este chat</h4>
-                <div id="available-tags-to-assign" class="assign-tags-list">
-                    <!-- Etiquetas disponibles para asignar -->
-                </div>
+            <div id="current-chat-tags-section" style="margin-top:30px; display:none;">
+                <h4 style="margin:0 0 10px 0;">Asignar a este chat</h4>
+                <div id="available-tags-to-assign" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
             </div>
         </div>
     </div>

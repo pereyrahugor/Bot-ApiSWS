@@ -1,4 +1,5 @@
 import fs from 'fs';
+
 import path from 'path';
 import bodyParser from 'body-parser';
 
@@ -103,7 +104,7 @@ export const rootRedirect = (req: any, res: any, next: () => void) => {
  */
 export const smartBodyParser = (req: any, res: any, next: () => void) => {
     // Si la ruta ya fue manejada por un parser específico o es una ruta de envío de archivos, saltar
-    if (req.url && req.url.startsWith('/api/backoffice/send-message')) {
+    if (req.url.startsWith('/api/backoffice/send-message')) {
         return next(); 
     }
 
@@ -115,7 +116,7 @@ export const smartBodyParser = (req: any, res: any, next: () => void) => {
 
     // Procesar JSON y URL-encoded para el resto
     bodyParser.json({ limit: '50mb' })(req, res, (err) => {
-        if (err) return next(); 
+        if (err) return next(); // O manejar error
         bodyParser.urlencoded({ limit: '50mb', extended: true })(req, res, next);
     });
 };

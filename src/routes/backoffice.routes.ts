@@ -43,10 +43,6 @@ export const processSendMessage = async (
         
         // 2. GUARDAR PRIMERO (Feedback instantáneo)
         await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType);
-        
-        // Actualizar el timestamp de último mensaje humano para el worker de inactividad
-        // En Bot-ApiSWS el HistoryHandler.saveMessage ya actualiza last_message_at,
-        // pero necesitamos resetear el timer de inactividad si el humano interviene.
         await HistoryHandler.updateLastHumanMessage(chatId);
 
         // 3. Inyectar en thread OpenAI (silencioso)
@@ -55,7 +51,7 @@ export const processSendMessage = async (
                 openaiMain.beta.threads.messages.create(threadId, {
                     role: 'assistant',
                     content: `[Mensaje enviado por operador humano]: ${message || '[Media]'}`
-                }).catch((e: any) => console.error('[BACKOFFICE] Error inyectando contexto OpenAI:', e));
+                }).catch(() => {});
             }
         }).catch(() => {});
 
@@ -98,9 +94,7 @@ export const processSendMessage = async (
 
     } catch (e: any) {
         console.error('❌ Error crítico en processSendMessage:', e);
-        if (!res.headersSent) {
-            res.status(500).json({ success: false, error: e.message });
-        }
+        res.status(500).json({ success: false, error: e.message });
     }
 };
 
@@ -112,10 +106,9 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- AUTH ---
 
-    app.post('/api/backoffice/auth', bodyParser.json(), (req: any, res: any) => {
+    app.post('/api/backoffice/auth', bodyParser.json(), (req, res) => {
         const { token } = req.body;
-        const serverToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
-        if (token === serverToken) {
+        if (token === process.env.BACKOFFICE_TOKEN) {
             res.json({ success: true });
         } else {
             res.status(401).json({ success: false, error: "Invalid token" });
@@ -124,27 +117,28 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- CHATS & MESSAGES ---
 
-    app.get('/api/backoffice/chats', backofficeAuth, async (req: any, res: any) => {
+    app.get('/api/backoffice/chats', backofficeAuth, async (req, res) => {
         const chats = await HistoryHandler.listChats();
         res.json(chats);
     });
 
-    app.get('/api/backoffice/messages/:chatId', backofficeAuth, async (req: any, res: any) => {
+    app.get('/api/backoffice/messages/:chatId', backofficeAuth, async (req, res) => {
         const messages = await HistoryHandler.getMessages(req.params.chatId);
         res.json(messages);
     });
 
-    app.get('/api/backoffice/profile-pic/:chatId', async (req: any, res: any) => {
+    app.get('/api/backoffice/profile-pic/:chatId', async (req, res) => {
         try {
             const { chatId } = req.params;
             const token = req.query.token as string;
 
-            if (token !== (process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024')) {
+            if (token !== process.env.BACKOFFICE_TOKEN) {
                 res.status(401).end();
                 return;
             }
 
             if (!adapterProvider) {
+                console.error('[ProfilePic] Error: adapterProvider no inicializado');
                 res.status(500).end();
                 return;
             }
@@ -162,19 +156,25 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
                         res.writeHead(302, { Location: url });
                         return res.end();
                     }
-                } catch (picError) {}
+                } catch (picError) {
+                    // console.log(`[ProfilePic] No se pudo obtener foto para ${jid}`);
+                }
             }
             
             res.status(404).end();
         } catch (e) {
-            console.error('[ProfilePic] Error:', e);
+            console.error('[ProfilePic] Error excepcional:', e);
             res.status(500).end();
         }
     });
 
     // --- SEND MESSAGE & TOGGLE BOT ---
 
-    app.post('/api/backoffice/send-message', backofficeAuth, (req: any, res: any) => {
+    app.post('/api/backoffice/send-message', backofficeAuth, (req, res, next) => {
+        if (req.body && Object.keys(req.body).length > 0) {
+            console.warn("⚠️ [BACKOFFICE] Cuerpo detectado ANTES de Multer. Posible conflicto de stream.");
+        }
+
         upload.single('file')(req, res, (err: any) => {
             if (err) {
                 console.error("❌ [BACKOFFICE] Error de Multer:", err);
@@ -183,19 +183,19 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
             const { chatId, message } = req.body;
             if (!chatId) return res.status(400).json({ success: false, error: 'chatId is required' });
             
+            // Pasamos deps como sexto argumento
             processSendMessage(req, res, chatId, message, (req as any).file, deps);
         });
     });
 
-    app.post('/api/backoffice/toggle-bot', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+    app.post('/api/backoffice/toggle-bot', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { chatId, enabled } = req.body;
         if (!chatId) return res.status(400).json({ success: false, error: 'chatId is required' });
         
         try {
             await HistoryHandler.toggleBot(chatId, enabled);
-            // Notificar via socket se hace fuera o inyectando el Manager
-            if (app.io) {
-                app.io.emit('bot_toggled', { chatId, enabled });
+            if ((adapterProvider as any).server?.io) {
+                (adapterProvider as any).server.io.emit('bot_toggled', { chatId, enabled });
             }
             res.json({ success: true, enabled });
         } catch (e: any) {
@@ -205,35 +205,35 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- TAGS ---
 
-    app.get('/api/backoffice/tags', backofficeAuth, async (req: any, res: any) => {
+    app.get('/api/backoffice/tags', backofficeAuth, async (req, res) => {
         const tags = await HistoryHandler.getTags();
         res.json(tags);
     });
 
-    app.post('/api/backoffice/tags', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+    app.post('/api/backoffice/tags', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { name, color } = req.body;
         const result = await HistoryHandler.createTag(name, color);
         res.json(result);
     });
 
-    app.put('/api/backoffice/tags/:id', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+    app.put('/api/backoffice/tags/:id', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { name, color } = req.body;
         const result = await HistoryHandler.updateTag(req.params.id, name, color);
         res.json(result);
     });
 
-    app.delete('/api/backoffice/tags/:id', backofficeAuth, async (req: any, res: any) => {
+    app.delete('/api/backoffice/tags/:id', backofficeAuth, async (req, res) => {
         const result = await HistoryHandler.deleteTag(req.params.id);
         res.json(result);
     });
 
-    app.post('/api/backoffice/chats/:chatId/tags', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+    app.post('/api/backoffice/chats/:chatId/tags', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { tagId } = req.body;
         const result = await HistoryHandler.addTagToChat(req.params.chatId, tagId);
         res.json(result);
     });
 
-    app.delete('/api/backoffice/chats/:chatId/tags/:tagId', backofficeAuth, async (req: any, res: any) => {
+    app.delete('/api/backoffice/chats/:chatId/tags/:tagId', backofficeAuth, async (req, res) => {
         const result = await HistoryHandler.removeTagFromChat(req.params.chatId, req.params.tagId);
         res.json(result);
     });

@@ -2,8 +2,6 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import { reset } from "../utils/timeOut";
 import { userQueues, userLocks, handleQueue } from "../utils/queueManager";
 import * as fs from 'fs';
-import path from 'path';
-import { HistoryHandler } from "../utils/historyHandler";
 
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
 
@@ -41,12 +39,12 @@ const welcomeFlowVideo = addKeyword(EVENTS.MEDIA).addAction(
         return;
       }
       
-      // Asegurar que la carpeta uploads exista
-      if (!fs.existsSync("./uploads/")) {
-        fs.mkdirSync("./uploads/", { recursive: true });
+      // Asegurar que la carpeta temp exista
+      if (!fs.existsSync("./temp/")) {
+        fs.mkdirSync("./temp/", { recursive: true });
       }
       
-      const localPath = await provider.saveFile(ctx, { path: "./uploads/" });
+      const localPath = await provider.saveFile(ctx, { path: "./temp/" });
       if (!localPath) {
         await flowDynamic("No se pudo guardar el video recibido.");
         return;
@@ -64,13 +62,11 @@ const welcomeFlowVideo = addKeyword(EVENTS.MEDIA).addAction(
       }
 
       await state.update({ lastVideo: localPath });
-      
-      // Guardar en el historial para que sea visible en el backoffice
-      const fileName = path.basename(localPath);
-      await HistoryHandler.saveMessage(ctx.from, 'user', `/uploads/${fileName}`, 'video' as any);
 
       // Informar al asistente principal
-      ctx.body = `Se recibió un video. (El usuario envió un video que ha sido guardado)`;
+      const caption = ctx.body && !ctx.body.includes('_event_') ? ctx.body : '';
+      ctx.body = `[Video recibido]${caption ? ': ' + caption : ''}. (El usuario envió un video que ha sido guardado)`;
+
       
       if (!userQueues.has(userId)) {
         userQueues.set(userId, []);

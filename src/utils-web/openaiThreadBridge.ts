@@ -1,15 +1,23 @@
 import OpenAI from 'openai';
+import { withRetry } from '../utils/retryHelper';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
- * Obtiene o crea un thread_id para el usuario webchat
+ * Obtiene o crea un thread_id para el usuario webchat con reintentos para fallos de red.
  * @param store objeto de sesión por IP
  * @returns thread_id
  */
 export async function getOrCreateThreadId(store: { thread_id?: string | null }) {
   if (store.thread_id) return store.thread_id;
-  const thread = await openai.beta.threads.create();
+  
+  const thread = await withRetry(async () => {
+    return await openai.beta.threads.create();
+  }, {
+    maxRetries: 3,
+    onRetry: (err, attempt) => console.log(`[ThreadBridge] Reintento ${attempt} creando thread por error: ${err.message}`)
+  });
+
   store.thread_id = thread.id;
   return thread.id;
 }
@@ -29,22 +37,11 @@ export async function sendMessageToThread(threadId: string, userMessage: string,
     while (attempt < 30) { // Max 60 seconds wait
       const runs = await openai.beta.threads.runs.list(threadId, { limit: 1 });
       const activeRun = runs.data.find(run => 
-        ["queued", "in_progress", "cancelling", "requires_action"].includes(run.status)
+        ["queued", "in_progress", "cancelling"].includes(run.status)
       );
       
       if (activeRun) {
         if (attempt % 5 === 0) console.log(`[sendMessageToThread] Run activo detectado (${activeRun.id}, estado: ${activeRun.status}). Esperando...`);
-        
-        // Si está en requires_action o lleva mucho tiempo, intentar cancelar
-        if (activeRun.status === "requires_action" || attempt > 5) {
-          try {
-            console.log(`[sendMessageToThread] Intentando cancelar run estancado ${activeRun.id}...`);
-            await openai.beta.threads.runs.cancel(threadId, activeRun.id);
-          } catch (e) {
-            console.warn(`[sendMessageToThread] No se pudo cancelar el run:`, e);
-          }
-        }
-
         await new Promise(resolve => setTimeout(resolve, 2000));
         attempt++;
       } else {
@@ -151,16 +148,12 @@ export async function sendMessageToThread(threadId: string, userMessage: string,
 }
 
 /**
- * Elimina el thread de OpenAI y limpia el thread_id en el store
+ * Elimina el thread y limpia el thread_id
  */
 export async function deleteThread(store: { thread_id?: string | null }) {
+  // No existe un método delete para threads en la API de OpenAI.
+  // Simplemente limpia el thread_id en el store.
   if (store.thread_id) {
-    try {
-      await openai.beta.threads.del(store.thread_id);
-    } catch (e) {
-      console.warn(`[deleteThread] No se pudo eliminar el thread ${store.thread_id} en OpenAI:`, e);
-    }
     store.thread_id = null;
   }
 }
-

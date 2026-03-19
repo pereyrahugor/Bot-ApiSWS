@@ -1,7 +1,4 @@
-/**
- * Backoffice Logic
- */
-
+/* global io */
 const token = localStorage.getItem('backoffice_token');
 if (!token) window.location.href = '/login';
 
@@ -9,6 +6,7 @@ let activeChatId = null;
 let chats = [];
 let botTags = [];
 let selectedFile = null;
+let isSending = false;
 
 // Inicializar Socket.IO para tiempo real
 const socket = io();
@@ -29,11 +27,9 @@ socket.on('bot_toggled', (payload) => {
     console.log('📡 Bot toggled:', payload);
     if (activeChatId === payload.chatId) {
         const toggle = document.getElementById('bot-toggle');
-        if (toggle) {
-            toggle.checked = payload.enabled;
-            updateBotStatusText(payload.enabled);
-            updateInputState(payload.enabled);
-        }
+        toggle.checked = payload.enabled;
+        updateBotStatusText(payload.enabled);
+        updateInputState(payload.enabled);
     }
     fetchChats();
 });
@@ -44,6 +40,17 @@ async function fetchChats() {
         if (res.status === 401) logout();
         chats = await res.json();
         handleSearch();
+        
+        // Si hay un chat activo, actualizar su estado (por si el worker cambió bot_enabled)
+        if (activeChatId) {
+            const activeChat = chats.find(c => c.id === activeChatId);
+            if (activeChat) {
+                updateBotStatusText(activeChat.bot_enabled);
+                updateInputState(activeChat.bot_enabled);
+                const toggle = document.getElementById('bot-toggle');
+                if (toggle) toggle.checked = activeChat.bot_enabled;
+            }
+        }
     } catch (e) { console.error(e); }
 }
 
@@ -57,7 +64,7 @@ async function fetchBotTags() {
 }
 
 function handleSearch() {
-    const query = (document.getElementById('search-input').value || "").toLowerCase();
+    const query = document.getElementById('search-input').value.toLowerCase();
     const tagFilter = document.getElementById('filter-tag').value;
     
     const filtered = chats.filter(chat => {
@@ -71,7 +78,6 @@ function handleSearch() {
 
 function renderFilterDropdown() {
     const select = document.getElementById('filter-tag');
-    if (!select) return;
     const currentValue = select.value;
     select.innerHTML = '<option value="">Todas las etiquetas</option>' + 
         botTags.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
@@ -92,9 +98,8 @@ function renderChatList(listToRender = chats) {
             ? `<span style="color: var(--wa-accent); font-size: 0.75rem;">🤖 Bot</span>`
             : `<span style="color: #f87171; font-size: 0.75rem;">👤 Humano</span>`;
 
-        // Atribudo data-id para delegación de eventos
         return `
-            <div class="chat-item ${activeChatId === chat.id ? 'active' : ''}" data-id="${chat.id}">
+            <div class="chat-item ${activeChatId === chat.id ? 'active' : ''}" onclick="selectChat('${chat.id}')">
                 <div class="chat-avatar">
                     <span style="position:relative; z-index:1;">${initial}</span>
                     <img src="${avatarUrl}" onerror="this.style.display='none'">
@@ -115,7 +120,6 @@ function renderChatList(listToRender = chats) {
 async function selectChat(id) {
     activeChatId = id;
     const chat = chats.find(c => c.id === id);
-    if (!chat) return;
     
     document.getElementById('active-chat-phone').innerText = chat.id.split('@')[0];
     document.getElementById('active-chat-name').innerText = chat.name || 'Sin nombre';
@@ -158,17 +162,37 @@ function renderActiveChatTags() {
 
 function updateBotStatusText(enabled) {
     const txt = document.getElementById('bot-status-text');
-    txt.innerText = enabled ? 'Bot Activo' : 'Intervención Humana';
-    txt.className = enabled ? 'status-bot' : 'status-human';
+    if (!txt) return;
+    const isEnabled = enabled === true || enabled === 'true' || enabled === 1;
+    txt.innerText = isEnabled ? 'Bot Activo' : 'Intervención Humana';
+    txt.className = isEnabled ? 'status-bot' : 'status-human';
 }
 
 function updateInputState(botEnabled) {
     const input = document.getElementById('message-input');
     const btn = document.getElementById('send-btn');
     const attachBtn = document.getElementById('attach-btn');
-    input.disabled = botEnabled;
-    btn.disabled = botEnabled;
-    attachBtn.disabled = botEnabled;
+    if (!input || !btn || !attachBtn) return;
+
+    // Normalización estricta a booleano
+    const isBotEnabled = (botEnabled === true || botEnabled === 'true' || botEnabled === 1 || botEnabled === '1');
+    
+    console.log(`[UI] Actualizando estado de input. Bot habilitado: ${isBotEnabled}`);
+
+    // Bloqueamos el input si el bot está activo para evitar interferencias
+    input.disabled = isBotEnabled;
+    btn.disabled = isBotEnabled;
+    attachBtn.disabled = isBotEnabled;
+    
+    if (isBotEnabled) {
+        input.style.borderBottom = '2px solid var(--wa-accent)';
+        input.style.opacity = '0.6';
+        input.placeholder = "🤖 Bot activo - Desactívalo para intervenir";
+    } else {
+        input.style.borderBottom = '2px solid #f87171';
+        input.style.opacity = '1';
+        input.placeholder = "Escribe un mensaje aquí";
+    }
 }
 
 async function fetchMessages(chatId) {
@@ -190,14 +214,20 @@ async function fetchMessages(chatId) {
 
         const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        let contentHtml = m.content;
-        const isImageUrl = typeof m.content === 'string' && (m.content.match(/\.(jpeg|jpg|gif|png|webp)$/i) || m.content.includes('/assets/'));
-        const isVideoUrl = typeof m.content === 'string' && m.content.match(/\.(mp4|webm|ogg)$/i);
+        let contentHtml = m.content || '';
+        const type = m.type || 'text';
+        
+        const isImageUrl = type === 'image' || contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)/i));
+        const isVideoUrl = type === 'video' || contentHtml.match(/\.(mp4|webm|ogg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(mp4|webm|ogg)/i));
+        const isFileUrl = type === 'document' || (contentHtml.includes('/uploads/') && !isImageUrl && !isVideoUrl);
 
-        if (isImageUrl) {
-            contentHtml = `<div class="msg-media"><img src="${m.content}" alt="imagen"></div>` + (m.content.startsWith('http') ? '' : m.content);
-        } else if (isVideoUrl) {
-            contentHtml = `<div class="msg-media"><video src="${m.content}" controls></video></div>`;
+        if (isImageUrl && contentHtml) {
+            contentHtml = `<div class="msg-media"><img src="${contentHtml}" alt="imagen"></div>`;
+        } else if (isVideoUrl && contentHtml) {
+            contentHtml = `<div class="msg-media"><video src="${contentHtml}" controls></video></div>`;
+        } else if (isFileUrl && contentHtml) {
+            const fileName = contentHtml.split('/').pop();
+            contentHtml = `<div class="msg-file"><a href="${contentHtml}" target="_blank">📄 Documento adjunto (${fileName})</a></div>`;
         }
         
         html += `
@@ -213,7 +243,6 @@ async function fetchMessages(chatId) {
 }
 
 async function toggleBot(enabled) {
-    if (!activeChatId) return;
     const res = await fetch('/api/backoffice/toggle-bot', {
         method: 'POST',
         headers: { 
@@ -225,17 +254,14 @@ async function toggleBot(enabled) {
 
     if (res.ok) {
         const chat = chats.find(c => c.id === activeChatId);
-        if (chat) {
-            chat.bot_enabled = enabled;
-            updateBotStatusText(enabled);
-            updateInputState(enabled);
-            renderChatList();
-        }
+        chat.bot_enabled = enabled;
+        updateBotStatusText(enabled);
+        updateInputState(enabled);
+        renderChatList();
     }
 }
 
-function handleFileSelect(event) {
-    const input = event.target;
+function handleFileSelect(input) {
     if (input.files && input.files[0]) {
         selectedFile = input.files[0];
         document.getElementById('message-input').placeholder = `Archivo: ${selectedFile.name} (Escribe un comentario opcional)`;
@@ -244,68 +270,97 @@ function handleFileSelect(event) {
 }
 
 async function sendMessage() {
+    if (isSending) return;
+    isSending = true;
+
     const input = document.getElementById('message-input');
-    const sendBtn = document.getElementById('send-btn');
-    const attachBtn = document.getElementById('attach-btn');
     const content = input.value.trim();
-    
-    if (!content && !selectedFile) return;
+    if (!content && !selectedFile) {
+        console.log('⚠️ Intento de envío vacío ignorado');
+        isSending = false;
+        return;
+    }
     if (!activeChatId) {
-        alert('Por favor selecciona un chat primero.');
+        console.warn('⚠️ No hay chat activo seleccionado');
+        isSending = false;
         return;
     }
 
-    const originalBtnHtml = sendBtn.innerHTML;
-    const originalPlaceholder = input.placeholder;
-    
-    try {
-        input.disabled = true;
-        sendBtn.disabled = true;
-        attachBtn.disabled = true;
-        sendBtn.innerHTML = '⌛';
-        input.placeholder = "Enviando...";
+    console.log(`📤 Enviando mensaje a ${activeChatId}...`, { hasFile: !!selectedFile });
+    const btn = document.getElementById('send-btn');
+    const originalBtnText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '...';
 
-        const formData = new FormData();
-        formData.append('chatId', activeChatId);
-        if (content) formData.append('message', content);
-        if (selectedFile) {
+    try {
+        let res;
+        const token = localStorage.getItem('backoffice_token');
+
+        if (!selectedFile) {
+            // Enviar como JSON simple (más confiable para texto)
+            res = await fetch('/api/backoffice/send-message', {
+                method: 'POST',
+                headers: { 
+                    'Authorization': 'token=' + token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chatId: activeChatId,
+                    message: content
+                })
+            });
+        } else {
+            // Enviar como FormData (necesario para archivos)
+            const formData = new FormData();
+            formData.append('chatId', activeChatId);
+            if (content) formData.append('message', content);
             formData.append('file', selectedFile);
-            console.log('Enviando archivo:', selectedFile.name);
+
+            res = await fetch('/api/backoffice/send-message', {
+                method: 'POST',
+                headers: { 
+                    'Authorization': 'token=' + token
+                },
+                body: formData
+            });
         }
 
-        const res = await fetch('/api/backoffice/send-message', {
-            method: 'POST',
-            headers: { 
-                'Authorization': 'token=' + token
-            },
-            body: formData
-        });
-
-        const result = await res.json();
-
-        if (res.ok && result.success) {
+        if (res.ok) {
+            const data = await res.json();
+            if (data.warning) {
+                console.warn('⚠️ Advertencia del servidor:', data.warning);
+                alert('⚠️ ' + data.warning);
+            } else {
+                console.log('✅ Mensaje enviado exitosamente');
+            }
             input.value = '';
-            input.placeholder = "Escribe un mensaje...";
+            input.placeholder = "Escribe un mensaje aquí";
             selectedFile = null;
             document.getElementById('file-input').value = '';
             fetchMessages(activeChatId);
         } else {
-            const errorMsg = result.error || 'Error desconocido del servidor';
-            alert(`⚠️ No se pudo enviar el mensaje:\n${errorMsg}`);
+            let errorMsg = 'Error desconocido';
+            const text = await res.text();
+            try {
+                const errorData = JSON.parse(text);
+                errorMsg = errorData.error || errorMsg;
+            } catch (e) {
+                errorMsg = text || res.statusText || 'Error del servidor';
+            }
+            console.error('❌ Error del servidor:', errorMsg);
+            alert('Error al enviar mensaje: ' + errorMsg);
         }
     } catch (err) {
-        console.error('Error de red:', err);
-        alert(`❌ Error de red: Asegúrate de que el servidor esté encendido y tengas conexión.`);
+        console.error('❌ Error de red:', err);
+        alert('Error de conexión al enviar el mensaje');
     } finally {
-        input.disabled = false;
-        sendBtn.disabled = false;
-        attachBtn.disabled = false;
-        sendBtn.innerHTML = originalBtnHtml;
-        input.placeholder = originalPlaceholder;
-        input.focus();
+        isSending = false;
+        btn.disabled = false;
+        btn.innerHTML = originalBtnText;
     }
 }
 
+// Tag Management Functions
 function toggleTagManager() {
     const panel = document.getElementById('tag-manager');
     panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
@@ -315,10 +370,8 @@ function toggleTagManager() {
 }
 
 async function createTag() {
-    const nameInput = document.getElementById('new-tag-name');
-    const colorInput = document.getElementById('new-tag-color');
-    const name = nameInput.value;
-    const color = colorInput.value;
+    const name = document.getElementById('new-tag-name').value;
+    const color = document.getElementById('new-tag-color').value;
     if (!name) return;
 
     const res = await fetch('/api/backoffice/tags', {
@@ -331,7 +384,7 @@ async function createTag() {
     });
 
     if (res.ok) {
-        nameInput.value = '';
+        document.getElementById('new-tag-name').value = '';
         fetchBotTags();
     }
 }
@@ -375,10 +428,11 @@ async function removeTagFromChat(tagId) {
 
 function renderTagManager() {
     const editorList = document.getElementById('tag-list-editor');
+    if (!editorList) return;
     editorList.innerHTML = botTags.map(t => `
         <div class="tag-item-edit">
             <span class="tag-pill" style="background:${t.color}">${t.name}</span>
-            <button class="delete-tag-btn" data-id="${t.id}" style="background:none; border:none; color:#f87171; cursor:pointer;">del</button>
+            <button onclick="deleteTag('${t.id}')" style="background:none; border:none; color:#f87171; cursor:pointer;">del</button>
         </div>
     `).join('');
 
@@ -392,9 +446,8 @@ function renderTagManager() {
         assignList.innerHTML = botTags.map(t => {
             const isAssigned = assignedTagIds.includes(t.id);
             return `
-                <div class="tag-pill assign-tag-toggle" 
-                     data-id="${t.id}"
-                     data-assigned="${isAssigned}"
+                <div onclick="${isAssigned ? 'removeTagFromChat' : 'addTagToChat'}('${t.id}')" 
+                     class="tag-pill" 
                      style="background:${t.color}; cursor:pointer; opacity:${isAssigned ? 1 : 0.4}; border:${isAssigned ? '2px solid white' : 'none'}">
                     ${t.name} ${isAssigned ? '✓' : '+'}
                 </div>
@@ -410,54 +463,6 @@ function logout() {
     window.location.href = '/login';
 }
 
-// Global initialization
-document.addEventListener('DOMContentLoaded', () => {
-    // Attach event listeners
-    document.getElementById('logout-btn').addEventListener('click', logout);
-    document.getElementById('toggle-tag-manager-btn').addEventListener('click', toggleTagManager);
-    document.getElementById('close-tag-manager-btn').addEventListener('click', toggleTagManager);
-    document.getElementById('search-input').addEventListener('input', handleSearch);
-    document.getElementById('filter-tag').addEventListener('change', handleSearch);
-    document.getElementById('bot-toggle').addEventListener('change', (e) => toggleBot(e.target.checked));
-    document.getElementById('attach-btn').addEventListener('click', () => document.getElementById('file-input').click());
-    document.getElementById('file-input').addEventListener('change', handleFileSelect);
-    document.getElementById('send-btn').addEventListener('click', sendMessage);
-    document.getElementById('create-tag-btn').addEventListener('click', createTag);
-    
-    document.getElementById('message-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
-
-    // Event delegation for chat list
-    document.getElementById('chat-list').addEventListener('click', (e) => {
-        const item = e.target.closest('.chat-item');
-        if (item) {
-            selectChat(item.dataset.id);
-        }
-    });
-
-    // Event delegation for tag management
-    document.getElementById('tag-list-editor').addEventListener('click', (e) => {
-        if (e.target.classList.contains('delete-tag-btn')) {
-            deleteTag(e.target.dataset.id);
-        }
-    });
-
-    document.getElementById('available-tags-to-assign').addEventListener('click', (e) => {
-        const item = e.target.closest('.assign-tag-toggle');
-        if (item) {
-            const tagId = item.dataset.id;
-            const isAssigned = item.dataset.assigned === 'true';
-            if (isAssigned) {
-                removeTagFromChat(tagId);
-            } else {
-                addTagToChat(tagId);
-            }
-        }
-    });
-
-    // Initial loads
-    fetchChats();
-    fetchBotTags();
-    setInterval(fetchChats, 30000);
-});
+setInterval(fetchChats, 30000);
+fetchChats();
+fetchBotTags();

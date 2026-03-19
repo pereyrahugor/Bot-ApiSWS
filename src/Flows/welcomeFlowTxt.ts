@@ -2,7 +2,7 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import { BaileysProvider } from "@builderbot/provider-baileys";
 import { MemoryDB } from "@builderbot/bot";
 import { reset } from "~/utils/timeOut";
-import { handleQueue, userQueues, userLocks } from "~/app";
+import { userQueues, userLocks, handleQueue } from "~/utils/queueManager";
 // Si se define timeOutCierre en minutos en .env, se multiplica por 60*1000 para obtener milisegundos
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
 
@@ -18,6 +18,14 @@ export const welcomeFlowTxt = addKeyword<BaileysProvider, MemoryDB>(EVENTS.WELCO
             /@lid$/.test(userId)
         ) {
             console.log(`Mensaje ignorado por filtro de contacto: ${userId}`);
+            return;
+        }
+
+        // --- FILTRO DE ECO / MENSAJES PROPIOS ---
+        const botNumber = (process.env.YCLOUD_WABA_NUMBER || '').replace(/\D/g, '');
+        const senderNumber = (userId || '').replace(/\D/g, '');
+        
+        if (ctx.key?.fromMe || (botNumber && senderNumber === botNumber)) {
             return;
         }
 

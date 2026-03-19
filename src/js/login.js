@@ -1,7 +1,6 @@
 async function login() {
-    const tokenInput = document.getElementById('token');
+    const token = document.getElementById('token').value;
     const errorDiv = document.getElementById('error');
-    const token = tokenInput.value;
     
     if (!token) return;
 
@@ -12,29 +11,20 @@ async function login() {
             body: JSON.stringify({ token })
         });
 
-        if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
             localStorage.setItem('backoffice_token', token);
             window.location.href = '/backoffice';
         } else {
             errorDiv.style.display = 'block';
         }
-    } catch (error) {
-        console.error('Error logging in:', error);
-        errorDiv.innerText = 'Error de conexión. Inténtalo de nuevo.';
+    } catch (e) {
+        console.error('Error de autenticación:', e);
+        errorDiv.innerText = 'Error al conectar con el servidor';
         errorDiv.style.display = 'block';
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const tokenInput = document.getElementById('token');
-    if (tokenInput) {
-        tokenInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') login();
-        });
-    }
-
-    const loginBtn = document.querySelector('button');
-    if (loginBtn) {
-        loginBtn.addEventListener('click', login);
-    }
+document.getElementById('token')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') login();
 });

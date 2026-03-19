@@ -1,38 +1,73 @@
+import axios from "axios";
 import { OpenAI } from "openai";
+import fs from "fs";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG || process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
+const IMGUR_CLIENT_ID = "dbe415c6bbb950d";
 
-/**
- * Procesa una imagen usando el modelo gpt-4o (Vision) y devuelve su descripción.
- * No envía mensajes al usuario directamente; el flujo llamante debe decidir qué hacer con el resultado.
- * @param buffer Buffer de la imagen (jpeg, png, etc.)
- * @returns Descripción del contenido de la imagen
- */
-export async function processImageWithVision(buffer: Buffer): Promise<string> {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { 
-              type: "text", 
-              text: "Describe esta imagen detalladamente o extrae la información si es un documento (como una factura o resumen), para que el asistente pueda entender su contenido y responder al usuario. Si hay tablas o datos estructurados, lístalos claramente." 
-            },
-            {
-              type: "image_url",
-              image_url: { url: `data:image/jpeg;base64,${buffer.toString("base64")}` },
-            },
-          ],
-        },
-      ],
-    });
+export async function processImageWithVision(buffer: Buffer, flowDynamic: any): Promise<string> {
+  // Subir imagen a Imgur
+  const imgurRes = await axios.post(
+    "https://api.imgur.com/3/image",
+    {
+      image: buffer.toString("base64"),
+      type: "base64",
+    },
+    {
+      headers: {
+        Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
+      },
+    }
+  );
+  const imgUrl = imgurRes.data.data.link;
 
-    const result = response.choices[0].message.content || "No se pudo obtener una descripción de la imagen.";
-    return result;
-  } catch (err: any) {
-    // console.error("Error en processImageWithVision:", err.message);
-    return `Error al analizar la imagen: ${err.message}`;
+  const assistantId = process.env.ASSISTANT_ID_IMG;
+  if (!assistantId) {
+    await flowDynamic("No se encontró el ASSISTANT_ID_IMG en las variables de entorno.");
+    return "";
   }
+
+  // Crear un thread solo con la imagen
+  const thread = await openai.beta.threads.create({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: imgUrl } },
+        ],
+      },
+    ],
+  });
+
+  // Ejecutar el asistente sobre el thread
+  const run = await openai.beta.threads.runs.create(thread.id, {
+    assistant_id: assistantId,
+  });
+
+  // Esperar a que termine el procesamiento
+  let runStatus;
+  do {
+    await new Promise((res) => setTimeout(res, 2000));
+    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+  } while (runStatus.status !== "completed" && runStatus.status !== "failed");
+
+  if (runStatus.status === "failed") {
+    await flowDynamic("El asistente falló al procesar la imagen.");
+    return "";
+  }
+
+  // Obtener el mensaje de respuesta
+  const messages = await openai.beta.threads.messages.list(thread.id);
+  const resultMsg = messages.data.find((msg) => msg.role === "assistant");
+  let result = "No se obtuvo respuesta del asistente.";
+  if (resultMsg && Array.isArray(resultMsg.content)) {
+    const textBlock = resultMsg.content.find(
+      (block: any) => block.type === "text" && typeof (block as any).text?.value === "string"
+    );
+    if (textBlock && (textBlock as any).text && typeof (textBlock as any).text.value === "string") {
+      result = (textBlock as any).text.value;
+    }
+  }
+  await flowDynamic(result);
+  return result;
 }

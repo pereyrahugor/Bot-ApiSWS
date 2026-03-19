@@ -1,55 +1,62 @@
-import bodyParser from 'body-parser';
-import { backofficeAuth } from "../middleware/auth";
-
-export interface RailwayDependencies {
-    RailwayApi: any;
-}
-
 /**
- * Registra rutas para administración de Railway.
+ * Registra las rutas de Railway en la instancia de Polka.
  */
-export const registerRailwayRoutes = (app: any, deps: RailwayDependencies) => {
-    const { RailwayApi } = deps;
-
-    app.get('/api/railway/deployments', backofficeAuth, async (req: any, res: any) => {
+export const registerRailwayRoutes = (app: any, { RailwayApi }: any) => {
+    
+    app.post("/api/restart-bot", async (req, res) => {
+        console.log('POST /api/restart-bot recibido');
         try {
-            const result = await RailwayApi.getDeployments();
-            res.json({ success: true, data: result });
-        } catch (e: any) {
-            res.status(500).json({ success: false, error: e.message });
+            const result = await RailwayApi.restartActiveDeployment();
+            if (result.success) {
+                res.json({ success: true, message: "Reinicio solicitado correctamente." });
+            } else {
+                res.status(500).json({ success: false, error: result.error || "Error desconocido" });
+            }
+        } catch (err: any) {
+            console.error('Error en /api/restart-bot:', err);
+            res.status(500).json({ success: false, error: err.message });
         }
     });
 
-    app.post('/api/railway/restart', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+    app.get("/api/variables", async (req, res) => {
         try {
-            const { deploymentId } = req.body;
-            if (!deploymentId) return res.status(400).json({ success: false, error: 'deploymentId id required' });
-            
-            const result = await RailwayApi.restartDeployment(deploymentId);
-            res.json({ success: true, data: result });
-        } catch (e: any) {
-            res.status(500).json({ success: false, error: e.message });
+            const variables = await RailwayApi.getVariables();
+            if (variables) {
+                res.json({ success: true, variables });
+            } else {
+                res.status(500).json({ success: false, error: "No se pudieron obtener las variables de Railway" });
+            }
+        } catch (err: any) {
+            console.error('Error en GET /api/variables:', err);
+            res.status(500).json({ success: false, error: err.message });
         }
     });
 
-    app.post('/api/railway/vars/update', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+    app.post("/api/update-variables", async (req, res) => {
         try {
             const { variables } = req.body;
-            if (!variables) return res.status(400).json({ success: false, error: 'variables map is required' });
-            
-            const result = await RailwayApi.updateVariables(variables);
-            res.json({ success: true, data: result });
-        } catch (e: any) {
-            res.status(500).json({ success: false, error: e.message });
-        }
-    });
+            if (!variables || typeof variables !== 'object') {
+                return res.status(400).json({ success: false, error: "Variables no proporcionadas o formato inválido" });
+            }
 
-    app.get('/api/railway/vars', backofficeAuth, async (req: any, res: any) => {
-        try {
-            const result = await RailwayApi.getVariables();
-            res.json({ success: true, data: result });
-        } catch (e: any) {
-            res.status(500).json({ success: false, error: e.message });
+            console.log("[API] Actualizando variables en Railway...");
+            const updateResult = await RailwayApi.updateVariables(variables);
+
+            if (!updateResult.success) {
+                return res.status(500).json({ success: false, error: updateResult.error });
+            }
+
+            console.log("[API] Variables actualizadas. Solicitando reinicio...");
+            const restartResult = await RailwayApi.restartActiveDeployment();
+
+            if (restartResult.success) {
+                res.json({ success: true, message: "Variables actualizadas y reinicio solicitado." });
+            } else {
+                res.json({ success: true, message: "Variables actualizadas, pero falló el reinicio automático.", warning: restartResult.error });
+            }
+        } catch (err: any) {
+            console.error('Error en POST /api/update-variables:', err);
+            res.status(500).json({ success: false, error: err.message });
         }
     });
 };

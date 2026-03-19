@@ -1,35 +1,36 @@
+
 /**
- * Middleware de autenticación para el backoffice.
- * Soporta tokens en Header: Authorization (Bearer o directo) y Query: token.
- * Soporta también Polka manual query parsing.
+ * Middleware de autenticación robusto para el backoffice.
+
+ * Verifica el token en los headers o en la query string.
  */
 export const backofficeAuth = (req: any, res: any, next: () => void) => {
-    // En Polka req.query puede ser undefined, parseamos manualmente si es necesario
-    if (!req.query && req.url && req.url.includes('?')) {
-        try {
-            const url = new URL(req.url, 'http://localhost');
-            const qry: any = {};
-            url.searchParams.forEach((v, k) => qry[k] = v);
-            req.query = qry;
-        } catch (e) { req.query = {}; }
-    }
+    // Asegurar parsing de query si Polka/Node no lo ha expuesto aún
+    const q: any = {};
+    try {
+        const url = new URL(req.url || '', 'http://localhost');
+        url.searchParams.forEach((v, k) => q[k] = v);
+    } catch (e) { /* fallback a vacío */ }
+    req.query = q;
 
-    let token = req.headers['authorization'] || (req.query && (req.query as any).token) || '';
+    let token = req.headers['authorization'] || q.token || '';
     if (typeof token === 'string') {
         if (token.startsWith('token=')) token = token.slice(6);
         else if (token.startsWith('Bearer ')) token = token.slice(7);
-        else if (token.split(' ').length > 1) token = token.split(' ')[1]; // Por si es "Bearer TOKEN" sin el espacio exacto
     }
     
-    // Si no hay token en query o headers, enviamos 401
-    if (!token) {
-        return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
-    }
-
-    const expectedToken = process.env.BACKOFFICE_TOKEN || 'RIALWAY_PASS_2024';
-    if (token === expectedToken) {
+    if (token && token === process.env.BACKOFFICE_TOKEN) {
         return next();
     }
     
-    return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+    console.warn(`[AUTH] Intento fallido de acceso al backoffice. Token recibido: ${token ? 'presente(***)' : 'ausente'}`);
+    
+    // Si res.status o res.json no existen (middleware antes de compatibilidad), los manejamos manualmente
+    if (typeof res.status === 'function') {
+        res.status(401).json({ success: false, error: "Unauthorized" });
+    } else {
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ success: false, error: "Unauthorized" }));
+    }
 };
