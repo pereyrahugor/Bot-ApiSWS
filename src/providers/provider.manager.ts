@@ -122,6 +122,14 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
 
     provider.on('ready', () => {
         console.log(`✅ ${prefix} READY: El proveedor está conectado y operativo.`);
+        const qrFilename = isGroupProvider ? 'bot.groups.qr.png' : 'bot.qr.png';
+        const qrPath = path.join(process.cwd(), qrFilename);
+        if (fs.existsSync(qrPath)) {
+            try {
+                fs.unlinkSync(qrPath);
+                console.log(`${prefix} 🗑️ QR antiguo eliminado al conectar.`);
+            } catch (e) {}
+        }
     });
     
     provider.on('auth_failure', (payload: any) => {

@@ -111,6 +111,17 @@ const main = async () => {
     registerProviderEvents(adapterProvider); // YCloud
     registerProviderEvents(groupProvider, true); // Baileys Grupos
 
+    // 🚀 Iniciar motor secundario manualmente
+    setTimeout(async () => {
+        try {
+            console.log('📡 [GroupSync] Iniciando motor de grupos...');
+            if (groupProvider.initVendor) await groupProvider.initVendor();
+            else if (groupProvider.init) await groupProvider.init();
+        } catch (err) {
+            console.error('❌ [GroupSync] Error al iniciar motor de grupos:', err);
+        }
+    }, 2000);
+
     // 4. Initialize Data and Error Reporter
     errorReporter = new ErrorReporter(groupProvider, process.env.ID_GRUPO_RESUMEN || "");
     await updateMain();
