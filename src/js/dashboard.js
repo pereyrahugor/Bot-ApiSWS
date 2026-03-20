@@ -73,8 +73,14 @@ async function fetchStatus() {
             
             // Intentar recargar el QR (Baileys usa /groups-qr.png, YCloud no usa QR)
             const qrImg = document.querySelector('.qr');
-            const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
-            qrImg.src = qrUrl + '?t=' + Date.now();
+            if (data.qrImage) {
+                // Prioridad absoluta: Imagen base64 directa del servidor
+                qrImg.src = data.qrImage;
+            } else {
+                // Fallback: Servir por URL de archivo (si el archivo existe localmente)
+                const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
+                qrImg.src = qrUrl + '?t=' + Date.now();
+            }
             qrImg.style.display = 'inline-block';
             qrImg.nextElementSibling.style.display = 'none';
         }

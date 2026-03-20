@@ -5,11 +5,12 @@ import { EVENTS } from "@builderbot/bot";
 import { isSessionInDb } from "../utils/sessionSync";
 import { obtenerTextoDelMensaje, obtenerMensajeUnwrapped } from "../utils/messageHelper";
 
+let isGeneratingQR = false;
+
 /**
  * Registra los listeners de los proveedores (YCloud/Baileys) para QR, fallos y mensajes entrantes.
  */
 export const registerProviderEvents = (provider: any, isGroupProvider: boolean = false) => {
-    let isGeneratingQR = false;
     const prefix = isGroupProvider ? '[GroupProvider]' : '[AdapterProvider]';
 
     const handleQR = async (payload: any) => {
@@ -24,7 +25,9 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 else if (payload.code) qrString = payload.code;
             }
             if (qrString && typeof qrString === 'string') {
-                console.log(`${prefix} ⚡ QR detectado. Generando imagen...`);
+                provider.qrCodeString = qrString; // Almacenar en el objeto del proveedor
+
+                console.log(`${prefix} ⚡ QR detectado. Generando imagen... (Length: ${qrString.length})`);
                 const qrFilename = isGroupProvider ? 'bot.groups.qr.png' : 'bot.qr.png';
                 const qrPath = path.join(process.cwd(), qrFilename);
                 await QRCode.toFile(qrPath, qrString, {
@@ -149,6 +152,7 @@ export const hasActiveSession = async (provider: any) => {
     try {
         // 1. Detectar si es YCloud (Chequeo de propiedades internas del adaptador)
         const isYCloud = provider?.options?.apiKey || provider?.arg?.apiKey || (provider?.constructor?.name === 'YCloudProvider');
+        const isBaileys = provider?.constructor?.name === 'BaileysProvider' || provider?.groupsIgnore !== undefined;
         
         // 2. Estado de conexión real (Baileys o genérico)
         const isReady = !!(provider?.vendor?.user || provider?.globalVendorArgs?.sock?.user);
@@ -170,10 +174,22 @@ export const hasActiveSession = async (provider: any) => {
         if (isReady) return { active: true, source: 'connected', providerType: isYCloud ? 'ycloud' : 'baileys' };
 
         // PRIORIDAD: Si hay un QR generado, mostrarlo SIEMPRE (significa que el motor lo requiere)
-        if (hasQr) {
+        const currentQrString = provider.qrCodeString || null;
+        if (hasQr || currentQrString) {
+            let qrImage = null;
+            if (currentQrString) {
+                try {
+                    qrImage = await QRCode.toDataURL(currentQrString);
+                } catch (e) {
+                    console.error(`${isBaileys ? '[GroupProvider]' : '[AdapterProvider]'} Error in toDataURL:`, e);
+                }
+            }
+
             return {
                 active: false,
                 qr: true,
+                qrData: currentQrString,
+                qrImage: qrImage, // Data URL base64 image/png
                 providerType: isYCloud ? 'ycloud' : 'baileys',
                 message: 'Esperando vinculación'
             };
