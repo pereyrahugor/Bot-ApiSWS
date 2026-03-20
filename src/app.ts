@@ -104,6 +104,7 @@ const main = async () => {
         groupsIgnore: false,
         readStatus: false,
         disableHttpServer: true,
+        handleHistory: false,
     });
     setGroupProvider(groupProvider);
 

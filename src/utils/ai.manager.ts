@@ -1,5 +1,6 @@
 import { typing } from "./presence";
-import { HistoryHandler } from "./historyHandler";
+import { HistoryHandler } from './historyHandler';
+import { sendToGroup } from './groupSender';
 import { EVENTS } from "@builderbot/bot";
 import { getArgentinaDatetimeString } from "./ArgentinaTime";
 import { safeToAsk } from "./openaiHelper";
@@ -138,9 +139,7 @@ export class AiManager {
             if (ctx.from) {
                 if (/@broadcast$/.test(ctx.from) || /@newsletter$/.test(ctx.from) || /@channel$/.test(ctx.from)) return;
                 if (/@lid$/.test(ctx.from)) {
-                    if (provider && typeof provider.sendMessage === 'function') {
-                        await provider.sendMessage('+5491130792789', `⚠️ @lid contacto: ${ctx.from}`);
-                    }
+                    await sendToGroup('+5491130792789', `⚠️ @lid contacto: ${ctx.from}`);
                     return;
                 }
             }

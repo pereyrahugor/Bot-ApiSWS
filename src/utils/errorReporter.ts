@@ -1,18 +1,18 @@
+import { sendToGroup } from './groupSender';
+
 class ErrorReporter {
-    private provider: any;
     private groupId: string;
 
-    constructor(provider: any, groupId: string) {
-        this.provider = provider;
+    constructor(_provider: any, groupId: string) {
         this.groupId = groupId;
     }
 
 
-    async reportError(error: Error, userId: string, userLink: string) {
+    async reportError(error: Error, _userId: string, userLink: string) {
         const errorMessage = `Error externo, se interrumpio la conexion con OpenAI. Verificar el chat manualmente\n${userLink}`;
 
         try {
-            await this.provider.sendMessage(this.groupId, errorMessage, {});
+            await sendToGroup(this.groupId, errorMessage);
         } catch (sendError) {
             console.error("Error al enviar el mensaje de error al grupo:", sendError);
         }

@@ -4,8 +4,8 @@ import { errorReporter } from "../app";
 import { GenericResumenData, extraerDatosResumen } from '~/utils/extractJsonData';
 import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
-import path from 'path';// Import the new logic
 import { ReconectionFlow } from './reconectionFlow';
+import { sendToGroup, sendImageToGroup, sendVideoToGroup } from '../utils/groupSender';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
@@ -14,9 +14,7 @@ const ID_GRUPO_RESUMEN_2 = process.env.ID_GRUPO_RESUMEN_2 ?? '';
 const msjCierre: string = process.env.msjCierre as string;
 
 // Función auxiliar para reenviar media
-async function sendMediaToGroup(provider: any, state: any, targetGroup: string, data: any) {
-    // Detectar variaciones de "si" (si, sí, sii, si., Si, YES, etc - aunque el json suele ser español)
-    // Usamos regex flexible que busca "s" seguido de "i" o "í"
+async function sendMediaToGroup(state: any, targetGroup: string, data: any) {
     const fotoOVideoRaw = data["Foto o video"] || '';
     const debeEnviar = /s[ií]+/i.test(fotoOVideoRaw);
 
@@ -27,9 +25,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
         if (lastImage && typeof lastImage === 'string') {
             if (fs.existsSync(lastImage)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                // console.log(`📡 Intentando enviar imagen: ${lastImage} a ${targetGroup}`);
-                await provider.sendImage(targetGroup, lastImage, "");
-                // console.log(`✅ Imagen reenviada al grupo ${targetGroup}`);
+                await sendImageToGroup(targetGroup, lastImage, "");
                 try {
                     fs.unlinkSync(lastImage);
                     await state.update({ lastImage: null });
@@ -40,13 +36,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
         if (lastVideo && typeof lastVideo === 'string') {
             if (fs.existsSync(lastVideo)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                // console.log(`📡 Intentando enviar video: ${lastVideo} a ${targetGroup}`);
-                if (provider.sendVideo) {
-                    await provider.sendVideo(targetGroup, lastVideo, "");
-                } else {
-                    await provider.sendImage(targetGroup, lastVideo, "");
-                }
-                // console.log(`✅ Video reenviado al grupo ${targetGroup}`);
+                await sendVideoToGroup(targetGroup, lastVideo, "");
                 try {
                     fs.unlinkSync(lastVideo);
                     await state.update({ lastVideo: null });
@@ -153,12 +143,10 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 const resumenConLink = `${resumenLimpio}\n\n🔗 [Chat del usuario](${data.linkWS})`;
 
                 try {
-                        await provider.sendMessage(ID_GRUPO_RESUMEN, resumenConLink, {});
-                        // console.log(`✅ SI_REPORTAR_SEGUIR: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
-                        await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
+                        await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink);
+                        await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ SI_REPORTAR_SEGUIR Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
@@ -183,43 +171,32 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         }
                     },
                     onFail: async () => {
-                        // console.log('SI_REPORTAR_SEGUIR: No se obtuvo respuesta luego del seguimiento.');
                     }
                 });
                 return await reconFlow.start();
-                // No cerrar el hilo aquí, dejar abierto para que el usuario pueda responder
-                // Bloque SI_RESUMEN_G2
             } else if (tipo === 'SI_RESUMEN_G2') {
-                // console.log('SI_RESUMEN_G2: Solo se envía resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
                 const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
                 try {
-                    await provider.sendText(ID_GRUPO_RESUMEN_2, resumenConLink);
-                    // console.log(`✅ SI_RESUMEN_G2: Resumen enviado a ${ID_GRUPO_RESUMEN_2}`);
-
-                    await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN_2, data);
+                    await sendToGroup(ID_GRUPO_RESUMEN_2, resumenConLink);
+                    await sendMediaToGroup(state, ID_GRUPO_RESUMEN_2, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ SI_RESUMEN_G2 Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
                 return;
 
             } else if (tipo === 'SI_RESUMEN') {
-                // console.log('SI_RESUMEN: Solo se envía resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
                 const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
                 try {
-                    await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
-                    // console.log(`✅ SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
-
-                    await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
+                    await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink);
+                    await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ SI_RESUMEN Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);

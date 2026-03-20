@@ -2,95 +2,97 @@ async function fetchStatus() {
     try {
         const res = await fetch('/api/dashboard-status');
         const data = await res.json();
-
-        if (data.error) {
-            document.getElementById('session-error').innerHTML = `<div class='error-box'>⚠️ Error: ${data.error}</div>`;
-            return;
+        
+        const statusEl = document.getElementById('session-status');
+        const adapterStatusEl = document.getElementById('adapter-status');
+        const groupStatusEl = document.getElementById('group-status');
+        
+        // Estado YCloud (Adapter)
+        if (data.adapter && data.adapter.active) {
+            adapterStatusEl.textContent = '✅ Conectado (API)';
+            adapterStatusEl.style.color = '#28a745';
+        } else {
+            adapterStatusEl.textContent = '❌ Sin Configurar';
+            adapterStatusEl.style.color = '#ef4444';
         }
 
-        const statusEl = document.getElementById('session-status');
-        const groupsStatusEl = document.getElementById('groups-status');
-        const groupsStatusDetailEl = document.getElementById('groups-status-detail');
-        const qrSection = document.getElementById('qr-section');
-        const sessionInfo = document.getElementById('session-info');
+        // Estado Baileys (Groups)
+        if (data.group && data.group.active) {
+            groupStatusEl.textContent = '✅ Conectado';
+            groupStatusEl.style.color = '#28a745';
+        } else if (data.group && data.group.hasRemote) {
+            groupStatusEl.textContent = '⏳ Restaurando...';
+            groupStatusEl.style.color = '#ffc107';
+        } else {
+            groupStatusEl.textContent = '⏳ Esperando QR';
+            groupStatusEl.style.color = '#ffc107';
+        }
 
-        // 1. Estado YCloud (Principal)
-        if (data.ycloud && data.ycloud.active) {
-            statusEl.textContent = '✅ Operativo (Meta API)';
-            statusEl.className = 'status status-online';
-            if (sessionInfo) {
-                sessionInfo.style.display = 'block';
-                sessionInfo.textContent = `Número WABA: ${data.ycloud.phoneNumber || 'Configurado'}`;
+        const qrSection = document.getElementById('qr-section');
+
+        const sessionInfo = document.getElementById('session-info');
+        const sessionError = document.getElementById('session-error');
+        const wsLinkContainer = document.getElementById('whatsapp-link-container');
+        const wsLink = document.getElementById('whatsapp-link');
+
+        if (data.active) {
+            qrSection.style.display = 'none';
+            sessionInfo.style.display = '';
+            
+            if (data.source === 'connected') {
+                statusEl.textContent = '✅ Conectado y Operativo';
+                sessionInfo.textContent = 'El bot está vinculado a WhatsApp y funcionando correctamente.';
+                sessionInfo.style.color = '#28a745';
+                
+                // Mostrar botón de WhatsApp si tenemos el número
+                if (data.phoneNumber) {
+                    wsLinkContainer.style.display = 'block';
+                    wsLink.href = `https://wa.me/${data.phoneNumber}`;
+                } else {
+                    wsLinkContainer.style.display = 'none';
+                }
+            } else {
+                statusEl.textContent = '✅ Sesión Local Detectada';
+                sessionInfo.textContent = 'El bot tiene archivos de sesión. Si no responde en WhatsApp, intenta reiniciar.';
+                sessionInfo.style.color = ''; 
+                wsLinkContainer.style.display = 'none';
             }
         } else {
-            statusEl.textContent = '❌ Error de Configuración';
-            statusEl.className = 'status status-offline';
-        }
-
-        // 2. Estado de Grupos (Baileys)
-        if (data.groups) {
-            let statusText = '';
-            let statusColor = '';
-            let showQr = false;
-
-            if (data.groups.active) {
-                statusText = `✅ Conectado (${data.groups.phoneNumber || 'Motor de Grupos'})`;
-                statusColor = '#28a745';
-                showQr = false;
-            } else if (data.groups.qr) {
-                statusText = '⚠️ Esperando vinculación';
-                statusColor = '#ffc107';
-                showQr = true;
-            } else if (data.groups.source === 'local') {
-                statusText = '🔄 Restaurando sesión local...';
-                statusColor = '#17a2b8';
-                showQr = false;
-            } else if (data.groups.hasRemote) {
-                statusText = '📥 Descargando sesión...';
-                statusColor = '#17a2b8';
-                showQr = false;
+            qrSection.style.display = '';
+            wsLinkContainer.style.display = 'none';
+            
+            if (data.hasRemote) {
+                statusEl.textContent = '⏳ Restaurando...';
+                sessionInfo.style.display = '';
+                sessionInfo.textContent = data.message || 'Intentando recuperar sesión de la nube...';
+                sessionInfo.style.color = '#ffc107';
             } else {
-                statusText = '❌ Desconectado';
-                statusColor = '#dc3545';
-                showQr = true;
+                statusEl.textContent = '⏳ Esperando Escaneo';
+                sessionInfo.style.display = 'none';
             }
-
-            if (groupsStatusEl) {
-                groupsStatusEl.textContent = statusText;
-                groupsStatusEl.style.color = statusColor;
-            }
-            if (groupsStatusDetailEl) {
-                groupsStatusDetailEl.textContent = statusText;
-                groupsStatusDetailEl.style.color = statusColor;
-            }
-
-            if (qrSection) {
-                qrSection.style.display = showQr ? 'block' : 'none';
-                if (showQr) {
-                    const qrImg = qrSection.querySelector('.qr');
-                    if (qrImg) qrImg.src = '/groups-qr.png?t=' + Date.now();
-                }
-            }
+            
+            // Intentar recargar el QR (Baileys usa /groups-qr.png, YCloud no usa QR)
+            const qrImg = document.querySelector('.qr');
+            const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
+            qrImg.src = qrUrl + '?t=' + Date.now();
+            qrImg.style.display = 'inline-block';
+            qrImg.nextElementSibling.style.display = 'none';
         }
 
+        if (data.error) {
+            sessionError.innerHTML = `<div class='error-box'>⚠️ Error al verificar sesión: ${data.error}</div>`;
+        } else {
+            sessionError.innerHTML = '';
+        }
     } catch (e) {
-        console.error('Error fetchStatus:', e);
+        document.getElementById('session-status').textContent = 'Error';
+        document.getElementById('session-error').innerHTML = `<div class='error-box'>No se pudo obtener el estado del bot.</div>`;
     }
 }
-
 fetchStatus();
 setInterval(fetchStatus, 10000);
 
-document.getElementById('go-reset')?.addEventListener('click', function () {
-    if (confirm('¿Estás seguro de que deseas eliminar la sesión de grupos? Esto forzará un nuevo escaneo QR.')) {
-        window.location.href = '/webreset';
-    }
-});
-
-document.getElementById('show-qr-btn')?.addEventListener('click', function () {
-    const qrSec = document.getElementById('qr-section');
-    if (qrSec) {
-        qrSec.scrollIntoView({ behavior: 'smooth' });
-        qrSec.style.display = 'block'; // Asegurar que sea visible si el bot cree que no es necesario pero el usuario quiere verlo
-    }
+// Redirigir a /webreset al hacer click en el botón de reinicio
+document.getElementById('go-reset').addEventListener('click', function() {
+    window.location.href = '/webreset';
 });
