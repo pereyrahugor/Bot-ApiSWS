@@ -1,31 +1,59 @@
-<!DOCTYPE html>
-<html lang="es">
-
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<link rel="stylesheet" href="style/webreset.css">
-
 <head>
-  <meta charset="UTF-8">  
-  <title>Reinicio del Bot y Habilitación de QR</title>
+    <meta charset="UTF-8">
+    <title>Reinicio del Bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/style/crm-common.css">
+    <link rel="stylesheet" href="/style/webreset.css">
 </head>
 
-<body>
-  <h1>Reinicio del Bot y Habilitación de QR para Reconectar</h1>
-  <div class="centered">
-    <button id="reiniciarBtn">REINICIAR</button>
-  </div>
-  <div id="modal" class="modal hidden">
-    <div class="modal-content">
-      <p>¿Estás seguro que deseas reiniciar el bot?<br><strong>Esta acción es irreversible.</strong></p>
-      <div class="modal-actions">
-        <button id="confirmSi">SI</button>
-        <button id="confirmNo">NO</button>
-      </div>
+<body data-theme="light">
+    <!-- Navbar lateral -->
+    <div id="navbar">
+        <a href="dashboard.html" class="nav-item" id="nav-dashboard" title="Panel General">
+            <i class="fas fa-chart-line"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="backoffice.html" class="nav-item" id="nav-backoffice" title="Chats & CRM">
+            <i class="fas fa-comment-dots"></i>
+            <span>Chats</span>
+        </a>
+        <a href="variables.html" class="nav-item" id="nav-variables" title="Configuración">
+            <i class="fas fa-cog"></i>
+            <span>Ajustes</span>
+        </a>
+        <div class="nav-item" id="theme-toggle" title="Cambiar Tema">
+            <i class="fas fa-moon"></i>
+            <span>Tema</span>
+        </div>
+        <div class="nav-item" id="nav-logout" title="Cerrar Sesión" style="margin-top: 20px; color: #f87171;">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Salir</span>
+        </div>
     </div>
-  </div>
+
+    <!-- Contenedor principal -->
+    <div class="crm-main-container" style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column;">
+        <div class="glass-card" style="text-align: center; max-width: 600px;">
+            <h1>Reinicio del Bot</h1>
+            <p style="margin-bottom: 20px; color: var(--text-muted);">Si el bot no responde o necesitas generar un nuevo QR, puedes forzar el reinicio aquí.</p>
+            <div class="centered">
+                <button id="reiniciarBtn" class="btn-primary" style="background-color: #f87171; padding: 15px 30px;">REINICIAR SESIÓN</button>
+            </div>
+        </div>
+
+        <div id="modal" class="modal hidden">
+            <div class="modal-content glass-card">
+                <p>¿Estás seguro que deseas reiniciar el bot?<br><strong>Esta acción cerrará la sesión actual en WhatsApp.</strong></p>
+                <div class="modal-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: center;">
+                    <button id="confirmSi" class="btn-primary" style="background-color: #f87171;">SÍ, REINICIAR</button>
+                    <button id="confirmNo" class="btn-primary" style="background-color: var(--text-muted);">CANCELAR</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/crm-common.js"></script>
+    <script src="/js/webreset.js"></script>
 </body>
-
-
-<script src="/js/webreset.js"></script>
-
 </html>

@@ -1,0 +1,205 @@
+/* 
+ * CRM COMMON - Global Design System
+ * Modern Glassmorphism & CRM Layout
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
+
+:root {
+    /* Theme Light (Default) */
+    --bg-main: #f4f7f6;
+    --bg-card: #ffffff;
+    --bg-sidebar: #ffffff;
+    --bg-accent: #eef2f3;
+    --text-main: #2d3436;
+    --text-muted: #636e72;
+    --accent: #0984e3;
+    --accent-hover: #0773c5;
+    --border: rgba(0, 0, 0, 0.05);
+    --shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    --glass: rgba(255, 255, 255, 0.7);
+    --radius: 12px;
+}
+
+[data-theme="dark"] {
+    --bg-main: #0f172a;
+    --bg-card: #1e293b;
+    --bg-sidebar: #1e293b;
+    --bg-accent: #334155;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-hover: #7dd3fc;
+    --border: rgba(255, 255, 255, 0.1);
+    --shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    --glass: rgba(30, 41, 59, 0.7);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Outfit', sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    transition: background-color 0.3s ease;
+}
+
+/* Sidebar Navigation */
+#navbar {
+    width: 80px;
+    background-color: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 0;
+    z-index: 100;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+#navbar:hover {
+    width: 200px;
+}
+
+.nav-item {
+    width: 50px;
+    height: 50px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    position: relative;
+    overflow: hidden;
+}
+
+#navbar:hover .nav-item {
+    width: 180px;
+    justify-content: flex-start;
+    padding-left: 15px;
+}
+
+.nav-item i {
+    font-size: 1.5rem;
+    min-width: 30px;
+    text-align: center;
+}
+
+.nav-item span {
+    display: none;
+    margin-left: 15px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+#navbar:hover .nav-item span {
+    display: inline;
+}
+
+.nav-item:hover {
+    background-color: var(--bg-accent);
+    color: var(--accent);
+}
+
+.nav-item.active {
+    background-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(9, 132, 227, 0.3);
+}
+
+#theme-toggle {
+    margin-top: auto;
+}
+
+/* Main Container */
+.crm-main-container {
+    flex: 1;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px;
+    position: relative;
+}
+
+/* Glass Cards */
+.glass-card {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Inputs & Buttons */
+input, textarea, select {
+    background-color: var(--bg-accent);
+    border: 1px solid var(--border);
+    padding: 10px 15px;
+    border-radius: 8px;
+    color: var(--text-main);
+    font-family: inherit;
+    transition: border-color 0.2s ease;
+}
+
+input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(9, 132, 227, 0.1);
+}
+
+.btn-primary {
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.btn-primary:hover {
+    opacity: 0.9;
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.4s ease forwards;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}

@@ -8,11 +8,14 @@ let botTags = [];
 let selectedFile = null;
 let isSending = false;
 
-// Paginación
+// Paginación y Filtros
 let chatOffset = 0;
 const CHAT_LIMIT = 20;
 let loadingChats = false;
 let allChatsLoaded = false;
+let searchQuery = '';
+let tagFilter = '';
+let searchTimeout = null;
 
 let messageOffset = 0;
 const MSG_LIMIT = 50;
@@ -55,11 +58,14 @@ async function fetchChats(refresh = false) {
         chatOffset = 0;
         allChatsLoaded = false;
     }
+    
+    // Si ya cargamos todo y no es un refresh, no pedir más
     if (allChatsLoaded && !refresh) return;
 
     loadingChats = true;
     try {
-        const res = await fetch(`/api/backoffice/chats?token=${token}&limit=${CHAT_LIMIT}&offset=${chatOffset}`);
+        const url = `/api/backoffice/chats?token=${token}&limit=${CHAT_LIMIT}&offset=${chatOffset}&search=${encodeURIComponent(searchQuery)}&tag=${tagFilter}`;
+        const res = await fetch(url);
         if (res.status === 401) logout();
         const newChats = await res.json();
         
@@ -70,14 +76,14 @@ async function fetchChats(refresh = false) {
         if (refresh) {
             chats = newChats;
         } else {
-            // Evitar duplicados si llegaron por socket mientras cargábamos
+            // Evitar duplicados
             const existingIds = chats.map(c => c.id);
             const filteredNew = newChats.filter(nc => !existingIds.includes(nc.id));
             chats = [...chats, ...filteredNew];
         }
 
         chatOffset = chats.length;
-        handleSearch();
+        renderChatList(chats);
         
         if (activeChatId) {
             const activeChat = chats.find(c => c.id === activeChatId);
@@ -92,6 +98,8 @@ async function fetchChats(refresh = false) {
         console.error(e); 
     } finally {
         loadingChats = false;
+        const loader = document.getElementById('chat-list-loader');
+        if (loader) loader.remove();
     }
 }
 
@@ -105,18 +113,12 @@ async function fetchBotTags() {
 }
 
 function handleSearch() {
-    const query = document.getElementById('search-input').value.toLowerCase();
-    const tagFilter = document.getElementById('filter-tag').value;
-    
-    // NOTA: La búsqueda local solo funciona sobre lo ya cargado. 
-    // Si se requiere búsqueda global, habría que implementar un endpoint de búsqueda con paginación.
-    const filtered = chats.filter(chat => {
-        const matchesSearch = chat.id.toLowerCase().includes(query) || (chat.name && chat.name.toLowerCase().includes(query));
-        const matchesTag = !tagFilter || (chat.tags && chat.tags.some(t => t.id === tagFilter));
-        return matchesSearch && matchesTag;
-    });
-
-    renderChatList(filtered);
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        searchQuery = document.getElementById('search-input').value.toLowerCase();
+        tagFilter = document.getElementById('filter-tag').value;
+        fetchChats(true); // Reiniciar con nuevos filtros
+    }, 500); // Debounce de 500ms
 }
 
 function renderFilterDropdown() {
@@ -181,10 +183,17 @@ async function selectChat(id) {
     if (activeChatId === id) return;
     activeChatId = id;
     const chat = chats.find(c => c.id === id);
-    if (!chat) return;
+    if (!chat) {
+        // Si no está en la lista cargada (por búsqueda global), pedirlo específicamente o recargar
+        // Por ahora asumimos que si clickeamos está cargado.
+        return;
+    }
     
     document.getElementById('active-chat-phone').innerText = chat.id.split('@')[0];
     document.getElementById('active-chat-name').innerText = chat.name || 'Sin nombre';
+    
+    // Renderizar detalles de contacto (CRM)
+    renderContactDetails(chat);
     
     const headerAvatar = document.getElementById('active-chat-avatar');
     const initial = (chat.name || chat.id).charAt(0).toUpperCase();
@@ -218,6 +227,79 @@ async function selectChat(id) {
     document.getElementById('messages').innerHTML = '';
     
     fetchMessages(id, true);
+}
+
+function renderContactDetails(chat) {
+    // Si no existe el contenedor de detalles, lo creamos (estilo CRM)
+    let detailsContainer = document.getElementById('contact-details');
+    if (!detailsContainer) {
+        // En lugar de crear un div nuevo, buscaremos un lugar en el UI base
+        // Si no existe en el HTML, lo inyectaremos en el main content header o sidebar
+        // Para este bot, lo pondremos en un panel lateral derecho o similar si hay espacio
+        const mainContent = document.getElementById('main-content');
+        detailsContainer = document.createElement('div');
+        detailsContainer.id = 'contact-details';
+        detailsContainer.className = 'glass-card animate-fade-in';
+        detailsContainer.style = 'position: absolute; top: 70px; right: 20px; width: 300px; z-index: 50; padding: 15px; border-radius: 12px; font-size: 0.9rem;';
+        mainContent.appendChild(detailsContainer);
+    }
+
+    detailsContainer.innerHTML = `
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+            <h4 style="margin:0;">Ficha del Lead</h4>
+            <button onclick="document.getElementById('contact-details').style.display='none'" style="border:none; background:none; cursor:pointer;"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="margin-bottom:10px;">
+            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Nombre</label>
+            <input type="text" id="crm-name" value="${chat.name || ''}" style="width:100%; margin-top:2px;">
+        </div>
+        <div style="margin-bottom:10px;">
+            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Email</label>
+            <input type="email" id="crm-email" value="${chat.email || ''}" style="width:100%; margin-top:2px;">
+        </div>
+        <div style="margin-bottom:10px;">
+            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Origen</label>
+            <input type="text" id="crm-source" value="${chat.source || ''}" style="width:100%; margin-top:2px;">
+        </div>
+        <div style="margin-bottom:15px;">
+            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Notas</label>
+            <textarea id="crm-notes" style="width:100%; height:60px; margin-top:2px;">${chat.notes || ''}</textarea>
+        </div>
+        <button onclick="updateContactData()" class="btn-primary" style="width:100%;">Guardar Cambios</button>
+    `;
+    detailsContainer.style.display = 'block';
+}
+
+async function updateContactData() {
+    const name = document.getElementById('crm-name').value;
+    const email = document.getElementById('crm-email').value;
+    const source = document.getElementById('crm-source').value;
+    const notes = document.getElementById('crm-notes').value;
+
+    const res = await fetch(`/api/backoffice/chat/${activeChatId}/contact`, {
+        method: 'PUT',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': 'token=' + token
+        },
+        body: JSON.stringify({ name, email, source, notes })
+    });
+
+    if (res.ok) {
+        window.crmToast('Datos del lead actualizados correctamente');
+        // Actualizar datos locales
+        const chat = chats.find(c => c.id === activeChatId);
+        if (chat) {
+            chat.name = name;
+            chat.email = email;
+            chat.source = source;
+            chat.notes = notes;
+            document.getElementById('active-chat-name').innerText = name || 'Sin nombre';
+            renderChatList();
+        }
+    } else {
+        window.crmToast('Error al guardar datos', 'error');
+    }
 }
 
 function renderActiveChatTags() {
@@ -447,9 +529,11 @@ async function sendMessage() {
             const data = await res.json();
             if (data.warning) {
                 console.warn('⚠️ Advertencia del servidor:', data.warning);
-                alert('⚠️ ' + data.warning);
+                window.crmToast(data.warning, 'error');
             } else {
                 console.log('✅ Mensaje enviado exitosamente');
+                // No mostramos toast para cada mensaje enviado exitoso para no saturar,
+                // el feedback es ver el mensaje en la lista
             }
             input.value = '';
             input.placeholder = "Escribe un mensaje aquí";
@@ -466,7 +550,7 @@ async function sendMessage() {
                 errorMsg = text || res.statusText || 'Error del servidor';
             }
             console.error('❌ Error del servidor:', errorMsg);
-            alert('Error al enviar mensaje: ' + errorMsg);
+            window.crmToast('Error: ' + errorMsg, 'error');
         }
     } catch (err) {
         console.error('❌ Error de red:', err);

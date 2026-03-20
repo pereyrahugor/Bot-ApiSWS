@@ -1,40 +1,64 @@
-<!DOCTYPE html>
-<html lang="es">
-<!-- Evita zoom y permite layout fluido en mobile -->
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<link rel="stylesheet" href="style/style.css" />
-
 <head>
     <meta charset="UTF-8">
     <title>Web Chat Bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/style/crm-common.css">
+    <link rel="stylesheet" href="/style/style.css" />
 </head>
 
-<body>
-    <div id="container">
-        <div id="header">
-            <img id="avatar"
-                src="https://img.freepik.com/vector-gratis/robot-vectorial-graident-ai_78370-4114.jpg?semt=ais_hybrid&w=740&q=80"
-                alt="Bot" /> <!-- Cambiar imagen -->
-            <div class="meta">
-                <div class="name">Asistente demo</div>
-                <div class="sub">en línea</div>
-            </div>
+<body data-theme="light">
+    <!-- Navbar lateral -->
+    <div id="navbar">
+        <a href="dashboard.html" class="nav-item" id="nav-dashboard" title="Panel General">
+            <i class="fas fa-chart-line"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="backoffice.html" class="nav-item" id="nav-backoffice" title="Chats & CRM">
+            <i class="fas fa-comment-dots"></i>
+            <span>Chats</span>
+        </a>
+        <a href="variables.html" class="nav-item" id="nav-variables" title="Configuración">
+            <i class="fas fa-cog"></i>
+            <span>Ajustes</span>
+        </a>
+        <div class="nav-item" id="theme-toggle" title="Cambiar Tema">
+            <i class="fas fa-moon"></i>
+            <span>Tema</span>
         </div>
-        <div id="chat"></div>
-        <div id="inputRow">
-            <div class="inputWrapper">
-                <button id="attach">+</button>
-                <textarea id="input" autocomplete="off" placeholder="Escribe un mensaje..."></textarea>
-            </div>
-
-            <button id="send"></button>
-
-            <input type="file" id="fileInput" hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx" />
+        <div class="nav-item" id="nav-logout" title="Cerrar Sesión" style="margin-top: 20px; color: #f87171;">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Salir</span>
         </div>
     </div>
+
+    <!-- Contenedor principal -->
+    <div class="crm-main-container" style="display: flex; align-items: center; justify-content: center; height: 100vh;">
+        <div id="container" class="glass-card" style="margin: 0; max-width: 500px; width: 100%; height: 80vh;">
+            <div id="header">
+                <img id="avatar"
+                    src="https://img.freepik.com/vector-gratis/robot-vectorial-graident-ai_78370-4114.jpg?semt=ais_hybrid&w=740&q=80"
+                    alt="Bot" /> <!-- Cambiar imagen -->
+                <div class="meta">
+                    <div class="name">Asistente demo</div>
+                    <div class="sub">en línea</div>
+                </div>
+            </div>
+            <div id="chat"></div>
+            <div id="inputRow">
+                <div class="inputWrapper">
+                    <button id="attach">+</button>
+                    <textarea id="input" autocomplete="off" placeholder="Escribe un mensaje..."></textarea>
+                </div>
+
+                <button id="send"></button>
+
+                <input type="file" id="fileInput" hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx" />
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/crm-common.js"></script>
+    <script src="js/main.js?v=2.1"></script>
 </body>
-
-<!-- script file -->
-<script src="js/main.js?v=2.1"></script>
-
 </html>

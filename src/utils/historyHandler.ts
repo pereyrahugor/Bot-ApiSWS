@@ -21,6 +21,9 @@ export interface Chat {
     project_id: string;
     type: 'whatsapp' | 'webchat';
     name: string | null;
+    email: string | null;
+    notes: string | null;
+    source: string | null;
     bot_enabled: boolean;
     last_message_at: string;
     last_human_message_at: string | null;
@@ -52,6 +55,9 @@ export class HistoryHandler {
                     project_id TEXT,
                     type TEXT NOT NULL,
                     name TEXT,
+                    email TEXT,
+                    notes TEXT,
+                    source TEXT,
                     bot_enabled BOOLEAN DEFAULT true,
                     last_message_at TIMESTAMPTZ DEFAULT NOW(),
                     last_human_message_at TIMESTAMPTZ,
@@ -138,12 +144,21 @@ export class HistoryHandler {
                          }
                     }
 
-                    // Migración para last_human_message_at
+                    // Migración para last_human_message_at y columnas CRM
                     if (table.name === 'chats') {
-                        const { error: humanMsgErr } = await supabase.from('chats').select('last_human_message_at').limit(1);
-                        if (humanMsgErr && humanMsgErr.code === '42703') {
-                            console.log(`🔧 Agregando columna last_human_message_at a chats...`);
-                            await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN last_human_message_at TIMESTAMPTZ;` });
+                        const columns = [
+                            { name: 'last_human_message_at', type: 'TIMESTAMPTZ' },
+                            { name: 'email', type: 'TEXT' },
+                            { name: 'notes', type: 'TEXT' },
+                            { name: 'source', type: 'TEXT' }
+                        ];
+
+                        for (const col of columns) {
+                            const { error: colErr } = await supabase.from('chats').select(col.name).limit(1);
+                            if (colErr && colErr.code === '42703') {
+                                console.log(`🔧 Agregando columna ${col.name} a chats...`);
+                                await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN IF NOT EXISTS ${col.name} ${col.type};` });
+                            }
                         }
                     }
 
@@ -285,14 +300,30 @@ export class HistoryHandler {
     }
 
     /**
-     * Lista chats con paginación (con tags incluidos)
+     * Lista chats con paginación, búsqueda y filtros
      */
-    static async listChats(limit: number = 20, offset: number = 0) {
+    static async listChats(limit: number = 20, offset: number = 0, search: string = '', tagId: string = '') {
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('chats')
-                .select('*, chat_tags(tag_id, tags(*))')
-                .eq('project_id', PROJECT_ID)
+                .select('*, chat_tags!inner(tag_id, tags(*))', { count: 'exact' })
+                .eq('project_id', PROJECT_ID);
+
+            // Si no hay tagId, cambiamos el select para que no sea inner join (que filtra)
+            if (!tagId) {
+                query = supabase
+                    .from('chats')
+                    .select('*, chat_tags(tag_id, tags(*))', { count: 'exact' })
+                    .eq('project_id', PROJECT_ID);
+            } else {
+                query = query.eq('chat_tags.tag_id', tagId);
+            }
+
+            if (search) {
+                query = query.or(`name.ilike.%${search}%,id.ilike.%${search}%,email.ilike.%${search}%`);
+            }
+
+            const { data, error } = await query
                 .order('last_message_at', { ascending: false })
                 .range(offset, offset + limit - 1);
             
@@ -305,6 +336,25 @@ export class HistoryHandler {
         } catch (err) {
             console.error('[HistoryHandler] Error en listChats:', err);
             return [];
+        }
+    }
+
+    /**
+     * Actualiza los datos de contacto de un lead
+     */
+    static async updateChatContact(chatId: string, data: { name?: string, email?: string, notes?: string, source?: string }) {
+        try {
+            const { error } = await supabase
+                .from('chats')
+                .update(data)
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID);
+            
+            if (error) throw error;
+            return { success: true };
+        } catch (err: any) {
+            console.error('[HistoryHandler] Error en updateChatContact:', err);
+            return { success: false, error: err.message };
         }
     }
 
