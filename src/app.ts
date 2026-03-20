@@ -251,6 +251,27 @@ const main = async () => {
             });
         });
 
+        // 🛡️ QR Routes for Dashboard
+        app.get("/qr.png", (req: any, res: any) => {
+            const p = path.join(process.cwd(), "bot.qr.png");
+            if (fs.existsSync(p)) {
+                res.setHeader('Content-Type', 'image/png');
+                return res.end(fs.readFileSync(p));
+            }
+            res.statusCode = 404;
+            res.end("QR Not Found");
+        });
+
+        app.get("/groups-qr.png", (req: any, res: any) => {
+            const p = path.join(process.cwd(), "bot.groups.qr.png");
+            if (fs.existsSync(p)) {
+                res.setHeader('Content-Type', 'image/png');
+                return res.end(fs.readFileSync(p));
+            }
+            res.statusCode = 404;
+            res.end("Groups QR Not Found");
+        });
+
 
         // API Session Control
         app.post("/api/delete-session", async (_req: any, res: any) => {
