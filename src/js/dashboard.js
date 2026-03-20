@@ -71,18 +71,24 @@ async function fetchStatus() {
                 sessionInfo.style.display = 'none';
             }
             
-            // Intentar recargar el QR (Baileys usa /groups-qr.png, YCloud no usa QR)
+            // Solo intentar cargar la imagen si realmente hay un QR disponible
             const qrImg = document.querySelector('.qr');
-            if (data.qrImage) {
-                // Prioridad absoluta: Imagen base64 directa del servidor
-                qrImg.src = data.qrImage;
+            const generatingMsg = qrImg.nextElementSibling; // El <p> con "Generando QR..."
+
+            if (data.qr) {
+                if (data.qrImage) {
+                    qrImg.src = data.qrImage;
+                } else {
+                    const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
+                    qrImg.src = qrUrl + '?t=' + Date.now();
+                }
+                qrImg.style.display = 'inline-block';
+                generatingMsg.style.display = 'none';
             } else {
-                // Fallback: Servir por URL de archivo (si el archivo existe localmente)
-                const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
-                qrImg.src = qrUrl + '?t=' + Date.now();
+                qrImg.style.display = 'none';
+                generatingMsg.style.display = 'block';
+                generatingMsg.textContent = data.message || 'Generando QR... por favor espera.';
             }
-            qrImg.style.display = 'inline-block';
-            qrImg.nextElementSibling.style.display = 'none';
         }
 
         if (data.error) {
