@@ -4,22 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Acceso Backoffice - {{BOT_NAME}}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style/crm-common.css">
     <link rel="stylesheet" href="/style/login.css">
 </head>
-<body data-theme="light" style="display: flex; align-items: center; justify-content: center; height: 100vh; background: var(--bg-main);">
-    <div class="login-card glass-card" style="text-align: center; max-width: 400px; width: 90%;">
-        <h1 style="margin-bottom: 5px;">{{BOT_NAME}} Bot</h1>
-        <p style="color: var(--text-muted); margin-bottom: 25px;">Introduce tu token de acceso</p>
-        <div style="display: flex; flex-direction: column; gap: 15px;">
-            <input type="password" id="token" placeholder="Token de seguridad" autofocus style="width: 100%;">
-            <button onclick="login()" class="btn-primary" style="width: 100%;">Entrar al Backoffice</button>
-        </div>
-        <div id="error" class="error" style="color: #f87171; margin-top: 15px; display: none;">Token inválido. Inténtalo de nuevo.</div>
+<body data-theme="light">
+    <script src="/js/crm-common.js"></script>
+    <div class="login-card">
+        <h1>{{BOT_NAME}} Bot</h1>
+        <p>Introduce tu token de acceso</p>
+        <input type="password" id="token" placeholder="Token de seguridad" autofocus>
+        <button onclick="login()">Entrar al Backoffice</button>
+        <div id="error" class="error">Token inválido. Inténtalo de nuevo.</div>
     </div>
 
-    <script src="/js/crm-common.js"></script>
     <script src="/js/login.js"></script>
 </body>
 </html>

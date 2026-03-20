@@ -8,15 +8,15 @@ let botTags = [];
 let selectedFile = null;
 let isSending = false;
 
-// Paginación y Filtros
+// --- Tema Claro// El tema ahora se maneja en crm-common.js
+
+// Paginación de chats
 let chatOffset = 0;
 const CHAT_LIMIT = 20;
 let loadingChats = false;
 let allChatsLoaded = false;
-let searchQuery = '';
-let tagFilter = '';
-let searchTimeout = null;
 
+// Paginación de mensajes
 let messageOffset = 0;
 const MSG_LIMIT = 50;
 let loadingMessages = false;
@@ -32,12 +32,8 @@ socket.on('connect', () => {
 socket.on('new_message', (payload) => {
     console.log('📡 Nuevo mensaje recibido:', payload);
     if (activeChatId === payload.chatId) {
-        // En lugar de recargar todo, podríamos simplemente insertar el mensaje si estamos al final
-        // Pero para simplificar y asegurar consistencia con paginación, recargamos la primera página o el estado actual
-        // Aquí optamos por un refresh "suave" si es el chat activo
         fetchMessages(activeChatId, true);
     }
-    // Para la lista de chats, si el chat no está en la vista actual, fetchChats(true) lo traerá al principio
     fetchChats(true);
 });
 
@@ -45,7 +41,7 @@ socket.on('bot_toggled', (payload) => {
     console.log('📡 Bot toggled:', payload);
     if (activeChatId === payload.chatId) {
         const toggle = document.getElementById('bot-toggle');
-        if (toggle) toggle.checked = payload.enabled;
+        toggle.checked = payload.enabled;
         updateBotStatusText(payload.enabled);
         updateInputState(payload.enabled);
     }
@@ -58,32 +54,34 @@ async function fetchChats(refresh = false) {
         chatOffset = 0;
         allChatsLoaded = false;
     }
-    
-    // Si ya cargamos todo y no es un refresh, no pedir más
     if (allChatsLoaded && !refresh) return;
+
+    const query = document.getElementById('search-input')?.value || '';
+    const tagFilter = document.getElementById('filter-tag')?.value || '';
 
     loadingChats = true;
     try {
-        const url = `/api/backoffice/chats?token=${token}&limit=${CHAT_LIMIT}&offset=${chatOffset}&search=${encodeURIComponent(searchQuery)}&tag=${tagFilter}`;
+        const url = `/api/backoffice/chats?token=${token}&limit=${CHAT_LIMIT}&offset=${chatOffset}&search=${encodeURIComponent(query)}&tag=${tagFilter}`;
         const res = await fetch(url);
-        if (res.status === 401) logout();
-        const newChats = await res.json();
-        
-        if (newChats.length < CHAT_LIMIT) {
-            allChatsLoaded = true;
+        if (res.status === 401) {
+            logout();
+            return;
         }
+        
+        const newChats = await res.json();
+        if (newChats.length < CHAT_LIMIT) allChatsLoaded = true;
 
         if (refresh) {
             chats = newChats;
         } else {
-            // Evitar duplicados
+            // Evitar duplicados si hay mensajes en tiempo real entrando
             const existingIds = chats.map(c => c.id);
             const filteredNew = newChats.filter(nc => !existingIds.includes(nc.id));
             chats = [...chats, ...filteredNew];
         }
 
         chatOffset = chats.length;
-        renderChatList(chats);
+        renderChatList(); // Ya no llamamos a handleSearch aquí, solo renderizamos lo que vino del server
         
         if (activeChatId) {
             const activeChat = chats.find(c => c.id === activeChatId);
@@ -98,8 +96,6 @@ async function fetchChats(refresh = false) {
         console.error(e); 
     } finally {
         loadingChats = false;
-        const loader = document.getElementById('chat-list-loader');
-        if (loader) loader.remove();
     }
 }
 
@@ -112,13 +108,13 @@ async function fetchBotTags() {
     } catch (e) { console.error(e); }
 }
 
+let searchTimeout = null;
 function handleSearch() {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        searchQuery = document.getElementById('search-input').value.toLowerCase();
-        tagFilter = document.getElementById('filter-tag').value;
-        fetchChats(true); // Reiniciar con nuevos filtros
-    }, 500); // Debounce de 500ms
+        console.log('[Search] Disparando búsqueda en servidor...');
+        fetchChats(true);
+    }, 500);
 }
 
 function renderFilterDropdown() {
@@ -131,13 +127,6 @@ function renderFilterDropdown() {
 
 function renderChatList(listToRender = chats) {
     const list = document.getElementById('chat-list');
-    
-    // Si no hay chats, mostrar mensaje
-    if (listToRender.length === 0) {
-        list.innerHTML = '<div style="padding:20px; text-align:center; opacity:0.5;">No se encontraron chats</div>';
-        return;
-    }
-
     list.innerHTML = listToRender.map(chat => {
         const initial = (chat.name || chat.id).charAt(0).toUpperCase();
         const avatarUrl = `/api/backoffice/profile-pic/${chat.id}?token=${token}`;
@@ -147,11 +136,11 @@ function renderChatList(listToRender = chats) {
         ).join('');
 
         const statusBadge = chat.bot_enabled 
-            ? `<span style="color: var(--wa-accent); font-size: 0.75rem;">🤖 Bot</span>`
+            ? `<span style="color: var(--accent); font-size: 0.75rem;">🤖 Bot</span>`
             : `<span style="color: #f87171; font-size: 0.75rem;">👤 Humano</span>`;
 
         return `
-            <div id="chat-item-${chat.id}" class="chat-item ${activeChatId === chat.id ? 'active' : ''}" onclick="selectChat('${chat.id}')">
+            <div class="chat-item ${activeChatId === chat.id ? 'active' : ''}" onclick="selectChat('${chat.id}')">
                 <div class="chat-avatar">
                     <span style="position:relative; z-index:1;">${initial}</span>
                     <img src="${avatarUrl}" onerror="this.style.display='none'">
@@ -167,33 +156,14 @@ function renderChatList(listToRender = chats) {
             </div>
         `;
     }).join('');
-
-    // Agregar indicador de carga si hay más
-    if (!allChatsLoaded) {
-        const loader = document.createElement('div');
-        loader.id = 'chat-list-loader';
-        loader.style.padding = '10px';
-        loader.style.textAlign = 'center';
-        loader.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        list.appendChild(loader);
-    }
 }
 
 async function selectChat(id) {
-    if (activeChatId === id) return;
     activeChatId = id;
     const chat = chats.find(c => c.id === id);
-    if (!chat) {
-        // Si no está en la lista cargada (por búsqueda global), pedirlo específicamente o recargar
-        // Por ahora asumimos que si clickeamos está cargado.
-        return;
-    }
     
     document.getElementById('active-chat-phone').innerText = chat.id.split('@')[0];
     document.getElementById('active-chat-name').innerText = chat.name || 'Sin nombre';
-    
-    // Renderizar detalles de contacto (CRM)
-    renderContactDetails(chat);
     
     const headerAvatar = document.getElementById('active-chat-avatar');
     const initial = (chat.name || chat.id).charAt(0).toUpperCase();
@@ -211,95 +181,14 @@ async function selectChat(id) {
     updateInputState(chat.bot_enabled);
 
     renderActiveChatTags();
-    if (document.getElementById('tag-manager').style.display === 'block') {
+    populateCRMFields(chat);
+    
+    if (document.getElementById('crm-panel').classList.contains('active')) {
         renderTagManager();
     }
 
-    // Actualizar visual de activo en la lista
-    const items = document.querySelectorAll('.chat-item');
-    items.forEach(it => it.classList.remove('active'));
-    const activeItem = document.getElementById(`chat-item-${id}`);
-    if (activeItem) activeItem.classList.add('active');
-
-    // Resetear mensajes
-    messageOffset = 0;
-    allMessagesLoaded = false;
-    document.getElementById('messages').innerHTML = '';
-    
+    renderChatList();
     fetchMessages(id, true);
-}
-
-function renderContactDetails(chat) {
-    // Si no existe el contenedor de detalles, lo creamos (estilo CRM)
-    let detailsContainer = document.getElementById('contact-details');
-    if (!detailsContainer) {
-        // En lugar de crear un div nuevo, buscaremos un lugar en el UI base
-        // Si no existe en el HTML, lo inyectaremos en el main content header o sidebar
-        // Para este bot, lo pondremos en un panel lateral derecho o similar si hay espacio
-        const mainContent = document.getElementById('main-content');
-        detailsContainer = document.createElement('div');
-        detailsContainer.id = 'contact-details';
-        detailsContainer.className = 'glass-card animate-fade-in';
-        detailsContainer.style = 'position: absolute; top: 70px; right: 20px; width: 300px; z-index: 50; padding: 15px; border-radius: 12px; font-size: 0.9rem;';
-        mainContent.appendChild(detailsContainer);
-    }
-
-    detailsContainer.innerHTML = `
-        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-            <h4 style="margin:0;">Ficha del Lead</h4>
-            <button onclick="document.getElementById('contact-details').style.display='none'" style="border:none; background:none; cursor:pointer;"><i class="fas fa-times"></i></button>
-        </div>
-        <div style="margin-bottom:10px;">
-            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Nombre</label>
-            <input type="text" id="crm-name" value="${chat.name || ''}" style="width:100%; margin-top:2px;">
-        </div>
-        <div style="margin-bottom:10px;">
-            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Email</label>
-            <input type="email" id="crm-email" value="${chat.email || ''}" style="width:100%; margin-top:2px;">
-        </div>
-        <div style="margin-bottom:10px;">
-            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Origen</label>
-            <input type="text" id="crm-source" value="${chat.source || ''}" style="width:100%; margin-top:2px;">
-        </div>
-        <div style="margin-bottom:15px;">
-            <label style="display:block; font-size:0.75rem; color:var(--text-muted);">Notas</label>
-            <textarea id="crm-notes" style="width:100%; height:60px; margin-top:2px;">${chat.notes || ''}</textarea>
-        </div>
-        <button onclick="updateContactData()" class="btn-primary" style="width:100%;">Guardar Cambios</button>
-    `;
-    detailsContainer.style.display = 'block';
-}
-
-async function updateContactData() {
-    const name = document.getElementById('crm-name').value;
-    const email = document.getElementById('crm-email').value;
-    const source = document.getElementById('crm-source').value;
-    const notes = document.getElementById('crm-notes').value;
-
-    const res = await fetch(`/api/backoffice/chat/${activeChatId}/contact`, {
-        method: 'PUT',
-        headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': 'token=' + token
-        },
-        body: JSON.stringify({ name, email, source, notes })
-    });
-
-    if (res.ok) {
-        window.crmToast('Datos del lead actualizados correctamente');
-        // Actualizar datos locales
-        const chat = chats.find(c => c.id === activeChatId);
-        if (chat) {
-            chat.name = name;
-            chat.email = email;
-            chat.source = source;
-            chat.notes = notes;
-            document.getElementById('active-chat-name').innerText = name || 'Sin nombre';
-            renderChatList();
-        }
-    } else {
-        window.crmToast('Error al guardar datos', 'error');
-    }
 }
 
 function renderActiveChatTags() {
@@ -339,107 +228,101 @@ function updateInputState(botEnabled) {
     attachBtn.disabled = isBotEnabled;
     
     if (isBotEnabled) {
-        input.style.borderBottom = '2px solid var(--wa-accent)';
+        input.parentElement.style.borderColor = 'var(--accent)';
         input.style.opacity = '0.6';
-        input.placeholder = "🤖 Bot activo - Desactívalo para intervenir";
+        input.placeholder = "🤖 Bot activo - Desactiva para intervenir";
     } else {
-        input.style.borderBottom = '2px solid #f87171';
+        input.parentElement.style.borderColor = '#f87171';
         input.style.opacity = '1';
         input.placeholder = "Escribe un mensaje aquí";
     }
 }
 
-async function fetchMessages(chatId, refresh = false) {
+let allMessages = [];
+
+async function fetchMessages(chatId, reset = false) {
     if (loadingMessages) return;
-    if (refresh) {
+    if (reset) {
         messageOffset = 0;
         allMessagesLoaded = false;
+        allMessages = [];
     }
-    if (allMessagesLoaded && !refresh) return;
+    if (allMessagesLoaded && !reset) return;
 
     loadingMessages = true;
-    const container = document.getElementById('messages');
-    
-    // Si es refresh, mostrar loader
-    if (refresh) {
-        container.innerHTML = '<div style="flex:1; display:flex; align-items:center; justify-content:center;"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
-    }
-
     try {
         const res = await fetch(`/api/backoffice/messages/${chatId}?token=${token}&limit=${MSG_LIMIT}&offset=${messageOffset}`);
-        const messages = await res.json();
+        const newMessages = await res.json();
         
-        if (messages.length < MSG_LIMIT) {
-            allMessagesLoaded = true;
-        }
+        if (newMessages.length < MSG_LIMIT) allMessagesLoaded = true;
 
-        // El backend devuelve los mensajes en orden cronológico (reverse del range)
-        // [Viejo, ..., Nuevo]
-        
-        let html = '';
-        let lastDate = null;
-        
-        // Guardar el scrollHeight antes de insertar para mantener posición si es carga de históricos
+        const container = document.getElementById('messages');
         const oldScrollHeight = container.scrollHeight;
 
-        // Renderizar mensajes
-        messages.forEach(m => {
-            const date = new Date(m.created_at);
-            const dateStr = date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
-            
-            if (dateStr !== lastDate) {
-                html += `<div class="date-separator"><span>${dateStr}</span></div>`;
-                lastDate = dateStr;
-            }
+        // Concatenar al inicio (los nuevos/viejos mensajes según el offset)
+        allMessages = [...newMessages, ...allMessages];
+        
+        renderMessages();
 
-            const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            let contentHtml = m.content || '';
-            const type = m.type || 'text';
-            
-            const isImageUrl = type === 'image' || contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)/i));
-            const isVideoUrl = type === 'video' || contentHtml.match(/\.(mp4|webm|ogg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(mp4|webm|ogg)/i));
-            const isFileUrl = type === 'document' || (contentHtml.includes('/uploads/') && !isImageUrl && !isVideoUrl);
-
-            if (isImageUrl && contentHtml) {
-                contentHtml = `<div class="msg-media"><img src="${contentHtml}" alt="imagen" onclick="window.open(this.src)"></div>`;
-            } else if (isVideoUrl && contentHtml) {
-                contentHtml = `<div class="msg-media"><video src="${contentHtml}" controls></video></div>`;
-            } else if (isFileUrl && contentHtml) {
-                const fileName = contentHtml.split('/').pop();
-                contentHtml = `<div class="msg-file"><a href="${contentHtml}" target="_blank">📄 Documento adjunto (${fileName})</a></div>`;
-            }
-            
-            html += `
-                <div class="msg ${m.role}">
-                    <div class="msg-content">${contentHtml}</div>
-                    <span class="msg-time">${time}</span>
-                </div>
-            `;
-        });
-
-        if (refresh) {
-            container.innerHTML = html;
+        if (reset) {
             container.scrollTop = container.scrollHeight;
         } else {
-            // Carga de antiguos (scroll up)
-            const firstChild = container.firstChild;
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = html;
-            while (tempDiv.firstChild) {
-                container.insertBefore(tempDiv.firstChild, firstChild);
-            }
-            // Ajustar scroll para que el usuario no pierda donde estaba
             container.scrollTop = container.scrollHeight - oldScrollHeight;
         }
 
-        messageOffset += messages.length;
-
+        messageOffset += newMessages.length;
     } catch (e) {
-        console.error('Error fetching messages:', e);
+        console.error(e);
     } finally {
         loadingMessages = false;
     }
+}
+
+function renderMessages() {
+    const container = document.getElementById('messages');
+    let html = '';
+    let lastDate = null;
+
+    allMessages.forEach(m => {
+        const date = new Date(m.created_at);
+        const dateStr = date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+        
+        if (dateStr !== lastDate) {
+            html += `<div class="date-separator"><span>${dateStr}</span></div>`;
+            lastDate = dateStr;
+        }
+        html += generateMessageHtml(m);
+    });
+
+    container.innerHTML = html;
+}
+
+function generateMessageHtml(m) {
+    const date = new Date(m.created_at);
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    let contentHtml = m.content || '';
+    const type = m.type || 'text';
+    
+    const isImageUrl = type === 'image' || contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(jpeg|jpg|gif|png|webp|svg)/i));
+    const isVideoUrl = type === 'video' || contentHtml.match(/\.(mp4|webm|ogg)$/i) || (contentHtml.includes('/uploads/') && contentHtml.match(/\.(mp4|webm|ogg)/i));
+    const isFileUrl = type === 'document' || (contentHtml.includes('/uploads/') && !isImageUrl && !isVideoUrl);
+
+    if (isImageUrl && contentHtml) {
+        contentHtml = `<div class="msg-media"><img src="${contentHtml}" alt="imagen"></div>`;
+    } else if (isVideoUrl && contentHtml) {
+        contentHtml = `<div class="msg-media"><video src="${contentHtml}" controls></video></div>`;
+    } else if (isFileUrl && contentHtml) {
+        const fileName = contentHtml.split('/').pop();
+        contentHtml = `<div class="msg-file"><a href="${contentHtml}" target="_blank">📄 Documento adjunto (${fileName})</a></div>`;
+    }
+    
+    return `
+        <div class="msg ${m.role}">
+            <div class="msg-content">${contentHtml}</div>
+            <span class="msg-time">${time}</span>
+        </div>
+    `;
 }
 
 async function toggleBot(enabled) {
@@ -529,17 +412,15 @@ async function sendMessage() {
             const data = await res.json();
             if (data.warning) {
                 console.warn('⚠️ Advertencia del servidor:', data.warning);
-                window.crmToast(data.warning, 'error');
+                alert('⚠️ ' + data.warning);
             } else {
                 console.log('✅ Mensaje enviado exitosamente');
-                // No mostramos toast para cada mensaje enviado exitoso para no saturar,
-                // el feedback es ver el mensaje en la lista
             }
             input.value = '';
             input.placeholder = "Escribe un mensaje aquí";
             selectedFile = null;
             document.getElementById('file-input').value = '';
-            fetchMessages(activeChatId);
+            fetchMessages(activeChatId, true);
         } else {
             let errorMsg = 'Error desconocido';
             const text = await res.text();
@@ -550,7 +431,7 @@ async function sendMessage() {
                 errorMsg = text || res.statusText || 'Error del servidor';
             }
             console.error('❌ Error del servidor:', errorMsg);
-            window.crmToast('Error: ' + errorMsg, 'error');
+            alert('Error al enviar mensaje: ' + errorMsg);
         }
     } catch (err) {
         console.error('❌ Error de red:', err);
@@ -562,13 +443,92 @@ async function sendMessage() {
     }
 }
 
-// Tag Management Functions
-function toggleTagManager() {
-    const panel = document.getElementById('tag-manager');
-    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-    if (panel.style.display === 'block') {
+// CRM & Tag Management Functions
+function toggleCRMPanel() {
+    const panel = document.getElementById('crm-panel');
+    panel.classList.toggle('active');
+    if (panel.classList.contains('active')) {
+        const chat = chats.find(c => c.id === activeChatId);
+        if (chat) populateCRMFields(chat);
         renderTagManager();
     }
+}
+
+function populateCRMFields(chat) {
+    if (!chat) return;
+    document.getElementById('crm-name').value = chat.name || '';
+    document.getElementById('crm-email').value = chat.email || '';
+    document.getElementById('crm-source').value = chat.source || '';
+    document.getElementById('crm-notes').value = chat.notes || '';
+}
+
+async function saveCRMDetails() {
+    if (!activeChatId) return;
+
+    const details = {
+        name: document.getElementById('crm-name').value,
+        email: document.getElementById('crm-email').value,
+        source: document.getElementById('crm-source').value,
+        notes: document.getElementById('crm-notes').value
+    };
+
+    try {
+        const res = await fetch(`/api/backoffice/chat/${activeChatId}/contact?token=${token}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(details)
+        });
+
+        if (res.ok) {
+            const chat = chats.find(c => c.id === activeChatId);
+            if (chat) {
+                Object.assign(chat, details);
+                document.getElementById('active-chat-name').innerText = chat.name || 'Sin nombre';
+            }
+            renderChatList();
+            showToast('✅ Información guardada correctamente');
+        } else {
+            showToast('❌ Error al guardar información', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Error de conexión', 'error');
+    }
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}" style="margin-right:8px;"></i> ${message}`;
+    
+    // Estilos inline rápidos para el toast si no están en CSS
+    Object.assign(toast.style, {
+        position: 'fixed',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%) translateY(100px)',
+        background: type === 'success' ? '#10b981' : '#ef4444',
+        color: 'white',
+        padding: '12px 24px',
+        borderRadius: '12px',
+        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+        zIndex: '10000',
+        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        fontWeight: '600'
+    });
+
+    document.body.appendChild(toast);
+    
+    // Animar entrada
+    setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+    }, 10);
+
+    // Salida
+    setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(100px)';
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
 }
 
 async function createTag() {
@@ -576,57 +536,61 @@ async function createTag() {
     const color = document.getElementById('new-tag-color').value;
     if (!name) return;
 
-    const res = await fetch('/api/backoffice/tags', {
+    const res = await fetch(`/api/backoffice/tags?token=${token}`, {
         method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': 'token=' + token
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, color })
     });
 
     if (res.ok) {
         document.getElementById('new-tag-name').value = '';
         await fetchBotTags();
-        if (activeChatId) renderTagManager();
     }
 }
 
 async function deleteTag(id) {
     if (!confirm('¿Eliminar esta etiqueta?')) return;
-    const res = await fetch(`/api/backoffice/tags/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': 'token=' + token }
+    const res = await fetch(`/api/backoffice/tags/${id}?token=${token}`, {
+        method: 'DELETE'
     });
     if (res.ok) {
         await fetchBotTags();
-        await fetchChats(true); // Refrescar chats para ver el cambio de la etiqueta eliminada
+        chats.forEach(c => {
+            if (c.tags) c.tags = c.tags.filter(t => t.id !== id);
+        });
+        handleSearch();
     }
 }
 
 async function addTagToChat(tagId) {
-    const res = await fetch(`/api/backoffice/chats/${activeChatId}/tags`, {
+    const res = await fetch(`/api/backoffice/chats/${activeChatId}/tags?token=${token}`, {
         method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': 'token=' + token
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tagId })
     });
     if (res.ok) {
-        await fetchChats(true);
+        const tag = botTags.find(t => t.id === tagId);
+        const chat = chats.find(c => c.id === activeChatId);
+        if (chat && tag) {
+            if (!chat.tags) chat.tags = [];
+            if (!chat.tags.find(t => t.id === tagId)) chat.tags.push(tag);
+        }
+        handleSearch(); 
         renderActiveChatTags();
         renderTagManager();
     }
 }
 
 async function removeTagFromChat(tagId) {
-    const res = await fetch(`/api/backoffice/chats/${activeChatId}/tags/${tagId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': 'token=' + token }
+    const res = await fetch(`/api/backoffice/chats/${activeChatId}/tags/${tagId}?token=${token}`, {
+        method: 'DELETE'
     });
     if (res.ok) {
-        await fetchChats(true);
+        const chat = chats.find(c => c.id === activeChatId);
+        if (chat && chat.tags) {
+            chat.tags = chat.tags.filter(t => t.id !== tagId);
+        }
+        handleSearch();
         renderActiveChatTags();
         renderTagManager();
     }
@@ -635,32 +599,32 @@ async function removeTagFromChat(tagId) {
 function renderTagManager() {
     const editorList = document.getElementById('tag-list-editor');
     if (!editorList) return;
-    editorList.innerHTML = botTags.map(t => `
-        <div class="tag-item-edit">
-            <span class="tag-pill" style="background:${t.color}">${t.name}</span>
-            <button onclick="deleteTag('${t.id}')" style="background:none; border:none; color:#f87171; cursor:pointer;">del</button>
+    
+    editorList.innerHTML = `
+        <div style="max-height: 200px; overflow-y: auto; margin-top: 10px;">
+            ${botTags.map(t => `
+                <div class="tag-item-edit">
+                    <span class="tag-pill" style="background:${t.color || '#6366f1'}">${t.name}</span>
+                    <button class="btn-icon" onclick="deleteTag('${t.id}')" style="color:#f87171;"><i class="fas fa-trash-alt"></i></button>
+                </div>
+            `).join('')}
         </div>
-    `).join('');
+    `;
 
-    const assignSection = document.getElementById('current-chat-tags-section');
-    if (activeChatId) {
-        assignSection.style.display = 'block';
-        const chat = chats.find(c => c.id === activeChatId);
+    const chat = chats.find(c => c.id === activeChatId);
+    if (chat) {
         const assignedTagIds = (chat.tags || []).map(t => t.id);
-        
         const assignList = document.getElementById('available-tags-to-assign');
         assignList.innerHTML = botTags.map(t => {
             const isAssigned = assignedTagIds.includes(t.id);
             return `
                 <div onclick="${isAssigned ? 'removeTagFromChat' : 'addTagToChat'}('${t.id}')" 
                      class="tag-pill" 
-                     style="background:${t.color}; cursor:pointer; opacity:${isAssigned ? 1 : 0.4}; border:${isAssigned ? '2px solid white' : 'none'}">
+                     style="background:${t.color || '#6366f1'}; cursor:pointer; opacity:${isAssigned ? 1 : 0.6}; transform:${isAssigned ? 'scale(1.05)' : 'scale(1)'}; border:${isAssigned ? '2px solid white' : '1px solid transparent'}">
                     ${t.name} ${isAssigned ? '✓' : '+'}
                 </div>
             `;
         }).join('');
-    } else {
-        assignSection.style.display = 'none';
     }
 }
 
@@ -669,30 +633,20 @@ function logout() {
     window.location.href = '/login';
 }
 
-setInterval(() => fetchChats(true), 60000); // Refresh cada minuto para ver nuevos chats
-fetchChats();
+setInterval(() => fetchChats(true), 60000);
+fetchChats(true);
 fetchBotTags();
 
-// --- Listeners de Scroll para Infinite Scroll ---
-
+// Listeners para Infinite Scroll
 document.getElementById('chat-list').addEventListener('scroll', function() {
     const { scrollTop, scrollHeight, clientHeight } = this;
-    // Si llegamos cerca del fondo (20px de margen)
     if (scrollTop + clientHeight >= scrollHeight - 20) {
-        if (!loadingChats && !allChatsLoaded) {
-            console.log('🔄 Cargando más chats...');
-            fetchChats();
-        }
+        if (!loadingChats && !allChatsLoaded) fetchChats();
     }
 });
 
 document.getElementById('messages').addEventListener('scroll', function() {
-    const { scrollTop } = this;
-    // Para mensajes, cargamos históricos al subir (scrollTop cercano a 0)
-    if (scrollTop < 50) {
-        if (!loadingMessages && !allMessagesLoaded && activeChatId) {
-            console.log('🔄 Cargando mensajes históricos...');
-            fetchMessages(activeChatId);
-        }
+    if (this.scrollTop < 50 && !loadingMessages && !allMessagesLoaded) {
+        fetchMessages(activeChatId);
     }
 });

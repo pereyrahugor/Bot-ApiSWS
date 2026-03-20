@@ -1,35 +1,12 @@
 async function fetchStatus() {
+    const token = localStorage.getItem('backoffice_token');
     try {
-        const res = await fetch('/api/dashboard-status');
+        const res = await fetch(`/api/dashboard-status?token=${token}`);
+        if (res.status === 401) return logout();
         const data = await res.json();
         
         const statusEl = document.getElementById('session-status');
-        const adapterStatusEl = document.getElementById('adapter-status');
-        const groupStatusEl = document.getElementById('group-status');
-        
-        // Estado YCloud (Adapter)
-        if (data.adapter && data.adapter.active) {
-            adapterStatusEl.textContent = '✅ Conectado (API)';
-            adapterStatusEl.style.color = '#28a745';
-        } else {
-            adapterStatusEl.textContent = '❌ Sin Configurar';
-            adapterStatusEl.style.color = '#ef4444';
-        }
-
-        // Estado Baileys (Groups)
-        if (data.group && data.group.active) {
-            groupStatusEl.textContent = '✅ Conectado';
-            groupStatusEl.style.color = '#28a745';
-        } else if (data.group && data.group.hasRemote) {
-            groupStatusEl.textContent = '⏳ Restaurando...';
-            groupStatusEl.style.color = '#ffc107';
-        } else {
-            groupStatusEl.textContent = '⏳ Esperando QR';
-            groupStatusEl.style.color = '#ffc107';
-        }
-
         const qrSection = document.getElementById('qr-section');
-
         const sessionInfo = document.getElementById('session-info');
         const sessionError = document.getElementById('session-error');
         const wsLinkContainer = document.getElementById('whatsapp-link-container');
@@ -71,24 +48,11 @@ async function fetchStatus() {
                 sessionInfo.style.display = 'none';
             }
             
-            // Solo intentar cargar la imagen si realmente hay un QR disponible
+            // Intentar recargar el QR
             const qrImg = document.querySelector('.qr');
-            const generatingMsg = qrImg.nextElementSibling; // El <p> con "Generando QR..."
-
-            if (data.qr) {
-                if (data.qrImage) {
-                    qrImg.src = data.qrImage;
-                } else {
-                    const qrUrl = (data.providerType === 'baileys') ? '/groups-qr.png' : '/qr.png';
-                    qrImg.src = qrUrl + '?t=' + Date.now();
-                }
-                qrImg.style.display = 'inline-block';
-                generatingMsg.style.display = 'none';
-            } else {
-                qrImg.style.display = 'none';
-                generatingMsg.style.display = 'block';
-                generatingMsg.textContent = data.message || 'Generando QR... por favor espera.';
-            }
+            qrImg.src = '/qr.png?t=' + Date.now();
+            qrImg.style.display = 'inline-block';
+            qrImg.nextElementSibling.style.display = 'none';
         }
 
         if (data.error) {

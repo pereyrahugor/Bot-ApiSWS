@@ -30,17 +30,10 @@ body {
     padding: 0;
 }
 
-/* body {
-    font-family: Arial, sans-serif;
-    background: #ece5dd;
-    min-height: var(--app-vh, 100dvh);
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
+body {
+    font-family: var(--font-main, 'Outfit', sans-serif);
     touch-action: manipulation;
-} */
+}
 
 /* =========================
    LAYOUT

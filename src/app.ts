@@ -240,15 +240,30 @@ const main = async () => {
 
         // API Health & Info
         app.get("/health", (_req: any, res: any) => res.json({ status: "ok", time: new Date().toISOString() }));
-        app.get("/api/assistant-name", (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
-        app.get("/api/dashboard-status", async (_req: any, res: any) => {
-            const adapterStatus = await hasActiveSession(adapterProvider);
-            const groupStatus = await hasActiveSession(groupProvider);
+        app.get("/api/assistant-name", backofficeAuth, (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
+        
+        app.get("/api/dashboard-status", backofficeAuth, async (_req: any, res: any) => {
+            const hasActiveSession = (await import("./providers/provider.manager")).hasActiveSession;
+            const { getAdapterProvider, getGroupProvider } = await import("./providers/instances");
+            
+            const adapterStatus = await hasActiveSession(getAdapterProvider());
+            const groupStatus = await hasActiveSession(getGroupProvider());
             res.json({
-                ...groupStatus, // Prioridad al de grupos por el QR de Baileys
+                ...groupStatus, 
                 adapter: adapterStatus,
                 group: groupStatus
             });
+        });
+
+        // API Session Control
+        app.post("/api/delete-session", backofficeAuth, async (_req: any, res: any) => {
+            try {
+                const { deleteSessionFromDb } = await import("./utils/sessionSync");
+                await deleteSessionFromDb();
+                res.json({ success: true });
+            } catch (err: any) {
+                res.status(500).json({ success: false, error: err.message });
+            }
         });
 
         // 🛡️ QR Routes for Dashboard
