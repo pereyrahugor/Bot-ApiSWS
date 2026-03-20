@@ -28,11 +28,13 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 qrString = payload.qr;
             } else if (payload && payload.code) {
                 qrString = payload.code;
+            } else if (payload && payload.payload && payload.payload.qr) {
+                qrString = payload.payload.qr; // Formato Sherpa detectado en logs de Railway
             }
 
             if (qrString && typeof qrString === 'string') {
                 provider.qrCodeString = qrString; // Almacenar en el objeto del proveedor
-                console.log(`${prefix} ✅ QR Code string guardado en el objeto del proveedor.`);
+                console.log(`${prefix} ✅ QR extraído con éxito (Inicia con: ${qrString.substring(0, 10)}...)`);
                 
                 const qrFilename = isGroupProvider ? 'bot.groups.qr.png' : 'bot.qr.png';
                 const qrPath = path.join(process.cwd(), qrFilename);
