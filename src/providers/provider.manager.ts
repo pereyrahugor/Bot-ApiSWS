@@ -10,24 +10,30 @@ import { obtenerTextoDelMensaje, obtenerMensajeUnwrapped } from "../utils/messag
  * Registra los listeners de los proveedores (YCloud/Baileys) para QR, fallos y mensajes entrantes.
  */
 export const registerProviderEvents = (provider: any, isGroupProvider: boolean = false) => {
-    let isGeneratingQR = false; // Mover al contexto de cada proveedor independiente
+    let isGeneratingQR = false; // Semáforo independiente por instancia de proveedor
     const prefix = isGroupProvider ? '[GroupProvider]' : '[AdapterProvider]';
 
     const handleQR = async (payload: any) => {
+        console.log(`${prefix} 🔍 Evento QR detectado. Payload:`, typeof payload === 'string' ? '(string)' : payload);
+        
+        if (isGeneratingQR) return;
+        isGeneratingQR = true;
+
         try {
-            if (isGeneratingQR) return;
-            isGeneratingQR = true;
+            // Detectar el string del QR en diferentes formatos de proveedor
             let qrString = null;
             if (typeof payload === 'string') {
                 qrString = payload;
-            } else if (payload && typeof payload === 'object') {
-                if (payload.qr) qrString = payload.qr;
-                else if (payload.code) qrString = payload.code;
+            } else if (payload && payload.qr) {
+                qrString = payload.qr;
+            } else if (payload && payload.code) {
+                qrString = payload.code;
             }
+
             if (qrString && typeof qrString === 'string') {
                 provider.qrCodeString = qrString; // Almacenar en el objeto del proveedor
-
-                console.log(`${prefix} ⚡ QR detectado. Generando imagen... (Length: ${qrString.length})`);
+                console.log(`${prefix} ✅ QR Code string guardado en el objeto del proveedor.`);
+                
                 const qrFilename = isGroupProvider ? 'bot.groups.qr.png' : 'bot.qr.png';
                 const qrPath = path.join(process.cwd(), qrFilename);
                 await QRCode.toFile(qrPath, qrString, {
