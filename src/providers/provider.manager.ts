@@ -5,12 +5,12 @@ import { EVENTS } from "@builderbot/bot";
 import { isSessionInDb } from "../utils/sessionSync";
 import { obtenerTextoDelMensaje, obtenerMensajeUnwrapped } from "../utils/messageHelper";
 
-let isGeneratingQR = false;
 
 /**
  * Registra los listeners de los proveedores (YCloud/Baileys) para QR, fallos y mensajes entrantes.
  */
 export const registerProviderEvents = (provider: any, isGroupProvider: boolean = false) => {
+    let isGeneratingQR = false; // Mover al contexto de cada proveedor independiente
     const prefix = isGroupProvider ? '[GroupProvider]' : '[AdapterProvider]';
 
     const handleQR = async (payload: any) => {
