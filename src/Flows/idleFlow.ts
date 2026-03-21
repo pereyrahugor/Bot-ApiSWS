@@ -201,26 +201,25 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
                 await addToSheet(data);
                 return;
+            } else {
+                // DEFAULT
+                // console.log('Tipo desconocido, procesando como SI_RESUMEN por defecto.');
+                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
+
+                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                try {
+                    await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
+                    // console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
+
+                    await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
+
+                } catch (err: any) {
+                    // console.error(`❌ DEFAULT Error:`, err?.message || err);
+                }
+
+                await addToSheet(data);
+                return;
             }
-            // } else {
-            //     // DEFAULT
-            //     // console.log('Tipo desconocido, procesando como SI_RESUMEN por defecto.');
-            //     data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-
-            //     const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
-            //     try {
-            //         await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
-            //         // console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
-
-            //         await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
-
-            //     } catch (err: any) {
-            //         // console.error(`❌ DEFAULT Error:`, err?.message || err);
-            //     }
-
-            //     await addToSheet(data);
-            //     return;
-            // }
         } catch (error) {
             // console.error("Error al obtener el resumen de OpenAI:", error);
             return endFlow();
