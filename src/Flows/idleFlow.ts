@@ -211,7 +211,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                     // console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
 
-                    await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
+                    await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
 
                 } catch (err: any) {
                     // console.error(`❌ DEFAULT Error:`, err?.message || err);
