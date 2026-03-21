@@ -320,7 +320,7 @@ export class HistoryHandler {
             }
 
             if (search) {
-                query = query.or(`name.ilike.%${search}%,id.ilike.%${search}%,email.ilike.%${search}%`);
+                query = query.or(`name.ilike.%${search}%,id.ilike.%${search}%,email.ilike.%${search}%,notes.ilike.%${search}%,source.ilike.%${search}%`);
             }
 
             const { data, error } = await query
