@@ -1,10 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
+    "module": "node16",
     "declaration": false,
     "declarationMap": false,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
