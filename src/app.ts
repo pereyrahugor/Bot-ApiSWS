@@ -58,8 +58,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webChatManager = new WebChatManager();
 const openaiMain = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const openaiVision = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
-const ASSISTANT_ID = process.env.ASSISTANT_ID!;
-const PORT = process.env.PORT || 3008;
+const ASSISTANT_ID = process.env.ASSISTANT_ID || "";
+const PORT = process.env.PORT || 8080;
 
 // Multer config
 const upload = multer({ 
@@ -131,7 +131,7 @@ const main = async () => {
                 await groupProvider.initVendor();
                 console.log('✅ [GroupSync] .initVendor() ejecutado exitosamente.');
             } else {
-                const gpAny: any = groupProvider;
+                const gpAny = groupProvider;
                 if (gpAny.init) {
                     console.log('🚀 [GroupSync] Llamando a .init()...');
                     await gpAny.init();
@@ -153,7 +153,7 @@ const main = async () => {
     if (app) {
         // 5. Polka/Express Server setup & Early Middlewares
         console.log("🛠️ [POLKA MIDDLEWARES - INITIAL]:", app.middlewares?.length || 0);
-        app.onError = (err: any, _req: any, res: any) => {
+        app.onError = (err, _req, res) => {
             console.error("🔥 [POLKA ERROR]:", err);
             res.statusCode = 500;
             res.end(JSON.stringify({ success: false, error: err.message || "Internal Server Error" }));
@@ -163,7 +163,7 @@ const main = async () => {
         app.use(compatibilityLayer);
 
         // 🛡️ MASTER-INTERCEPTOR (Síncrono para evitar loop de Polka)
-        app.use((req: any, res: any, next: any) => {
+        app.use((req, res, next) => {
             const fullUrl = req.url.split('?')[0];
             
             // WEBHOOK YCLOUD (Bypass Total)
@@ -174,14 +174,14 @@ const main = async () => {
             // BACKOFFICE SEND-MESSAGE (Bypass Total para evitar consumo de stream)
             if (fullUrl === '/api/backoffice/send-message' && req.method === 'POST') {
                 return backofficeAuth(req, res, () => {
-                    const deps: BackofficeDependencies = { adapterProvider, HistoryHandler, openaiMain, upload };
+                    const deps = { adapterProvider, HistoryHandler, openaiMain, upload };
                     const contentType = req.headers['content-type'] || '';
 
                     if (contentType.includes('multipart/form-data')) {
-                        upload.single('file')(req, res, (err: any) => {
+                        upload.single('file')(req, res, (err) => {
                             if (err) return res.status(errorReporter ? 500 : 400).json({ success: false, error: err.message });
                             const { chatId, message } = req.body;
-                            const reqAny: any = req;
+                            const reqAny = req;
                             processSendMessage(req, res, chatId || '', message || '', reqAny.file, deps);
                         });
                     } else {
@@ -212,7 +212,7 @@ const main = async () => {
     });
     aiManagerInstance = aiManager;
 
-    registerProcessCallback(async (item: any) => {
+    registerProcessCallback(async (item) => {
         const { ctx, flowDynamic, state, provider, gotoFlow } = item;
         await aiManager.processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
     });
@@ -246,10 +246,10 @@ const main = async () => {
         registerStaticRoutes(app, { __dirname });
 
         // API Health & Info
-        app.get("/health", (_req: any, res: any) => res.json({ status: "ok", time: new Date().toISOString() }));
-        app.get("/api/assistant-name", backofficeAuth, (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
+        app.get("/health", (_req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
+        app.get("/api/assistant-name", backofficeAuth, (_req, res) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
         
-        app.get("/api/dashboard-status", backofficeAuth, async (_req: any, res: any) => {
+        app.get("/api/dashboard-status", backofficeAuth, async (_req, res) => {
             
             const adapterStatus = await hasActiveSession(getAdapterProvider());
             const groupStatus = await hasActiveSession(getGroupProvider());
@@ -261,18 +261,18 @@ const main = async () => {
         });
 
         // API Session Control
-        app.post("/api/delete-session", backofficeAuth, async (_req: any, res: any) => {
+        app.post("/api/delete-session", backofficeAuth, async (_req, res) => {
             try {
                 const { deleteSessionFromDb } = await import("./utils/sessionSync");
                 await deleteSessionFromDb();
                 res.json({ success: true });
-            } catch (err: any) {
+            } catch (err) {
                 res.status(500).json({ success: false, error: err.message });
             }
         });
 
         // 🛡️ QR Routes for Dashboard
-        app.get("/api/qr", backofficeAuth, (_req: any, res: any) => {
+        app.get("/api/qr", backofficeAuth, (_req, res) => {
             if (fs.existsSync(qrPath)) {
                 res.setHeader('Content-Type', 'image/png');
                 fs.createReadStream(qrPath).pipe(res);
@@ -296,7 +296,7 @@ const main = async () => {
 
 main();
 
-export const processUserMessage = async (ctx: any, items: any) => {
+export const processUserMessage = async (ctx, items) => {
     if (!aiManagerInstance) throw new Error("AiManager not initialized");
     return await aiManagerInstance.processUserMessage(ctx, items);
 };
