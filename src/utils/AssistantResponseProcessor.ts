@@ -523,7 +523,8 @@ export class AssistantResponseProcessor {
         if (!state || typeof state.get !== 'function' || typeof state.update !== 'function') return;
         
         const rawContext = state.get('datosClienteContext');
-        const current = (rawContext as any) || {
+        const contextAny: any = rawContext;
+        const current = contextAny || {
             nombre: '',
             apellido: '',
             direccion: '',
@@ -765,18 +766,14 @@ export class AssistantResponseProcessor {
 
                     logApiResponse("CLIENTES_CERCANOS_DIRECCION", apiResponse);
 
-                    // Si la API devolvió error en formato de objeto (no Axios)
-                    if (apiResponse && (apiResponse as any).error) {
-                        const resumen = (apiResponse as any).error;
-                        const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
-                        if (assistantApiResponse) {
-                            const finalMsg = limpiarBloquesJSON(String(assistantApiResponse)).trim();
-                            if (finalMsg.length > 0) {
-                                if (ctx && ctx.from) await HistoryHandler.saveMessage(ctx.from, 'assistant', finalMsg, 'text');
-                                await flowDynamic([{ body: finalMsg }]);
-                            }
+                    if (apiResponse) {
+                        const apiResAny: any = apiResponse;
+                        if (apiResAny.error) {
+                            const resumenError = apiResAny.error;
+                            const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumenError, state, undefined, ctx.from, ctx.thread_id);
+                            await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
+                            return;
                         }
-                        return;
                     }
 
                     // Normalizar respuesta para el asistente: mapear clientesCercanos a data si existe

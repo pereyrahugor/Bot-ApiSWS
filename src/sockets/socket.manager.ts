@@ -37,10 +37,11 @@ export const initSocketIO = (serverInstance: any, { processUserMessage }: any) =
                     else ip = socket.handshake.address || '';
 
                     // Manejo rudimentario de historial en memoria para webchat
-                    if (!(global as any).webchatHistories) (global as any).webchatHistories = {};
-                    const historyKey = `webchat_${ip}`;
-                    if (!(global as any).webchatHistories[historyKey]) (global as any).webchatHistories[historyKey] = [];
-                    const _history = (global as any).webchatHistories[historyKey];
+                    const gAny: any = global;
+                    if (!gAny.webchatHistories) gAny.webchatHistories = {};
+                    const historyKey = `webchat_${ip}`; // Reverted to original `ip` as `userId` is undefined
+                    if (!gAny.webchatHistories[historyKey]) gAny.webchatHistories[historyKey] = [];
+                    const _history = gAny.webchatHistories[historyKey];
 
                     const state = {
                         get: (key: string) => key === 'history' ? _history : undefined,
