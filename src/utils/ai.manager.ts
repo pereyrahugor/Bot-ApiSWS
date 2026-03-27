@@ -177,7 +177,8 @@ export class AiManager {
                 }
             }
 
-            const response = (await this.getAssistantResponse(this.assistantId, ctx.body, state, undefined, ctx.from, ctx.thread_id)) as string;
+            const responseRaw = await this.getAssistantResponse(this.assistantId, ctx.body, state, undefined, ctx.from, ctx.thread_id);
+            const response = responseRaw as string;
 
             try {
                 const currentThreadId = state && typeof state.get === 'function' ? state.get('thread_id') : null;

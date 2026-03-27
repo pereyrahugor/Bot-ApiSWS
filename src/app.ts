@@ -128,11 +128,14 @@ const main = async () => {
                 console.log('🚀 [GroupSync] Llamando a initVendor()...');
                 await groupProvider.initVendor();
                 console.log('✅ [GroupSync] .initVendor() ejecutado exitosamente.');
-            } else if ((groupProvider as any).init) {
-                console.log('🚀 [GroupSync] Llamando a .init()...');
-                await (groupProvider as any).init();
             } else {
-                console.warn('⚠️ [GroupSync] El proveedor no contiene métodos de inicio (initVendor/init).');
+                const gpAny: any = groupProvider;
+                if (gpAny.init) {
+                    console.log('🚀 [GroupSync] Llamando a .init()...');
+                    await gpAny.init();
+                } else {
+                    console.warn('⚠️ [GroupSync] El proveedor no contiene métodos de inicio (initVendor/init).');
+                }
             }
         } catch (err) {
             console.error('❌ [GroupSync] Error crítico al arrancar motor de grupos:', err);
@@ -176,7 +179,8 @@ const main = async () => {
                         upload.single('file')(req, res, (err: any) => {
                             if (err) return res.status(errorReporter ? 500 : 400).json({ success: false, error: err.message });
                             const { chatId, message } = req.body;
-                            processSendMessage(req, res, chatId || '', message || '', (req as any).file, deps);
+                            const reqAny: any = req;
+                            processSendMessage(req, res, chatId || '', message || '', reqAny.file, deps);
                         });
                     } else {
                         bodyParser.json()(req, res, () => {
@@ -244,7 +248,7 @@ const main = async () => {
         app.get("/api/assistant-name", backofficeAuth, (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
         
         app.get("/api/dashboard-status", backofficeAuth, async (_req: any, res: any) => {
-            const hasActiveSession = (await import("./providers/provider.manager")).hasActiveSession;
+            const { hasActiveSession } = await import("./providers/provider.manager");
             const { getAdapterProvider, getGroupProvider } = await import("./providers/instances");
             
             const adapterStatus = await hasActiveSession(getAdapterProvider());
@@ -268,86 +272,29 @@ const main = async () => {
         });
 
         // 🛡️ QR Routes for Dashboard
-        app.get("/qr.png", (req: any, res: any) => {
-            const p = path.join(process.cwd(), "bot.qr.png");
-            if (fs.existsSync(p)) {
+        app.get("/api/qr", backofficeAuth, (_req: any, res: any) => {
+            if (fs.existsSync(qrPath)) {
                 res.setHeader('Content-Type', 'image/png');
-                return res.end(fs.readFileSync(p));
-            }
-            res.statusCode = 404;
-            res.end("QR Not Found");
-        });
-
-        app.get("/groups-qr.png", (req: any, res: any) => {
-            const p = path.join(process.cwd(), "bot.groups.qr.png");
-            if (fs.existsSync(p)) {
-                res.setHeader('Content-Type', 'image/png');
-                return res.end(fs.readFileSync(p));
-            }
-            res.statusCode = 404;
-            res.end("Groups QR Not Found");
-        });
-
-
-        // API Session Control
-        app.post("/api/delete-session", async (_req: any, res: any) => {
-            try {
-                // 1. Borrar de la DB (Nube)
-                await deleteSessionFromDb();
-                
-                // 2. Borrar carpeta local bot_sessions para forzar nuevo QR
-                const sessionPath = path.join(process.cwd(), 'bot_sessions');
-                if (fs.existsSync(sessionPath)) {
-                    fs.rmSync(sessionPath, { recursive: true, force: true });
-                    console.log("[App] 🗑️ Carpeta bot_sessions eliminada.");
-                }
-
-                // 3. Borrar el archivo QR existente
-                ['bot.qr.png', 'bot.groups.qr.png'].forEach(f => {
-                    const p = path.join(process.cwd(), f);
-                    if (fs.existsSync(p)) fs.unlinkSync(p);
-                });
-
-                res.json({ success: true, message: 'Sesión eliminada. El bot se reiniciará para generar un nuevo QR.' });
-                
-                // Solicitar reinicio automático en Railway
-                try {
-                    const { RailwayApi } = await import("./Api-RailWay/Railway");
-                    console.log("[App] 🔄 Solicitando reinicio de Railway tras borrado de sesión...");
-                    await RailwayApi.restartActiveDeployment();
-                } catch (re) {
-                    console.error("[App] ⚠️ Error al solicitar reinicio automático:", re);
-                }
-            } catch (err: any) {
-                res.status(500).json({ success: false, error: err.message });
+                fs.createReadStream(qrPath).pipe(res);
+            } else {
+                res.status(404).json({ success: false, message: "QR not found" });
             }
         });
 
-    }
+        // Servir front-end del Dashboard
+        const staticDir = path.join(__dirname, "html");
+        console.log("📂 [Static] Servidendo dashboard desde:", staticDir);
+        // app.use("/", express.static(staticDir)); // Nota: Polka usa middlewares de forma distinta
         
-    // 10. Workers Initialization
-    startHumanInactivityWorker(15);
+        // WebSocket initialization
+        const server = initSocketIO(httpServer, { adapterProvider, groupProvider });
+        startHumanInactivityWorker(15);
 
-    // 11. Start Server and Sockets
-    try {
-        httpServer(+PORT);
-        setTimeout(() => {
-            if (app?.server) {
-                console.log("✅ [Socket.IO] app.server detected, initializing...");
-                initSocketIO(app.server, { processUserMessage: aiManager.processUserMessage });
-            }
-        }, 1000);
-    } catch (err) {
-        console.error("❌ [FATAL] Error starting server:", err);
+        console.log(`✅ [Server] Listo en puerto ${PORT}`);
     }
 };
 
-main().catch(err => console.error("❌ [FATAL MAIN]:", err));
-
-export {
-    welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowVideo, welcomeFlowDoc, locationFlow,
-    AiManager, handleQueue, userQueues, userLocks
-};
+main();
 
 export const processUserMessage = async (ctx: any, items: any) => {
     if (!aiManagerInstance) throw new Error("AiManager not initialized");

@@ -67,7 +67,8 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
         try {
             // Obtener el resumen del asistente de OpenAI con reintentos y reporte de errores
-            const resumen = await safeToAsk(ASSISTANT_ID, "GET_RESUMEN", state, userId, errorReporter) as string;
+            const resumenRaw = await safeToAsk(ASSISTANT_ID, "GET_RESUMEN", state, userId, errorReporter);
+            const resumen = resumenRaw as string;
 
             if (!resumen) {
                 // console.warn("No se pudo obtener el resumen.");
@@ -90,7 +91,8 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     for (const fItem of feedback) {
                         const feedbackMsg = `NOTIFICACIÓN DEL BOT: El bot ha completado tareas automáticas basadas en el resumen de la conversación para ayudarte a finalizar el trámite: ${fItem}. Por favor, infórmaselo al usuario con tus propias palabras amablemente indicando los datos (ID de incidencia, o usuario y contraseña si corresponde).`;
                         // Se pide al asistente que genere un mensaje final para el usuario
-                        const assistantFeedback = await safeToAsk(ASSISTANT_ID, feedbackMsg, state, userId, errorReporter) as string;
+                        const feedbackRaw = await safeToAsk(ASSISTANT_ID, feedbackMsg, state, userId, errorReporter);
+                        const assistantFeedback = feedbackRaw as string;
                         // Procesar la respuesta del asistente para que el usuario reciba el mensaje final
                         // Llamamos al procesador regular de respuestas del asistente
                         if (assistantFeedback) {

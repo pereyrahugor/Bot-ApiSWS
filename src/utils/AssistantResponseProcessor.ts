@@ -522,7 +522,8 @@ export class AssistantResponseProcessor {
     public static async actualizarContextoCliente(state: any, data: any, chatId?: string) {
         if (!state || typeof state.get !== 'function' || typeof state.update !== 'function') return;
         
-        const current = (state.get('datosClienteContext') as any) || {
+        const rawContext = state.get('datosClienteContext');
+        const current = (rawContext as any) || {
             nombre: '',
             apellido: '',
             direccion: '',
