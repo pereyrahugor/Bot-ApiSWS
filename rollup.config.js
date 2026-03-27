@@ -15,8 +15,5 @@ export default {
     onwarn: (warning) => {
         if (warning.code === 'UNRESOLVED_IMPORT') return
     },
-    plugins: [typescript({ 
-        check: false, 
-        tsconfigOverride: { compilerOptions: { noEmit: true } } 
-    })],
+    plugins: [typescript({ check: false, clean: true })],
 }
