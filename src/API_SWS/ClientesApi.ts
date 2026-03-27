@@ -95,6 +95,16 @@ export class ClientesApi {
   }
 
   static async crearNuevoCliente(payload: { cliente: any, reparto_id: number }) {
+    // Asegurar que 'domicilio' sea el campo principal, si 'direccion' existe, usarlo como 'domicilio'
+    let clienteRaw = { ...payload.cliente };
+    if (clienteRaw.direccion && !clienteRaw.domicilio) {
+      clienteRaw.domicilio = clienteRaw.direccion;
+    }
+    // Eliminar 'direccion' si existe para evitar duplicidad o confusión
+    if (clienteRaw.direccion !== undefined) {
+      delete clienteRaw.direccion;
+    }
+
     // Transformar domicilio si es string
     let domicilio = payload.cliente.domicilio;
     if (typeof domicilio === 'string') {
