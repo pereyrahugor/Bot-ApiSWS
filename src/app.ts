@@ -8,7 +8,8 @@ import { BaileysProvider } from "builderbot-provider-sherpa";
 import { createBot, createProvider, createFlow, MemoryDB } from "@builderbot/bot";
 import { httpInject } from "@builderbot-plugins/openai-assistants";
 import { YCloudProvider } from "./providers/YCloudProvider";
-import { setAdapterProvider, setGroupProvider } from "./providers/instances";
+import { setAdapterProvider, setGroupProvider, getAdapterProvider, getGroupProvider } from "./providers/instances";
+import { RailwayApi } from "./Api-RailWay/Railway";
 
 
 // --- Utils & Handlers ---
@@ -31,9 +32,6 @@ import { AiManager } from "./utils/ai.manager";
 import { smartBodyParser, compatibilityLayer, rootRedirect } from "./middleware/global";
 import { backofficeAuth } from "./middleware/auth";
 import * as pkgBodyParser from 'body-parser';
-const pkgAny: any = pkgBodyParser;
-const bodyParser = pkgAny.default || pkgAny;
-
 
 // --- Flows ---
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
@@ -45,13 +43,16 @@ import { locationFlow } from "./Flows/locationFlow";
 import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 // Global instances
 export let adapterProvider: any;
 export let groupProvider: any;
 export let errorReporter: any;
 export let aiManagerInstance: AiManager;
+
+const pkgAny: any = pkgBodyParser;
+const bodyParser = pkgAny.default || pkgAny;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const webChatManager = new WebChatManager();
 const openaiMain = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -239,7 +240,7 @@ const main = async () => {
         app.use(smartBodyParser);
 
         // 9. Register Other Routes
-        registerRailwayRoutes(app, { RailwayApi: (await import("./Api-RailWay/Railway")).RailwayApi });
+        registerRailwayRoutes(app, { RailwayApi });
         registerWebchatRoutes(app, { webChatManager, openaiVision, ASSISTANT_ID, processUserMessage: aiManager.processUserMessage });
         registerStaticRoutes(app, { __dirname });
 
@@ -248,8 +249,6 @@ const main = async () => {
         app.get("/api/assistant-name", backofficeAuth, (_req: any, res: any) => res.json({ name: process.env.ASSISTANT_NAME || "Bot" }));
         
         app.get("/api/dashboard-status", backofficeAuth, async (_req: any, res: any) => {
-            const { hasActiveSession } = await import("./providers/provider.manager");
-            const { getAdapterProvider, getGroupProvider } = await import("./providers/instances");
             
             const adapterStatus = await hasActiveSession(getAdapterProvider());
             const groupStatus = await hasActiveSession(getGroupProvider());
