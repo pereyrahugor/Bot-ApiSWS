@@ -64,7 +64,10 @@
     "eslint-plugin-builderbot": "latest",
     "nodemon": "^3.1.0",
     "rollup": "^4.10.0",
-    "rollup-plugin-typescript2": "^0.36.0",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "tslib": "^2.6.2",
     "tsx": "^4.7.1",
     "typescript": "^5.7.3"
   },
