@@ -44,23 +44,54 @@ export class ClientesApi {
     return axios.post(url, data, { headers });
   }
   static async busquedaRapida(params: { datosCliente?: string; telefono?: string; dni?: string; domicilio?: string }) {
-    // datosCliente puede ser: nombre, nombre y apellido, dni o id de cliente
     await ensureValidToken();
     const token = getSessionToken() || '';
-    console.log('Token usado en busquedaRapida:', token);
     const url = `${BASE_URL}/api/Clientes/BusquedaRapidaResultJson`;
+    
+    // Normalizar parámetros
+    const datosCliente = (params.datosCliente ?? "").trim();
+    const telefono = (params.telefono ?? "").trim();
+    const domicilio = (params.domicilio ?? "").trim();
+
     const headers = {
       'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
+      'CURRENTTOKENVALUE': token,
+      'Authorization': `Bearer ${token}` // Agregar Authorization por si acaso
     };
-    // dni ya no se usa. datosCliente puede ser nombre, nombre y apellido, dni o id
+
     const body = {
       type: "BUSCAR_CLIENTE",
-      datosCliente: params.datosCliente ?? "",
-      telefono: params.telefono ?? "",
-      domicilio: params.domicilio ?? ""
+      datosCliente: datosCliente,
+      telefono: telefono,
+      domicilio: domicilio
     };
-    return axios.post(url, body, { headers });
+
+    console.log(`[ClientesApi] Buscando cliente: "${datosCliente || domicilio || telefono}"`);
+    
+    try {
+      const response = await axios.post(url, body, { headers, timeout: 15000 });
+      
+      // Si no hay resultados y es búsqueda por nombre, intentar una variación (ej: quitar espacios extras)
+      if ((!response.data?.data || response.data.data.length === 0) && datosCliente.includes(' ')) {
+          console.log('[ClientesApi] Sin resultados. Reintentando con variación de nombre...');
+          const partes = datosCliente.split(/\s+/);
+          if (partes.length >= 2) {
+              // Probar solo con el primer y último elemento (por si el nombre intermedio estorba)
+              const variacion = `${partes[0]} ${partes[partes.length - 1]}`;
+              const bodyVar = { ...body, datosCliente: variacion };
+              const respVar = await axios.post(url, bodyVar, { headers, timeout: 10000 });
+              if (respVar.data?.data && respVar.data.data.length > 0) {
+                  console.log(`[ClientesApi] Éxito con variación de nombre: "${variacion}"`);
+                  return respVar;
+              }
+          }
+      }
+      
+      return response;
+    } catch (error: any) {
+      console.error('[ClientesApi] Error en busquedaRapida:', error.message);
+      throw error;
+    }
   }
 
   static async crearNuevoCliente(payload: { cliente: any, reparto_id: number }) {

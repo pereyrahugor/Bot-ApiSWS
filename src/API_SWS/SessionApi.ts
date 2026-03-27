@@ -14,9 +14,16 @@ export async function ensureValidToken(username?: string, password?: string): Pr
   const user = username || SessionApi.username;
   const pass = password || SessionApi.password;
   if (!token || !vigente) {
-    // Solo solicitar nuevo token si no hay uno vigente
-    const response = await SessionApi.login(user, pass);
-    return getSessionToken();
+    console.log(`[SessionApi] Token ${!token ? 'ausente' : 'vencido'}. Solicitando uno nuevo para el usuario: ${user}`);
+    try {
+      const response = await SessionApi.login(user, pass);
+      const newToken = getSessionToken();
+      console.log(`[SessionApi] Resultado del login: ${newToken ? 'ÉXITO' : 'FALLO'}`);
+      return newToken;
+    } catch (err: any) {
+      console.error(`[SessionApi] Error crítico en login:`, err.message);
+      return null;
+    }
   } else {
     // Si el token está vigente, no hacer login de nuevo
     return token;
@@ -65,18 +72,29 @@ export class SessionApi {
     const url = `${BASE_URL}/api/Session/GetToken`;
     const body = { username, password };
     const headers = { 'Content-Type': 'application/json' };
-    const response = await axios.post(url, body, { headers });
-    // Si el login es exitoso, guardar el token y el id de usuario
-    if (response.data && response.data.tokenValido) {
-      setSessionToken(response.data.tokenValido);
-      setTokenVencimiento(response.data.vencimiento || '');
-      setUsuarioId(response.data.usuario_id || 0);
-    } else {
-      setSessionToken('');
-      setTokenVencimiento('');
-      setUsuarioId(0);
+    
+    console.log(`[SessionApi] Intentando login en: ${url}`);
+    
+    try {
+      const response = await axios.post(url, body, { headers });
+      
+      // Si el login es exitoso, guardar el token y el id de usuario
+      if (response.data && response.data.tokenValido) {
+        setSessionToken(response.data.tokenValido);
+        setTokenVencimiento(response.data.vencimiento || '');
+        setUsuarioId(response.data.usuario_id || 0);
+        console.log(`[SessionApi] Login exitoso. Token obtenido (últimos 5): ${response.data.tokenValido.slice(-5)}`);
+      } else {
+        console.warn(`[SessionApi] Login falló. Respuesta de la API:`, response.data);
+        setSessionToken('');
+        setTokenVencimiento('');
+        setUsuarioId(0);
+      }
+      return response;
+    } catch (e: any) {
+      console.error(`[SessionApi] Error al realizar el POST de login:`, e.response?.data || e.message);
+      throw e;
     }
-    return response;
   }
   // Permite obtener el token actual
   static getToken() {

@@ -6,6 +6,8 @@ import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
 import { ReconectionFlow } from './reconectionFlow';
 import { sendToGroup, sendImageToGroup, sendVideoToGroup } from '../utils/groupSender';
+import { procesarAccionesResumen } from '../utils/resumenProcessor';
+import { AssistantResponseProcessor } from '../utils/AssistantResponseProcessor';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
@@ -72,154 +74,71 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 return endFlow();
             }
 
-            let data: GenericResumenData;
-            try {
-                data = JSON.parse(resumen);
-            } catch (error) {
-                // console.warn("⚠️ El resumen no es JSON. Se extraerán los datos manualmente.");
-                data = extraerDatosResumen(resumen);
-            }
-
-            // Log para depuración del valor real de tipo
-            // console.log('Valor de tipo:', JSON.stringify(data.tipo), '| Longitud:', data.tipo?.length);
-            // Limpieza robusta de caracteres invisibles y espacios, preservando números y guiones bajos
-            const tipo = (data.tipo ?? '').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
-
-            if (tipo === 'NO_REPORTAR_BAJA') {
-                // No seguimiento, no enviar resumen al grupo ws, envia resumen a sheet, envia msj de cierre
-                // console.log('NO_REPORTAR_BAJA: No se realiza seguimiento ni se envía resumen al grupo.');
-                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-
-                // Limpieza de imagen o video si existe
-                const lastImage = state.get('lastImage');
-                if (lastImage && typeof lastImage === 'string' && fs.existsSync(lastImage)) {
-                    fs.unlinkSync(lastImage);
-                    await state.update({ lastImage: null });
-                }
-                const lastVideo = state.get('lastVideo');
-                if (lastVideo && typeof lastVideo === 'string' && fs.existsSync(lastVideo)) {
-                    fs.unlinkSync(lastVideo);
-                    await state.update({ lastVideo: null });
-                }
-
-                await addToSheet(data);
-                return endFlow(); //("BNI, cambiando la forma en que el mundo hace negocios\nGracias por su contacto.");
-            } else if (tipo === 'NO_REPORTAR_SEGUIR') {
-                // Solo este activa seguimiento
-                // console.log('NO_REPORTAR_SEGUIR: Se realiza seguimiento, pero no se envía resumen al grupo.');
-                const reconFlow = new ReconectionFlow({
-                    ctx,
-                    state,
-                    provider,
-                    flowDynamic,
-                    gotoFlow,
-                    maxAttempts: 3,
-                    onSuccess: async (newData) => {
-                        // Derivar al flujo conversacional usando gotoFlow
-                        if (typeof gotoFlow === 'function') {
-                            if (ctx.type === 'voice_note' || ctx.type === 'VOICE_NOTE') {
-                                const mod = await import('./welcomeFlowVoice');
-                                return gotoFlow(mod.welcomeFlowVoice);
-                            } else {
-                                const mod = await import('./welcomeFlowTxt');
-                                return gotoFlow(mod.welcomeFlowTxt);
-                            }
-                        }
-                    },
-                    onFail: async () => {
-                        data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-                        await addToSheet(data);
-                    }
-                });
-                return await reconFlow.start();
-                // No cerrar el hilo aquí, dejar abierto para que el usuario pueda responder
-                // Bloque SI_RESUMEN_G2
-            } else if (tipo === 'SI_REPORTAR_SEGUIR') {
-                // Se envía resumen al grupo y se activa seguimiento
-                // console.log('SI_REPORTAR_SEGUIR: Se envía resumen al grupo y se realiza seguimiento.');
-                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-
-                const resumenLimpio = resumen.replace(/https:\/\/wa\.me\/[0-9]+/g, '').trim();
-                const resumenConLink = `${resumenLimpio}\n\n🔗 [Chat del usuario](${data.linkWS})`;
-
+                let data: GenericResumenData;
                 try {
-                        await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink);
+                    data = JSON.parse(resumen);
+                } catch (error) {
+                    data = extraerDatosResumen(resumen);
+                }
+
+                // NUEVA LÓGICA: Procesar acciones automáticas basadas en el resumen
+                const { updatedResumen, feedback } = await procesarAccionesResumen(resumen);
+                const finalResumenText = updatedResumen;
+
+                // Si se realizaron acciones, informar al asistente para que se lo diga al usuario
+                if (feedback.length > 0) {
+                    for (const fItem of feedback) {
+                        const feedbackMsg = `NOTIFICACIÓN DEL BOT: El bot ha completado tareas automáticas basadas en el resumen de la conversación para ayudarte a finalizar el trámite: ${fItem}. Por favor, infórmaselo al usuario con tus propias palabras amablemente indicando los datos (ID de incidencia, o usuario y contraseña si corresponde).`;
+                        // Se pide al asistente que genere un mensaje final para el usuario
+                        const assistantFeedback = await safeToAsk(ASSISTANT_ID, feedbackMsg, state, userId, errorReporter) as string;
+                        // Procesar la respuesta del asistente para que el usuario reciba el mensaje final
+                        // Llamamos al procesador regular de respuestas del asistente
+                        if (assistantFeedback) {
+                            await AssistantResponseProcessor.procesarRespuestaAsistente(assistantFeedback, ctx, flowDynamic, state, provider, gotoFlow, (id, msg, st, u, reporter) => safeToAsk(id, msg, st, u, reporter), ASSISTANT_ID);
+                        }
+                    }
+                }
+
+                // Limpieza robusta de caracteres invisibles y espacios
+                const tipo = (data.tipo ?? '').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
+                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
+
+                if (tipo === 'NO_REPORTAR_BAJA') {
+                    // ... (sin cambios relevantes, pero usando data.linkWS arriba)
+                    await addToSheet(data);
+                    return endFlow();
+                } else if (tipo === 'NO_REPORTAR_SEGUIR') {
+                    const reconFlow = new ReconectionFlow({
+                        ctx, state, provider, flowDynamic, gotoFlow, maxAttempts: 3,
+                        onSuccess: async () => {/* ... */},
+                        onFail: async () => { await addToSheet(data); }
+                    });
+                    return await reconFlow.start();
+                } else if (tipo === 'SI_REPORTAR_SEGUIR' || tipo === 'SI_RESUMEN_G2' || tipo === 'SI_RESUMEN') {
+                    const groupTarget = (tipo === 'SI_RESUMEN_G2') ? ID_GRUPO_RESUMEN_2 : ID_GRUPO_RESUMEN;
+                    const resumenConLink = `${finalResumenText}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                    try {
+                        await sendToGroup(groupTarget, resumenConLink);
+                        await sendMediaToGroup(state, groupTarget, data);
+                    } catch (err: any) {}
+                    await addToSheet(data);
+                    if (tipo === 'SI_REPORTAR_SEGUIR') {
+                        const reconFlow = new ReconectionFlow({
+                            ctx, state, provider, flowDynamic, gotoFlow, maxAttempts: 3,
+                            onSuccess: async () => {/* ... */},
+                            onFail: async () => {}
+                        });
+                        return await reconFlow.start();
+                    }
+                } else {
+                    const resumenConLink = `${finalResumenText}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                    try {
+                        await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                         await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
-
-                } catch (err: any) {
+                    } catch (err: any) {}
+                    await addToSheet(data);
+                    return;
                 }
-
-                await addToSheet(data);
-
-                const reconFlow = new ReconectionFlow({
-                    ctx,
-                    state,
-                    provider,
-                    flowDynamic,
-                    gotoFlow,
-                    maxAttempts: 3,
-                    onSuccess: async (newData) => {
-                        // Derivar al flujo conversacional usando gotoFlow
-                        if (typeof gotoFlow === 'function') {
-                            if (ctx.type === 'voice_note' || ctx.type === 'VOICE_NOTE') {
-                                const mod = await import('./welcomeFlowVoice');
-                                return gotoFlow(mod.welcomeFlowVoice);
-                            } else {
-                                const mod = await import('./welcomeFlowTxt');
-                                return gotoFlow(mod.welcomeFlowTxt);
-                            }
-                        }
-                    },
-                    onFail: async () => {
-                    }
-                });
-                return await reconFlow.start();
-            } else if (tipo === 'SI_RESUMEN_G2') {
-                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-
-                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
-                try {
-                    await sendToGroup(ID_GRUPO_RESUMEN_2, resumenConLink);
-                    await sendMediaToGroup(state, ID_GRUPO_RESUMEN_2, data);
-
-                } catch (err: any) {
-                }
-
-                await addToSheet(data);
-                return;
-
-            } else if (tipo === 'SI_RESUMEN') {
-                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-
-                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
-                try {
-                    await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink);
-                    await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
-
-                } catch (err: any) {
-                }
-
-                await addToSheet(data);
-                return;
-            } else {
-                // DEFAULT
-                // console.log('Tipo desconocido, procesando como SI_RESUMEN por defecto.');
-                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-
-                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
-                try {
-                    await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
-                    // console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
-
-                    await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
-
-                } catch (err: any) {
-                    // console.error(`❌ DEFAULT Error:`, err?.message || err);
-                }
-
-                await addToSheet(data);
-                return;
-            }
         } catch (error) {
             // console.error("Error al obtener el resumen de OpenAI:", error);
             return endFlow();

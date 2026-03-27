@@ -436,9 +436,10 @@ function logApiResponse(tipo: string, response: any): void {
     }
     
     console.log(`\n[API Debug] Respuesta ${tipo}:`);
-    console.log(`    url: '${response.config.url || ''}',`);
-    console.log(`    data: '${response.config.data || ''}',`);
-    console.log(`    status: ${response.status},`);
+    console.log(`    url: '${response.config.url || ''}',
+    headers: ${JSON.stringify(response.config.headers || {}, null, 2)},
+    data: '${response.config.data || ''}',
+    status: ${response.status},`);
     console.log(`    responseData:`, util.inspect(response.data, { depth: 4 }));
 }
 
@@ -514,6 +515,45 @@ function formatAllSWSDates(obj: any): any {
  * Clase para procesar respuestas del asistente de OpenAI y ejecutar llamadas a APIs
  */
 export class AssistantResponseProcessor {
+    /**
+     * Actualiza un objeto persistente en el estado con la información conocida del cliente.
+     * Esto permite que el asistente tenga contexto en cada mensaje.
+     */
+    public static async actualizarContextoCliente(state: any, data: any, chatId?: string) {
+        if (!state || typeof state.get !== 'function' || typeof state.update !== 'function') return;
+        
+        const current = (state.get('datosClienteContext') as any) || {
+            nombre: '',
+            apellido: '',
+            direccion: '',
+            numCliente: '',
+            numIncidencias: 0,
+            esCliente: 'No'
+        };
+
+        const updated = {
+            ...current,
+            nombre: data.nombre || data.nombreCliente || current.nombre,
+            apellido: data.apellido || current.apellido,
+            direccion: data.direccion || data.domicilioCompleto || data.domicilio || current.direccion,
+            numCliente: data.cliente_id || data.numCliente || current.numCliente,
+            esCliente: (data.esCliente || (data.cliente_id || data.numCliente ? 'Si' : current.esCliente))
+        };
+
+        if (data.incidencia_generada) {
+            updated.numIncidencias = (updated.numIncidencias || 0) + 1;
+        }
+
+        await state.update({ datosClienteContext: updated });
+
+        // PERSISTENCIA EN DB: Si tenemos el chatId, guardamos permanentemente en Supabase 
+        // EXCLUIMOS numIncidencias para que el contador sea puramente por sesión
+        if (chatId) {
+            const { numIncidencias, ...persistedData } = updated;
+            await HistoryHandler.saveClientContext(chatId, persistedData);
+        }
+    }
+
     /**
      * Analiza y procesa la respuesta del asistente, detectando bloques [API] y ejecutando las llamadas correspondientes
      * @param {any} response - Respuesta del asistente de OpenAI
@@ -696,11 +736,18 @@ export class AssistantResponseProcessor {
 
                 // CLIENTES_CERCANOS_DIRECCION
                 if (tipo === "CLIENTES_CERCANOS_DIRECCION") {
-                    const address = jsonData.address;
+                    let address = jsonData.address || "";
+                    
+                    // Asegurar que la dirección tenga el prefijo "Córdoba Capital, " solicitado
+                    if (address && !address.toLowerCase().includes("córdoba capital")) {
+                        address = `Córdoba Capital, ${address}`;
+                    }
+                    
                     let normalizedAddress = address;
 
                     try {
-                        const mapData = await getMapsUbication(address, "", "", "", "");
+                        // Forzar Córdoba Capital en getMapsUbication también si el assistant no la mandó
+                        const mapData = await getMapsUbication(address, "", "Córdoba Capital", "Córdoba", "Argentina");
                         if (mapData && mapData.formattedAddress) {
                             normalizedAddress = mapData.formattedAddress;
                         }
@@ -756,12 +803,18 @@ export class AssistantResponseProcessor {
                     // Filtros opcionales internos (no se envían a la API)
                     const filtroPiso = jsonData.piso ? String(jsonData.piso).trim().toLowerCase() : null;
                     const filtroDepto = jsonData.depto ? String(jsonData.depto).trim().toLowerCase() : null;
-
                     let domicilioParam = jsonData.domicilio ?? '';
                     let requiereFiltroSN = false;
                     
                     if (typeof domicilioParam === 'string' && domicilioParam) {
-                        const regexSN = /(?:\bs\/n\b|\bsin n[uú]mero\b)/i;
+                        // Prepend "Córdoba Capital, " if missing
+                        if (!domicilioParam.toLowerCase().includes("córdoba capital")) {
+                            domicilioParam = `Córdoba Capital, ${domicilioParam}`;
+                        }
+                        
+                        // Eliminar "s/n" o "sin numero" solo para la búsqueda en la API si es necesario, 
+                        // pero marcamos que luego filtraremos por resultados que realmente no tengan número
+                        const regexSN = /\s+s\/?n\s*$/i;
                         if (regexSN.test(domicilioParam)) {
                             requiereFiltroSN = true;
                             domicilioParam = domicilioParam.replace(regexSN, '').trim();
@@ -815,6 +868,9 @@ export class AssistantResponseProcessor {
                     
                     let resumen;
                     if (esRespuestaExitosa(respuestaApi) && datosCliente) {
+                        // ACTUALIZACIÓN DE CONTEXTO: Guardar datos del cliente encontrado
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, datosCliente, ctx.from);
+
                         const esBaja = datosCliente.estadoCliente?.trim().toLowerCase() === 'baja';
                         const esMultiple = countResultados > 1;
                         const advertenciaMultiple = esMultiple ? "⚠️ ATENCIÓN: multiples resultados obtenidos, solicitar datos adicionales para obtener datos mas precisos o identificar un unico cliente\n\n" : "";
@@ -857,10 +913,17 @@ export class AssistantResponseProcessor {
                     // --- NORMALIZACIÓN DE DIRECCIÓN ---
                     if (clienteRaw.direccion) {
                         try {
-                            const mapData = await getMapsUbication(clienteRaw.direccion, "", "", "", "");
+                            let dirToNormalize = clienteRaw.direccion;
+                            if (!dirToNormalize.toLowerCase().includes("córdoba capital")) {
+                                dirToNormalize = `Córdoba Capital, ${dirToNormalize}`;
+                            }
+                            const mapData = await getMapsUbication(dirToNormalize, "", "Córdoba Capital", "Córdoba", "Argentina");
                             if (mapData && mapData.formattedAddress) {
                                 console.log(`[CREAR_CLIENTE] Dirección normalizada: ${clienteRaw.direccion} -> ${mapData.formattedAddress}`);
                                 clienteRaw.direccion = mapData.formattedAddress;
+                            } else {
+                                // Si Google Maps no devuelve nada, al menos usamos nuestra versión con el prefijo
+                                clienteRaw.direccion = dirToNormalize;
                             }
                         } catch (error) {
                             console.error("[CREAR_CLIENTE] Error normalizando dirección con Google Maps:", error);
@@ -889,6 +952,14 @@ export class AssistantResponseProcessor {
                     if (esRespuestaExitosa(apiResponse?.data)) {
                         // Éxito: mostrar mensaje claro y el id del cliente
                         const id = apiResponse?.data?.cliente?.cliente_id;
+                        
+                        // ACTUALIZACIÓN DE CONTEXTO: Guardar datos del nuevo cliente
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, {
+                            ...cliente,
+                            cliente_id: id,
+                            esCliente: 'Si'
+                        }, ctx.from);
+
                         resumen = `✅ Cliente creado exitosamente. ID: ${id ?? 'desconocido'}`;
                     } else if (apiResponse?.data?.error) {
                         resumen = `No se pudo crear el cliente: ${apiResponse.data?.message || 'Error desconocido.'}`;
@@ -933,6 +1004,10 @@ export class AssistantResponseProcessor {
                     let resumen = "";
                     if (esRespuestaExitosa(apiResponse.data)) {
                         const id = apiResponse.data?.incidente?.id;
+                        
+                        // ACTUALIZACIÓN DE CONTEXTO: Incrementar contador de incidencias
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, { incidencia_generada: true }, ctx.from);
+
                         resumen = `✅ Incidencia registrada exitosamente. ID: ${id ?? 'desconocido'}`;
                     } else {
                         resumen = `No se pudo registrar la incidencia: ${apiResponse.data?.message || 'Error desconocido.'}`;
@@ -1012,9 +1087,15 @@ export class AssistantResponseProcessor {
                     let clienteSeleccionado = null;
                     let preciosCliente = null;
                     if (typeof RepartosApi.obtenerClientesCercanosPorDireccion === 'function') {
+                        // PRE-PROCESAMIENTO: Asegurar Córdoba Capital
+                        let calleYAltura = jsonData.calleYAltura || `${jsonData.calle ?? ''} ${jsonData.numero ?? ''}`;
+                        if (calleYAltura && !calleYAltura.toLowerCase().includes("córdoba capital")) {
+                            calleYAltura = `Córdoba Capital, ${calleYAltura}`;
+                        }
+
                         // obtenerClientesCercanosPorDireccion espera: calleYAltura, codigoPostal, localidad, provincia, pais, excluir
                         apiResponse = await RepartosApi.obtenerClientesCercanosPorDireccion(
-                            jsonData.calleYAltura || `${jsonData.calle ?? ''} ${jsonData.numero ?? ''}`,
+                            calleYAltura,
                             jsonData.codigoPostal ?? '',
                             jsonData.localidad ?? '',
                             jsonData.provincia ?? '',
@@ -1103,6 +1184,11 @@ export class AssistantResponseProcessor {
                     // Traducir fechas SWS (/Date(ms)/) a formato legible
                     const datos = formatAllSWSDates(rawDatos);
                     const resumen = esRespuestaExitosa(datos, apiResponse) ? `Datos del cliente: ${JSON.stringify(datos)}` : "No se encontraron datos del cliente.";
+                    
+                    if (esRespuestaExitosa(datos, apiResponse)) {
+                        // ACTUALIZACIÓN DE CONTEXTO: Guardar datos detallados del cliente
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, datos, ctx.from);
+                    }
                     // Enviar SIEMPRE la respuesta al asistente
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);

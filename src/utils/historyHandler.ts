@@ -536,6 +536,50 @@ export class HistoryHandler {
             return null;
         }
     }
+
+    /**
+     * Guarda el contexto del cliente (datos personales y de negocio) en el metadata del chat
+     */
+    static async saveClientContext(chatId: string, context: any) {
+        try {
+            const { data } = await supabase
+                .from('chats')
+                .select('metadata')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+
+            const currentMetadata = data?.metadata || {};
+            const updatedMetadata = { ...currentMetadata, clientContext: context };
+
+            await supabase
+                .from('chats')
+                .update({ metadata: updatedMetadata })
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID);
+        } catch (err) {
+            console.error('[HistoryHandler] Error en saveClientContext:', err);
+        }
+    }
+
+    /**
+     * Obtiene el contexto del cliente guardado en el metadata
+     */
+    static async getClientContext(chatId: string): Promise<any | null> {
+        try {
+            const { data } = await supabase
+                .from('chats')
+                .select('metadata')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+
+            return data?.metadata?.clientContext || null;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getClientContext:', err);
+            return null;
+        }
+    }
 }
 
 // Inicializar base de datos al cargar el modulo

@@ -29,6 +29,31 @@ export class AiManager {
 
         if (fallbackMessage) systemPrompt += `\n${fallbackMessage}`;
         if (userId) systemPrompt += `\nNúmero de contacto: ${userId}`;
+
+        // PERSISTENCIA DE DATOS DEL CLIENTE: Inyectar datos obtenidos durante la sesión o recuperados de la DB
+        let datosContext = state && typeof state.get === 'function' ? state.get('datosClienteContext') : null;
+        
+        // Si no está en el estado, intentar recuperar de Supabase (datos estáticos)
+        if (!datosContext && userId) {
+            const persistedData = await HistoryHandler.getClientContext(userId);
+            if (persistedData) {
+                // Forzar numIncidencias a 0 para que sea solo de esta sesión
+                datosContext = { ...persistedData, numIncidencias: 0 };
+                if (state && typeof state.update === 'function') {
+                    await state.update({ datosClienteContext: datosContext });
+                }
+            }
+        }
+
+        if (datosContext) {
+            systemPrompt += `\n\nDATOS CLIENTE OBTENIDO (Úsalos para personalizar tu respuesta):
+- Nombre: ${datosContext.nombre || 'No identificado'}
+- Apellido: ${datosContext.apellido || 'No identificado'}
+- Dirección: ${datosContext.direccion || 'No registrada'}
+- Número de cliente: ${datosContext.numCliente || 'No asignado'}
+- Incidencias generadas en esta sesión: ${datosContext.numIncidencias || 0}
+- Es cliente confirmado: ${datosContext.esCliente || 'No'}`;
+        }
         
         const finalMessage = systemPrompt + "\n" + message;
 
@@ -141,6 +166,14 @@ export class AiManager {
                 if (/@lid$/.test(ctx.from)) {
                     await sendToGroup('+5491130792789', `⚠️ @lid contacto: ${ctx.from}`);
                     return;
+                }
+            }
+
+            // CAPTURA INICIAL: Intentar obtener el nombre del usuario si no tenemos nada
+            if (ctx.pushName && state && typeof state.get === 'function') {
+                const currentCtx = state.get('datosClienteContext') || await HistoryHandler.getClientContext(ctx.from);
+                if (!currentCtx || !currentCtx.nombre) {
+                    await AssistantResponseProcessor.actualizarContextoCliente(state, { nombre: ctx.pushName }, ctx.from);
                 }
             }
 
