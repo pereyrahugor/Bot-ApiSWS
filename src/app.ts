@@ -7,41 +7,41 @@ import OpenAI from "openai";
 import { BaileysProvider } from "builderbot-provider-sherpa";
 import { createBot, createProvider, createFlow, MemoryDB } from "@builderbot/bot";
 import { httpInject } from "@builderbot-plugins/openai-assistants";
-import { YCloudProvider } from "./providers/YCloudProvider";
-import { setAdapterProvider, setGroupProvider, getAdapterProvider, getGroupProvider } from "./providers/instances";
-import { RailwayApi } from "./Api-RailWay/Railway";
+import { YCloudProvider } from "~/providers/YCloudProvider";
+import { setAdapterProvider, setGroupProvider, getAdapterProvider, getGroupProvider } from "~/providers/instances";
+import { RailwayApi } from "~/Api-RailWay/Railway";
 
 
 // --- Utils & Handlers ---
-import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
-import { ErrorReporter } from "./utils/errorReporter";
-import { updateMain } from "./addModule/updateMain";
-import { WebChatManager } from "./utils-web/WebChatManager";
-import { HistoryHandler } from "./utils/historyHandler";
-import { registerProcessCallback, handleQueue, userQueues, userLocks } from "./utils/queueManager";
+import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "~/utils/sessionSync";
+import { ErrorReporter } from "~/utils/errorReporter";
+import { updateMain } from "~/addModule/updateMain";
+import { WebChatManager } from "~/utils-web/WebChatManager";
+import { HistoryHandler } from "~/utils/historyHandler";
+import { registerProcessCallback, handleQueue, userQueues, userLocks } from "~/utils/queueManager";
 
 // --- Managers & Routes ---
-import { registerBackofficeRoutes, processSendMessage, BackofficeDependencies } from "./routes/backoffice.routes";
-import { registerRailwayRoutes } from "./routes/railway.routes";
-import { registerWebchatRoutes } from "./routes/webchat.routes";
-import { registerStaticRoutes } from "./routes/static.routes";
-import { initSocketIO } from "./sockets/socket.manager";
-import { registerProviderEvents, hasActiveSession } from "./providers/provider.manager";
-import { startHumanInactivityWorker } from "./workers/humanInactivity.worker";
-import { AiManager } from "./utils/ai.manager";
-import { smartBodyParser, compatibilityLayer, rootRedirect } from "./middleware/global";
-import { backofficeAuth } from "./middleware/auth";
+import { registerBackofficeRoutes, processSendMessage, BackofficeDependencies } from "~/routes/backoffice.routes";
+import { registerRailwayRoutes } from "~/routes/railway.routes";
+import { registerWebchatRoutes } from "~/routes/webchat.routes";
+import { registerStaticRoutes } from "~/routes/static.routes";
+import { initSocketIO } from "~/sockets/socket.manager";
+import { registerProviderEvents, hasActiveSession } from "~/providers/provider.manager";
+import { startHumanInactivityWorker } from "~/workers/humanInactivity.worker";
+import { AiManager } from "~/utils/ai.manager";
+import { smartBodyParser, compatibilityLayer, rootRedirect } from "~/middleware/global";
+import { backofficeAuth } from "~/middleware/auth";
 import * as pkgBodyParser from 'body-parser';
 
 // --- Flows ---
-import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
-import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
-import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
-import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
-import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
-import { locationFlow } from "./Flows/locationFlow";
-import { idleFlow } from "./Flows/idleFlow";
-import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
+import { welcomeFlowTxt } from "~/Flows/welcomeFlowTxt";
+import { welcomeFlowVoice } from "~/Flows/welcomeFlowVoice";
+import { welcomeFlowImg } from "~/Flows/welcomeFlowImg";
+import { welcomeFlowVideo } from "~/Flows/welcomeFlowVideo";
+import { welcomeFlowDoc } from "~/Flows/welcomeFlowDoc";
+import { locationFlow } from "~/Flows/locationFlow";
+import { idleFlow } from "~/Flows/idleFlow";
+import { welcomeFlowButton } from "~/Flows/welcomeFlowButton";
 
 // Global instances (live bindings)
 let adapterProvider = null;
