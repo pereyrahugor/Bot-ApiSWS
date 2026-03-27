@@ -143,7 +143,9 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
             try {
                 fs.unlinkSync(qrPath);
                 console.log(`${prefix} 🗑️ QR antiguo eliminado al conectar.`);
-            } catch (e) {}
+            } catch (e) {
+                // Ignore unlink error
+            }
         }
     });
     

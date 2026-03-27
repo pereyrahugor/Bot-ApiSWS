@@ -50,7 +50,7 @@ class YCloudProvider extends ProviderClass {
         const url = 'https://api.ycloud.com/v2/whatsapp/messages';
         const cleanNumber = number.replace(/\D/g, '');
 
-        let body: any = {
+        const body: any = {
             from: fromNumber.replace(/\D/g, ''),
             to: cleanNumber
         };

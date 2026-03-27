@@ -96,7 +96,7 @@ export class ClientesApi {
 
   static async crearNuevoCliente(payload: { cliente: any, reparto_id: number }) {
     // Asegurar que 'domicilio' sea el campo principal, si 'direccion' existe, usarlo como 'domicilio'
-    let clienteRaw = { ...payload.cliente };
+    const clienteRaw = { ...payload.cliente };
     if (clienteRaw.direccion && !clienteRaw.domicilio) {
       clienteRaw.domicilio = clienteRaw.direccion;
     }

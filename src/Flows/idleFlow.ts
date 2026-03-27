@@ -122,13 +122,15 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     try {
                         await sendToGroup(groupTarget, resumenConLink);
                         await sendMediaToGroup(state, groupTarget, data);
-                    } catch (err: any) {}
+                    } catch (err: any) {
+                        // Ignorar falla silenciosa en envío a grupo
+                    }
                     await addToSheet(data);
                     if (tipo === 'SI_REPORTAR_SEGUIR') {
                         const reconFlow = new ReconectionFlow({
                             ctx, state, provider, flowDynamic, gotoFlow, maxAttempts: 3,
                             onSuccess: async () => {/* ... */},
-                            onFail: async () => {}
+                            onFail: async () => { /* No-op */ }
                         });
                         return await reconFlow.start();
                     }
@@ -137,7 +139,9 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     try {
                         await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                         await sendMediaToGroup(state, ID_GRUPO_RESUMEN, data);
-                    } catch (err: any) {}
+                    } catch (err: any) {
+                        // Ignorar falla silenciosa en envío a grupo
+                    }
                     await addToSheet(data);
                     return;
                 }
