@@ -1,6 +1,5 @@
 import typescript from '@rollup/plugin-typescript'
 import resolve from '@rollup/plugin-node-resolve'
-import commonjs from '@rollup/plugin-commonjs'
 
 export default {
     input: ['src/app.ts'],
@@ -14,12 +13,13 @@ export default {
             return '[name].js';
         }
     },
+    // Treat everything that is NOT a relative import as external (node_modules)
+    external: (id) => !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('src'),
     onwarn: (warning) => {
         if (warning.code === 'UNRESOLVED_IMPORT') return
     },
     plugins: [
-        resolve({ extensions: ['.ts', '.js'] }), 
-        commonjs(),
+        resolve({ extensions: ['.ts', '.js'], resolveOnly: [/^\.\//, /^\.\.\//] }),
         typescript({ compilerOptions: { outDir: './dist', declaration: false } })
     ],
 }
