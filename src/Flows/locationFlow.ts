@@ -59,10 +59,11 @@ export const locationFlow = addKeyword(EVENTS.LOCATION).addAction(
                     let localidad = '';
                     let partido = '';
                     let provincia = '';
-                    for (const comp of result.address_components) {
-                        if ((comp.types as string[]).includes('locality')) localidad = comp.long_name;
-                        if ((comp.types as string[]).includes('administrative_area_level_2')) partido = comp.long_name;
-                        if ((comp.types as string[]).includes('administrative_area_level_1')) provincia = comp.long_name;
+                    for (const comp of (result.address_components || [])) {
+                        const types = comp.types as string[];
+                        if (types.includes('locality')) localidad = comp.long_name;
+                        if (types.includes('administrative_area_level_2')) partido = comp.long_name;
+                        if (types.includes('administrative_area_level_1')) provincia = comp.long_name;
                     }
                     // Insertar Avellaneda entre localidad y provincia en el formatted_address
                     let direccionModificada = formatted;

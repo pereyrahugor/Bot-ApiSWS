@@ -64,8 +64,9 @@ export async function processImageWithVision(buffer: Buffer, flowDynamic: any): 
     const textBlock = resultMsg.content.find(
       (block: any) => block.type === "text" && typeof (block as any).text?.value === "string"
     );
-    if (textBlock && (textBlock as any).text && typeof (textBlock as any).text.value === "string") {
-      result = (textBlock as any).text.value;
+    const blockAny: any = textBlock;
+    if (blockAny && blockAny.text && typeof blockAny.text.value === "string") {
+      result = blockAny.text.value;
     }
   }
   await flowDynamic(result);
