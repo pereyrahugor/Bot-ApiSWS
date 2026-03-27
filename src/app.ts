@@ -44,10 +44,10 @@ import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 
 // Global instances (live bindings)
-let adapterProvider: any;
-let groupProvider: any;
-let errorReporter: any;
-let aiManagerInstance: any;
+let adapterProvider = null;
+let groupProvider = null;
+let errorReporter = null;
+let aiManagerInstance = null;
 export { adapterProvider, groupProvider, errorReporter, aiManagerInstance };
 
 // @ts-ignore
