@@ -1,10 +1,10 @@
-let adapterProvider: any;
-let groupProvider: any;
+let adapterProvider = null;
+let groupProvider = null;
 
 /**
  * Establece el proveedor principal (YCloud)
  */
-export const setAdapterProvider = (instance: any) => {
+export const setAdapterProvider = (instance) => {
     adapterProvider = instance;
 };
 
@@ -16,7 +16,7 @@ export const getAdapterProvider = () => adapterProvider;
 /**
  * Establece el proveedor de grupos (Baileys)
  */
-export const setGroupProvider = (instance: any) => {
+export const setGroupProvider = (instance) => {
     groupProvider = instance;
 };
 
