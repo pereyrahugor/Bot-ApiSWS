@@ -31,7 +31,8 @@ import { AiManager } from "./utils/ai.manager";
 import { smartBodyParser, compatibilityLayer, rootRedirect } from "./middleware/global";
 import { backofficeAuth } from "./middleware/auth";
 import * as pkgBodyParser from 'body-parser';
-const bodyParser = (pkgBodyParser as any).default || pkgBodyParser;
+const pkgAny: any = pkgBodyParser;
+const bodyParser = pkgAny.default || pkgAny;
 
 
 // --- Flows ---

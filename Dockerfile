@@ -1,3 +1,4 @@
+#
 # Image size ~ 400MB
 FROM node:20-slim AS builder
 
@@ -68,9 +69,8 @@ COPY --from=builder /app/src/style ./src/style
 RUN corepack enable && corepack prepare pnpm@latest --activate
 ENV PNPM_HOME=/usr/local/bin
 RUN mkdir /app/tmp
-RUN npm cache clean --force && pnpm install --production --ignore-scripts \
-    && npm install polka @types/polka --legacy-peer-deps \
-    && rm -rf $PNPM_HOME/.npm $PNPM_HOME/.node-gyp
+# Copiar node_modules funcional del builder (Evita que ffmpeg o scripts binarios se rompan en producción)
+COPY --from=builder /app/node_modules ./node_modules
 
 # Parchear la versión de Baileys automáticamente
 RUN sed -i 's/version: \[[0-9, ]*\]/version: [2, 3000, 1023223821]/' node_modules/@builderbot/provider-baileys/dist/index.cjs
