@@ -263,7 +263,6 @@ const main = async () => {
         // API Session Control
         app.post("/api/delete-session", backofficeAuth, async (_req, res) => {
             try {
-                const { deleteSessionFromDb } = await import("./utils/sessionSync");
                 await deleteSessionFromDb();
                 res.json({ success: true });
             } catch (err) {
