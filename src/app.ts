@@ -43,14 +43,15 @@ import { locationFlow } from "./Flows/locationFlow";
 import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 
-// Global instances
-export let adapterProvider: any;
-export let groupProvider: any;
-export let errorReporter: any;
-export let aiManagerInstance: AiManager;
+// Global instances (live bindings)
+let adapterProvider: any;
+let groupProvider: any;
+let errorReporter: any;
+let aiManagerInstance: any;
+export { adapterProvider, groupProvider, errorReporter, aiManagerInstance };
 
-const pkgAny: any = pkgBodyParser;
-const bodyParser = pkgAny.default || pkgAny;
+// @ts-ignore
+const bodyParser = pkgBodyParser.default || pkgBodyParser;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
