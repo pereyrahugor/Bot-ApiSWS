@@ -285,14 +285,21 @@ const main = async () => {
         console.log("📂 [Static] Servidendo dashboard desde:", staticDir);
         // app.use("/", express.static(staticDir)); // Nota: Polka usa middlewares de forma distinta
         
-        // WebSocket initialization — use Polka's internal http.Server
-        // Polka stores the raw http.Server in app.server after listen() is called
-        const rawHttpServer = (app as any).server;
-        if (rawHttpServer) {
-            initSocketIO(rawHttpServer, { adapterProvider, groupProvider });
-        } else {
-            console.warn('⚠️ [Socket.IO] No se encontró http.Server en Polka, Socket.IO no se inicializará.');
-        }
+        // WebSocket initialization — wait for Polka's http.Server to be ready
+        // builderbot's initAll() uses .then() chains, so app.server isn't available immediately
+        const waitForServer = () => {
+            const check = () => {
+                const rawHttpServer = (app as any).server;
+                if (rawHttpServer) {
+                    console.log('📡 [Socket.IO] http.Server detectado, inicializando...');
+                    initSocketIO(rawHttpServer, { adapterProvider, groupProvider });
+                } else {
+                    setTimeout(check, 500);
+                }
+            };
+            check();
+        };
+        waitForServer();
         startHumanInactivityWorker(15);
 
         console.log(`✅ [Server] Listo en puerto ${PORT}`);
