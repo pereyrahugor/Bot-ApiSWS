@@ -285,8 +285,9 @@ const main = async () => {
         console.log("📂 [Static] Servidendo dashboard desde:", staticDir);
         // app.use("/", express.static(staticDir)); // Nota: Polka usa middlewares de forma distinta
         
-        // WebSocket initialization
-        const server = initSocketIO(httpServer, { adapterProvider, groupProvider });
+        // WebSocket initialization — extract the raw http.Server for Socket.IO
+        const rawServer = (httpServer as any)?.server || httpServer;
+        const server = initSocketIO(rawServer, { adapterProvider, groupProvider });
         startHumanInactivityWorker(15);
 
         console.log(`✅ [Server] Listo en puerto ${PORT}`);
