@@ -285,6 +285,9 @@ const main = async () => {
         console.log("📂 [Static] Servidendo dashboard desde:", staticDir);
         // app.use("/", express.static(staticDir)); // Nota: Polka usa middlewares de forma distinta
         
+        // 🚀 Start the HTTP server — builderbot requires you to call httpServer(port) explicitly
+        httpServer(+PORT);
+
         // WebSocket initialization — wait for Polka's http.Server to be ready
         // builderbot's initAll() uses .then() chains, so app.server isn't available immediately
         const waitForServer = () => {
