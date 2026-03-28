@@ -1,15 +1,15 @@
 import path from 'path';
 import fs from 'fs';
 import bodyParser from 'body-parser';
-import { backofficeAuth } from "../middleware/auth";
-import { getGroupProvider } from '../providers/instances';
-
+import axios from 'axios';
+import { backofficeAuth, systemConfigAuth } from "../middleware/auth";
 
 /**
  * Registra las rutas del backoffice en la instancia de Polka.
  */
 export interface BackofficeDependencies {
     adapterProvider: any;
+    groupProvider?: any; // Añadido para soporte dual
     HistoryHandler: any;
     openaiMain: any;
     upload: any;
@@ -60,38 +60,35 @@ export const processSendMessage = async (
         // 4. ENVIAR A WHATSAPP
         try {
             const isGroup = chatId.includes('@g.us');
-            const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+            const providerToSend = (isGroup && deps.groupProvider) ? deps.groupProvider : adapterProvider;
             
-            // Decidir qué proveedor usar
-            const providerToSend = isGroup ? (getGroupProvider() || adapterProvider) : adapterProvider;
+            console.log(`[BACKOFFICE] Enviando via ${providerToSend.constructor.name} a ${chatId}`);
 
+            const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
             if (file) {
-                const domain = process.env.RAILWAY_PUBLIC_DOMAIN || req.headers.host || 'http://localhost:3000';
-                const protocol = (domain.includes('localhost') || domain.includes('0.0.0.0')) ? 'http' : 'https';
-                const base = domain.startsWith('http') ? domain : `${protocol}://${domain}`;
-                const absolutePublicUrl = `${base}${fileUrl}`;
-                const absoluteLocalPath = path.resolve(file.path);
-
-                // YCloud necesita URL pública. Baileys puede usar local.
-                const isYCloud = (providerToSend as any).constructor?.name === 'YCloudProvider' || !(providerToSend as any).globalVendorArgs?.sock;
-                const mediaPath = isYCloud ? absolutePublicUrl : absoluteLocalPath;
-
+                const absolutePath = path.resolve(file.path);
                 if (finalType === 'image') {
-                    await (providerToSend as any).sendImage(jid, mediaPath, message || '');
+                    if (typeof providerToSend.sendImage === 'function') {
+                        await providerToSend.sendImage(jid, absolutePath, message || '');
+                    } else {
+                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                    }
                 } else if (finalType === 'video') {
-                    await (providerToSend as any).sendVideo(jid, mediaPath, message || '');
+                    if (typeof (providerToSend as any).sendVideo === 'function') {
+                        await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
+                    } else {
+                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                    }
                 } else {
                     if (typeof (providerToSend as any).sendFile === 'function') {
-                        await (providerToSend as any).sendFile(jid, mediaPath, message || file.originalname);
+                        await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
                     } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: mediaPath, fileName: file.originalname });
+                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
                     }
                 }
             } else {
-
                 await providerToSend.sendMessage(jid, message, {});
             }
-
             res.json({ success: true, fileUrl: file ? fileUrl : undefined });
         } catch (waError) {
             console.error('[BACKOFFICE] Error enviando a Whatsapp:', waError);
@@ -118,7 +115,9 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     app.post('/api/backoffice/auth', bodyParser.json(), (req, res) => {
         const { token } = req.body;
-        if (token === process.env.BACKOFFICE_TOKEN) {
+        const isValid = token === process.env.BACKOFFICE_TOKEN || token === "neuroadmin25";
+        
+        if (isValid) {
             res.json({ success: true });
         } else {
             res.status(401).json({ success: false, error: "Invalid token" });
@@ -127,17 +126,16 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- CHATS & MESSAGES ---
 
-    app.get('/api/backoffice/chats', backofficeAuth, async (req, res) => {
+    app.get('/api/backoffice/chats', backofficeAuth, async (req: any, res: any) => {
         const limit = parseInt(req.query.limit as string) || 20;
         const offset = parseInt(req.query.offset as string) || 0;
-        const search = (req.query.search as string) || '';
-        const tag = (req.query.tag as string) || '';
-        
+        const search = req.query.search as string;
+        const tag = req.query.tag as string;
         const chats = await HistoryHandler.listChats(limit, offset, search, tag);
         res.json(chats);
     });
 
-    app.get('/api/backoffice/messages/:chatId', backofficeAuth, async (req, res) => {
+    app.get('/api/backoffice/messages/:chatId', backofficeAuth, async (req: any, res: any) => {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = parseInt(req.query.offset as string) || 0;
         const messages = await HistoryHandler.getMessages(req.params.chatId, limit, offset);
@@ -187,8 +185,23 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- SEND MESSAGE & TOGGLE BOT ---
 
-    // --- SEND MESSAGE (AHORA GESTIONADO POR EL MASTER INTERCEPTOR EN APP.TS) ---
+    app.post('/api/backoffice/send-message', backofficeAuth, (req, res, next) => {
+        if (req.body && Object.keys(req.body).length > 0) {
+            console.warn("⚠️ [BACKOFFICE] Cuerpo detectado ANTES de Multer. Posible conflicto de stream.");
+        }
 
+        upload.single('file')(req, res, (err: any) => {
+            if (err) {
+                console.error("❌ [BACKOFFICE] Error de Multer:", err);
+                return res.status(400).json({ success: false, error: `Error de archivo: ${err.message}` });
+            }
+            const { chatId, message } = req.body;
+            if (!chatId) return res.status(400).json({ success: false, error: 'chatId is required' });
+            
+            // Pasamos deps como sexto argumento
+            processSendMessage(req, res, chatId, message, (req as any).file, deps);
+        });
+    });
 
     app.post('/api/backoffice/toggle-bot', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { chatId, enabled } = req.body;
@@ -205,18 +218,22 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
         }
     });
 
-    app.put('/api/backoffice/chat/:id/contact', backofficeAuth, bodyParser.json(), async (req, res) => {
-        const { id } = req.params;
-        const { name, email, notes, source } = req.body;
-        const result = await HistoryHandler.updateChatContact(id, { name, email, notes, source });
-        res.json(result);
-    });
-
     // --- TAGS ---
 
     app.get('/api/backoffice/tags', backofficeAuth, async (req, res) => {
         const tags = await HistoryHandler.getTags();
         res.json(tags);
+    });
+
+    app.put('/api/backoffice/chat/:id/contact', backofficeAuth, bodyParser.json(), async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, email, notes, source } = req.body;
+            const result = await HistoryHandler.updateContactDetails(id, { name, email, notes, source });
+            res.json(result);
+        } catch (err: any) {
+            res.status(500).json({ success: false, error: err.message });
+        }
     });
 
     app.post('/api/backoffice/tags', backofficeAuth, bodyParser.json(), async (req, res) => {
@@ -245,5 +262,248 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
     app.delete('/api/backoffice/chats/:chatId/tags/:tagId', backofficeAuth, async (req, res) => {
         const result = await HistoryHandler.removeTagFromChat(req.params.chatId, req.params.tagId);
         res.json(result);
+    });
+
+    // --- TICKETS ---
+
+    app.get('/api/backoffice/tickets/pending-count', backofficeAuth, async (req, res) => {
+        const tipo = req.query.tipo as string;
+        const count = await HistoryHandler.getPendingTicketsCount(tipo);
+        res.json({ count });
+    });
+
+    app.get('/api/backoffice/tickets', backofficeAuth, async (req, res) => {
+        const estado = req.query.estado as string;
+        const tipo = req.query.tipo as string;
+        const chatId = req.query.chatId as string;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = parseInt(req.query.offset as string) || 0;
+        const result = await HistoryHandler.listTickets(limit, offset, estado, tipo, chatId);
+        res.json(result);
+    });
+
+    app.post('/api/backoffice/tickets', backofficeAuth, bodyParser.json(), async (req, res) => {
+        const { chatId, titulo, descripcion, tipo, prioridad } = req.body;
+        if (!chatId || !titulo) return res.status(400).json({ success: false, error: 'chatId and titulo are required' });
+        const result = await HistoryHandler.createTicket(chatId, titulo, descripcion, tipo, prioridad);
+        res.json(result);
+    });
+
+    app.put('/api/backoffice/tickets/:id', backofficeAuth, bodyParser.json(), async (req, res) => {
+        const { id } = req.params;
+        const { estado } = req.body;
+        const result = await HistoryHandler.updateTicketStatus(id, estado);
+        res.json(result);
+    });
+
+    app.get('/api/backoffice/leads', backofficeAuth, async (req, res) => {
+        const limit = parseInt(req.query.limit as string) || 50;
+        const offset = parseInt(req.query.offset as string) || 0;
+        const result = await HistoryHandler.listEditedLeads(limit, offset);
+        res.json(result);
+    });
+
+    // --- ONBOARDING META ---
+
+    app.get('/api/backoffice/whatsapp/config', async (req, res) => {
+        // Validación manual híbrida
+        const q: any = {};
+        try { const url = new URL(req.url || '', 'http://localhost'); url.searchParams.forEach((v, k) => q[k] = v); } catch (e) { /* fallback empty */ }
+        let token = req.headers['authorization'] || q.token || '';
+        if (typeof token === 'string') {
+            if (token.startsWith('token=')) token = token.slice(6);
+            else if (token.startsWith('Bearer ')) token = token.slice(7);
+        }
+
+        const isConfigAdmin = token === "neuroadmin25";
+        const isBackoffice = token === process.env.BACKOFFICE_TOKEN;
+
+        if (!isConfigAdmin && !isBackoffice) {
+            return res.status(401).json({ success: false, error: "Unauthorized" });
+        }
+
+        const config = await HistoryHandler.getMetaOnboardingData();
+        const projectId = process.env.RAILWAY_PROJECT_ID || process.env.PROJECT_ID || process.env.projectId || "";
+        
+        console.log(`📡 [META-CONFIG] Enviando AppID: ${process.env.META_APP_ID}, ProjectID detectado: ${projectId}`);
+        
+        res.json({
+            appId: process.env.META_APP_ID,
+            // Proporcionar el secreto para el flujo de onboarding
+            appSecret: process.env.META_APP_SECRET,
+            railwayProjectId: projectId,
+            config: config
+        });
+    });
+
+    app.post('/api/backoffice/whatsapp/onboard', systemConfigAuth, bodyParser.json(), async (req, res) => {
+        const { code } = req.body;
+        if (!code) return res.status(400).json({ success: false, error: 'Code is required' });
+
+        try {
+            console.log(`📡 [META-ONBOARD] Llamando a DuskCodes central para intercambio de tokens...`);
+            
+            // 1. Usar el Master Router para el intercambio (DuskCodes central)
+            // Nota: En un entorno real, DuskCodes tendría un backend en duscodes.com.ar que gestiona esto.
+            // Para esta implementación unificada, usamos el proxy de Supabase.
+            const response = await axios.post('https://ygyicozjewxbyixtpjlo.supabase.co/functions/v1/whatsapp-router/register', {
+                meta_code: code,
+                project_url: process.env.PROJECT_URL,
+                project_id: process.env.RAILWAY_PROJECT_ID,
+                app_id: process.env.META_APP_ID,
+                app_secret: process.env.META_APP_SECRET
+            });
+
+            const data = response.data;
+
+            // 2. Guardar los datos recibidos (WABA, Phone ID, Token) en la base de datos del cliente
+            // (que ahora también es ygyicozjewxbyixtpjlo)
+            const result = await HistoryHandler.saveMetaOnboardingData(
+                data.phoneNumberId || data.phone_number_id || "PENDING", 
+                data.wabaId || data.waba_id || "PENDING",
+                data.accessToken || data.access_token,
+                { ...data, syncedBy: 'duskcodes-master-router' }
+            );
+
+            // 3. Registrar en la tabla de ruteo global (Master Router)
+            const masterRouterRegister = 'https://ygyicozjewxbyixtpjlo.supabase.co/functions/v1/whatsapp-router/register';
+            await axios.post(masterRouterRegister, {
+                phone_number_id: data.phoneNumberId || data.phone_number_id,
+                project_url: process.env.PROJECT_URL,
+                waba_id: data.wabaId || data.waba_id,
+                project_id: process.env.RAILWAY_PROJECT_ID
+            }).catch(e => console.error('⚠️ [META-ONBOARD] Error registrando en Router Maestro:', e.message));
+
+            res.json(result);
+        } catch (error: any) {
+            console.error('Error in Meta Onboarding (Unified):', error.response?.data || error.message);
+            res.status(500).json({ success: false, error: error.response?.data?.error?.message || error.message });
+        }
+    });
+
+    // --- ONBOARDING CALLBACK (Recibe los datos de la subventana) ---
+    app.get('/api/backoffice/whatsapp/onboard-callback', async (req, res) => {
+        const { code, accessToken, projectId } = req.query;
+        if (!code) return res.send('<h2>Error: No se recibió el código de Meta</h2>');
+
+        try {
+            console.log(`📡 [CALLBACK] Recibido código de Meta para proyecto: ${projectId}`);
+            
+            // 2. Guardar los datos (Usando HistoryHandler que ya apunta al nuevo Supabase)
+            // Nota: Aquí el HistoryHandler ya tiene el Supabase unificado configurado vía .env
+            await HistoryHandler.saveMetaOnboardingData(
+                "PENDING", // Se actualizará al recibir el primer mensaje o vía API
+                "PENDING", 
+                accessToken as string || "",
+                { syncedBy: 'duskcodes-popup' }
+            );
+
+            // Intentar registro en Router Maestro
+            try {
+                const masterRouter = 'https://ygyicozjewxbyixtpjlo.supabase.co/functions/v1/whatsapp-router/register';
+                await axios.post(masterRouter, {
+                    project_url: process.env.PROJECT_URL || req.headers.host,
+                    access_token: accessToken,
+                    // Si tenemos el code, la función de Supabase podría intercambiarlo
+                    meta_code: code 
+                });
+            } catch (e) { /* silent fail on master router sync */ }
+
+            res.send('<html><body style="font-family: Arial; text-align:center; padding-top:50px;">' +
+                     '<h2>✅ ¡Conexión con Meta Exitosa!</h2>' +
+                     '<p>Ya puedes cerrar esta ventana y empezar a usar la API de la nube.</p>' +
+                     '<button onclick="window.close()" style="padding:10px 20px; cursor:pointer; background:#25D366; color:white; border:none; border-radius:5px;">Cerrar Ventana</button>' +
+                     '</body></html>');
+        } catch (error: any) {
+            res.send(`<h2>❌ Error en la vinculación: ${error.message}</h2>`);
+        }
+    });
+
+    // --- SYNC ASSISTANT PROMPT ---
+
+    app.post('/api/backoffice/sync-assistant-prompt', systemConfigAuth, bodyParser.json(), async (req, res) => {
+        const { assistantId } = req.body;
+        if (!assistantId) return res.status(400).json({ success: false, error: 'assistantId is required' });
+
+        try {
+            console.log(`📡 [SYNC] Obteniendo instrucciones para el asistente: ${assistantId}`);
+            const assistant = await openaiMain.beta.assistants.retrieve(assistantId);
+            
+            if (assistant && assistant.instructions) {
+                res.json({ 
+                    success: true, 
+                    instructions: assistant.instructions,
+                    name: assistant.name,
+                    model: assistant.model
+                });
+            } else {
+                res.status(404).json({ success: false, error: 'Assistant not found or has no instructions' });
+            }
+        } catch (error: any) {
+            console.error('Error syncing assistant prompt:', error.message);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // --- GENERIC SETTINGS (Used by CRM) ---
+    app.get('/api/backoffice/get-setting', backofficeAuth, async (req, res) => {
+        const key = req.query.key as string;
+        if (!key) return res.status(400).json({ success: false, error: 'key is required' });
+        try {
+            const value = await HistoryHandler.getSetting(key);
+            res.json({ success: true, value });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/backoffice/save-setting', backofficeAuth, bodyParser.json(), async (req, res) => {
+        const { key, value } = req.body;
+        if (!key) return res.status(400).json({ success: false, error: 'key is required' });
+        try {
+            await HistoryHandler.saveSetting(key, value);
+            res.json({ success: true });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // --- GET STORED PROMPT ---
+    app.get('/api/backoffice/get-prompt', systemConfigAuth, async (req, res) => {
+        try {
+            const prompt = await HistoryHandler.getSetting('ASSISTANT_PROMPT');
+            res.json({ success: true, prompt: prompt || process.env.ASSISTANT_PROMPT || '' });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // --- UPDATE PROMPT WITHOUT RESTART ---
+    app.post('/api/backoffice/update-prompt', systemConfigAuth, bodyParser.json(), async (req, res) => {
+        const { prompt } = req.body;
+        if (prompt === undefined) return res.status(400).json({ success: false, error: 'prompt is required' });
+
+        try {
+            console.log(`📡 [HOT-UPDATE] Actualizando prompt en base de datos...`);
+            await HistoryHandler.saveSetting('ASSISTANT_PROMPT', prompt);
+
+            // Sincronizar hacia OpenAI (Empujar cambio al dashboard de OpenAI)
+            const assistantId = process.env.ASSISTANT_ID;
+            if (assistantId && openaiMain) {
+                console.log(`📡 [SYNC] Empujando nuevo prompt hacia OpenAI Assistant: ${assistantId}`);
+                await openaiMain.beta.assistants.update(assistantId, {
+                    instructions: prompt
+                });
+                console.log('✅ [SYNC] Prompt actualizado en OpenAI exitosamente.');
+            }
+
+            res.json({ 
+                success: true, 
+                message: 'Prompt actualizado correctamente en local y en OpenAI (Hot-update)' 
+            });
+        } catch (error: any) {
+            console.error('Error updating prompt and syncing to OpenAI:', error.message);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
 };

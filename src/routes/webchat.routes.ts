@@ -5,6 +5,8 @@ import { getOrCreateThreadId, deleteThread, sendMessageToThread } from "../utils
 import { AssistantResponseProcessor } from "../utils/AssistantResponseProcessor";
 import { transcribeAudioFile } from "../utils/audioTranscriptior";
 
+import { backofficeAuth } from "../middleware/auth";
+
 /**
  * Registra las rutas de Webchat en la instancia de Polka.
  */

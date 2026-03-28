@@ -1,9 +1,11 @@
+import { backofficeAuth, systemConfigAuth } from "../middleware/auth";
+
 /**
  * Registra las rutas de Railway en la instancia de Polka.
  */
 export const registerRailwayRoutes = (app: any, { RailwayApi }: any) => {
     
-    app.post("/api/restart-bot", async (req, res) => {
+    app.post("/api/restart-bot", systemConfigAuth, async (req: any, res: any) => {
         console.log('POST /api/restart-bot recibido');
         try {
             const result = await RailwayApi.restartActiveDeployment();
@@ -18,7 +20,7 @@ export const registerRailwayRoutes = (app: any, { RailwayApi }: any) => {
         }
     });
 
-    app.get("/api/variables", async (req, res) => {
+    app.get("/api/variables", systemConfigAuth, async (req: any, res: any) => {
         try {
             const variables = await RailwayApi.getVariables();
             if (variables) {
@@ -32,7 +34,7 @@ export const registerRailwayRoutes = (app: any, { RailwayApi }: any) => {
         }
     });
 
-    app.post("/api/update-variables", async (req, res) => {
+    app.post("/api/update-variables", systemConfigAuth, async (req: any, res: any) => {
         try {
             const { variables } = req.body;
             if (!variables || typeof variables !== 'object') {

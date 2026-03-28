@@ -14,10 +14,14 @@ export { supabase };
 export const historyEvents = new EventEmitter();
 
 // Identificador único para este bot específico
+// Identificador único para este bot específico (Usamos el UUID para consistencia total)
 const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "default_project";
+const PROJECT_IDENTIFIER = PROJECT_ID; // Unificamos para evitar discrepancias entre tablas
+const PROJECT_NAME = process.env.RAILWAY_SERVICE_NAME || "Bot-RialWay";
 
 export interface Chat {
-    id: string;
+    id: string; // WAID (Teléfono) o identificador de Webchat
+    user_id?: string | null; // BSUID (Meta Business-Scoped User ID)
     project_id: string;
     type: 'whatsapp' | 'webchat';
     name: string | null;
@@ -52,12 +56,10 @@ export class HistoryHandler {
                 name: 'chats',
                 sql: `CREATE TABLE IF NOT EXISTS chats (
                     id TEXT,
+                    user_id TEXT,
                     project_id TEXT,
                     type TEXT NOT NULL,
                     name TEXT,
-                    email TEXT,
-                    notes TEXT,
-                    source TEXT,
                     bot_enabled BOOLEAN DEFAULT true,
                     last_message_at TIMESTAMPTZ DEFAULT NOW(),
                     last_human_message_at TIMESTAMPTZ,
@@ -96,6 +98,45 @@ export class HistoryHandler {
                     type TEXT DEFAULT 'text',
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     FOREIGN KEY (chat_id, project_id) REFERENCES chats(id, project_id)
+                );`
+            },
+            {
+                name: 'tickets',
+                sql: `CREATE TABLE IF NOT EXISTS tickets (
+                    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+                    project_id TEXT,
+                    chat_id TEXT,
+                    titulo TEXT NOT NULL,
+                    descripcion TEXT,
+                    tipo TEXT DEFAULT 'Soporte',
+                    estado TEXT DEFAULT 'Abierto',
+                    prioridad TEXT DEFAULT 'Media',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    FOREIGN KEY (chat_id, project_id) REFERENCES chats(id, project_id)
+                );`
+            },
+            {
+                name: 'meta_onboarding',
+                sql: `CREATE TABLE IF NOT EXISTS meta_onboarding (
+                    project_id TEXT PRIMARY KEY,
+                    waba_id TEXT,
+                    phone_number_id TEXT,
+                    access_token TEXT,
+                    onboarding_data JSONB DEFAULT '{}'::jsonb,
+                    status TEXT DEFAULT 'active',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                );`
+            },
+            {
+                name: 'settings',
+                sql: `CREATE TABLE IF NOT EXISTS settings (
+                    project_id TEXT,
+                    key TEXT,
+                    value TEXT,
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (project_id, key)
                 );`
             }
         ];
@@ -144,21 +185,26 @@ export class HistoryHandler {
                          }
                     }
 
-                    // Migración para last_human_message_at y columnas CRM
+                    // Migración para last_human_message_at y campos CRM
                     if (table.name === 'chats') {
-                        const columns = [
-                            { name: 'last_human_message_at', type: 'TIMESTAMPTZ' },
-                            { name: 'email', type: 'TEXT' },
-                            { name: 'notes', type: 'TEXT' },
-                            { name: 'source', type: 'TEXT' }
-                        ];
+                        const { error: humanMsgErr } = await supabase.from('chats').select('last_human_message_at').limit(1);
+                        if (humanMsgErr && humanMsgErr.code === '42703') {
+                            console.log(`🔧 Agregando columna last_human_message_at a chats...`);
+                            await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN last_human_message_at TIMESTAMPTZ;` });
+                        }
 
-                        for (const col of columns) {
-                            const { error: colErr } = await supabase.from('chats').select(col.name).limit(1);
-                            if (colErr && colErr.code === '42703') {
-                                console.log(`🔧 Agregando columna ${col.name} a chats...`);
-                                await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN IF NOT EXISTS ${col.name} ${col.type};` });
-                            }
+                        // Verificar campos CRM
+                        const { error: crmErr } = await supabase.from('chats').select('notes, email, source').limit(1);
+                        if (crmErr && crmErr.code === '42703') {
+                            console.log(`🔧 Agregando columnas CRM a chats...`);
+                            await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN IF NOT EXISTS notes TEXT, ADD COLUMN IF NOT EXISTS email TEXT, ADD COLUMN IF NOT EXISTS source TEXT;` });
+                        }
+
+                        // Migración para user_id (Meta BSUID)
+                        const { error: bsuidErr } = await supabase.from('chats').select('user_id').limit(1);
+                        if (bsuidErr && bsuidErr.code === '42703') {
+                            console.log(`🔧 Agregando columna user_id (BSUID) a chats...`);
+                            await supabase.rpc('exec_sql', { query: `ALTER TABLE chats ADD COLUMN IF NOT EXISTS user_id TEXT;` });
                         }
                     }
 
@@ -173,21 +219,60 @@ export class HistoryHandler {
     
     /**
      * Obtiene o crea un registro de chat
+     * 
+     * @param chatId - ID tradicional (wa_id o número de teléfono)
+     * @param type - Tipo de chat
+     * @param name - Nombre del contacto
+     * @param userId - El nuevo BSUID (Business-Scoped User ID) de Meta
      */
-    static async getOrCreateChat(chatId: string, type: 'whatsapp' | 'webchat', name: string | null = null): Promise<Chat | null> {
+    static async getOrCreateChat(chatId: string, type: 'whatsapp' | 'webchat', name: string | null = null, userId: string | null = null): Promise<Chat | null> {
         try {
-            const { data, error } = await supabase
-                .from('chats')
-                .select('*')
-                .eq('id', chatId)
-                .eq('project_id', PROJECT_ID)
-                .maybeSingle();
+            let data: Chat | null = null;
+            let error: any = null;
 
+            // 1. Intentar buscar por user_id (BSUID) si está presente
+            if (userId) {
+                const { data: byUserId, error: errUser } = await supabase
+                    .from('chats')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .eq('project_id', PROJECT_ID)
+                    .maybeSingle();
+                
+                data = byUserId;
+                error = errUser;
+            }
+
+            // 2. Si no se encontró por BSUID (o no venía), buscar por el ID tradicional (Phone)
+            if (!data && !error) {
+                const { data: byChatId, error: errChat } = await supabase
+                    .from('chats')
+                    .select('*')
+                    .eq('id', chatId)
+                    .eq('project_id', PROJECT_ID)
+                    .maybeSingle();
+                
+                data = byChatId;
+                error = errChat;
+
+                // Si lo encontramos por Phone pero no tiene el user_id guardado, lo actualizamos ahora
+                if (data && userId && !data.user_id) {
+                    console.log(`🔗 Mapeando BSUID ${userId} al chat existente ${chatId}`);
+                    await supabase.from('chats')
+                        .update({ user_id: userId })
+                        .eq('id', chatId)
+                        .eq('project_id', PROJECT_ID);
+                    data.user_id = userId;
+                }
+            }
+
+            // 3. Si sigue sin existir, lo creamos
             if (!data) {
                 const { data: newData, error: insertError } = await supabase
                     .from('chats')
                     .insert({
                         id: chatId,
+                        user_id: userId,
                         project_id: PROJECT_ID,
                         type,
                         name,
@@ -218,10 +303,10 @@ export class HistoryHandler {
     /**
      * Guarda un mensaje en la base de datos
      */
-    static async saveMessage(chatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null) {
+    static async saveMessage(chatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null, userId: string | null = null) {
         try {
-            // Asegurar que el chat existe
-            await this.getOrCreateChat(chatId, chatId.includes('@') ? 'whatsapp' : 'webchat', contactName);
+            // Asegurar que el chat existe (pasamos el userId para el mapeo o creación)
+            await this.getOrCreateChat(chatId, chatId.includes('@') ? 'whatsapp' : 'webchat', contactName, userId);
 
             const { error } = await supabase
                 .from('messages')
@@ -248,6 +333,25 @@ export class HistoryHandler {
 
         } catch (err) {
             console.error('[HistoryHandler] Error en saveMessage:', err);
+        }
+    }
+
+    /**
+     * Actualiza los detalles de contacto (CRM)
+     */
+    static async updateContactDetails(chatId: string, details: { name?: string, email?: string, notes?: string, source?: string }) {
+        try {
+            const { error } = await supabase
+                .from('chats')
+                .update(details)
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID);
+
+            if (error) throw error;
+            return { success: true };
+        } catch (err: any) {
+            console.error('[HistoryHandler] Error en updateContactDetails:', err);
+            return { success: false, error: err.message };
         }
     }
 
@@ -300,27 +404,35 @@ export class HistoryHandler {
     }
 
     /**
-     * Lista chats con paginación, búsqueda y filtros
+     * Lista todos los chats activos (con tags incluidos)
      */
-    static async listChats(limit: number = 20, offset: number = 0, search: string = '', tagId: string = '') {
+    static async listChats(limit: number = 20, offset: number = 0, search?: string, tagId?: string) {
         try {
             let query = supabase
                 .from('chats')
-                .select('*, chat_tags!inner(tag_id, tags(*))', { count: 'exact' })
+                .select('*, chat_tags!inner(tag_id, tags(*))')
                 .eq('project_id', PROJECT_ID);
 
-            // Si no hay tagId, cambiamos el select para que no sea inner join (que filtra)
-            if (!tagId) {
-                query = supabase
-                    .from('chats')
-                    .select('*, chat_tags(tag_id, tags(*))', { count: 'exact' })
-                    .eq('project_id', PROJECT_ID);
-            } else {
-                query = query.eq('chat_tags.tag_id', tagId);
+            if (search) {
+                // Filtro por nombre, ID, email, notas o fuente
+                query = query.or(`name.ilike.%${search}%,id.ilike.%${search}%,email.ilike.%${search}%,notes.ilike.%${search}%,source.ilike.%${search}%`);
             }
 
-            if (search) {
-                query = query.or(`name.ilike.%${search}%,id.ilike.%${search}%,email.ilike.%${search}%,notes.ilike.%${search}%,source.ilike.%${search}%`);
+            if (tagId) {
+                // El !inner ya está en el select, así que podemos filtrar por tag_id
+                query = query.eq('chat_tags.tag_id', tagId);
+            } else {
+                // Si no hay filtro por tag, queremos TODOS los chats, tengan tags o no.
+                // Usamos left join (por defecto en PostgREST si no usamos !inner)
+                query = supabase
+                    .from('chats')
+                    .select('*, chat_tags(tag_id, tags(*))')
+                    .eq('project_id', PROJECT_ID);
+                
+                if (search) {
+                    // Filtro por nombre, ID, email, notas o fuente
+                    query = query.or(`name.ilike.%${search}%,id.ilike.%${search}%,email.ilike.%${search}%,notes.ilike.%${search}%,source.ilike.%${search}%`);
+                }
             }
 
             const { data, error } = await query
@@ -340,26 +452,7 @@ export class HistoryHandler {
     }
 
     /**
-     * Actualiza los datos de contacto de un lead
-     */
-    static async updateChatContact(chatId: string, data: { name?: string, email?: string, notes?: string, source?: string }) {
-        try {
-            const { error } = await supabase
-                .from('chats')
-                .update(data)
-                .eq('id', chatId)
-                .eq('project_id', PROJECT_ID);
-            
-            if (error) throw error;
-            return { success: true };
-        } catch (err: any) {
-            console.error('[HistoryHandler] Error en updateChatContact:', err);
-            return { success: false, error: err.message };
-        }
-    }
-
-    /**
-     * Obtiene los mensajes de un chat específico con paginación
+     * Obtiene los mensajes de un chat específico
      */
     static async getMessages(chatId: string, limit: number = 50, offset: number = 0) {
         try {
@@ -368,11 +461,11 @@ export class HistoryHandler {
                 .select('*')
                 .eq('chat_id', chatId)
                 .eq('project_id', PROJECT_ID)
-                .order('created_at', { ascending: false })
+                .order('created_at', { ascending: false }) // Primero los más nuevos para el LIMIT
                 .range(offset, offset + limit - 1);
             
             if (error) throw error;
-            return (data || []).reverse(); // Revertir para orden cronológico dentro de la porción
+            return (data || []).reverse(); // Revertir para orden cronológico
         } catch (err) {
             console.error('[HistoryHandler] Error en getMessages:', err);
             return [];
@@ -538,49 +631,241 @@ export class HistoryHandler {
     }
 
     /**
-     * Guarda el contexto del cliente (datos personales y de negocio) en el metadata del chat
+     * Crea un nuevo ticket
      */
-    static async saveClientContext(chatId: string, context: any) {
+    static async createTicket(chatId: string, titulo: string, descripcion: string, tipo: string = 'Soporte', prioridad: string = 'Media') {
         try {
-            const { data } = await supabase
-                .from('chats')
-                .select('metadata')
-                .eq('id', chatId)
-                .eq('project_id', PROJECT_ID)
-                .maybeSingle();
+            const { data, error } = await supabase
+                .from('tickets')
+                .insert({
+                    chat_id: chatId,
+                    project_id: PROJECT_ID,
+                    titulo,
+                    descripcion,
+                    tipo,
+                    prioridad,
+                    estado: 'Abierto'
+                })
+                .select()
+                .single();
 
-            const currentMetadata = data?.metadata || {};
-            const updatedMetadata = { ...currentMetadata, clientContext: context };
-
-            await supabase
-                .from('chats')
-                .update({ metadata: updatedMetadata })
-                .eq('id', chatId)
-                .eq('project_id', PROJECT_ID);
-        } catch (err) {
-            console.error('[HistoryHandler] Error en saveClientContext:', err);
+            if (error) throw error;
+            
+            // Emitir evento para WebSockets
+            historyEvents.emit('ticket_updated', { chatId, ticket: data });
+            
+            return { success: true, ticket: data };
+        } catch (err: any) {
+            console.error('[HistoryHandler] Error en createTicket:', err);
+            return { success: false, error: err.message };
         }
     }
 
     /**
-     * Obtiene el contexto del cliente guardado en el metadata
+     * Obtiene el conteo de tickets pendientes (Abiertos o En progreso)
      */
-    static async getClientContext(chatId: string): Promise<any | null> {
+    static async getPendingTicketsCount(tipo?: string) {
         try {
-            const { data } = await supabase
+            let query = supabase
+                .from('tickets')
+                .select('*', { count: 'exact', head: true })
+                .eq('project_id', PROJECT_ID)
+                .in('estado', ['Abierto', 'En progreso']);
+
+            if (tipo) {
+                query = query.eq('tipo', tipo);
+            }
+
+            const { count, error } = await query;
+            if (error) throw error;
+            return count || 0;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getPendingTicketsCount:', err);
+            return 0;
+        }
+    }
+
+    /**
+     * Lista los tickets del proyecto
+     */
+    static async listTickets(limit: number = 50, offset: number = 0, estado?: string, tipo?: string, chatId?: string) {
+        console.log(`[HistoryHandler] listTickets -> req: estado=${estado}, tipo=${tipo}, chatId=${chatId}, project=${PROJECT_ID}`);
+        try {
+            let query = supabase
+                .from('tickets')
+                .select('*, chats(name, id)')
+                .eq('project_id', PROJECT_ID);
+
+            if (chatId && chatId !== 'null' && chatId !== 'undefined' && chatId !== '') {
+                query = query.eq('chat_id', chatId);
+            }
+
+            // Filtro de estado robusto
+            if (estado && estado !== 'null' && estado !== 'undefined' && estado !== '') {
+                // Forzamos comparación exacta
+                query = query.eq('estado', estado);
+            } else {
+                // Por defecto, solo lo que no esté cerrado
+                query = query.in('estado', ['Abierto', 'En progreso']);
+            }
+
+            if (tipo && tipo !== 'null' && tipo !== 'undefined' && tipo !== '') {
+                query = query.eq('tipo', tipo);
+            }
+
+            const { data, error } = await query
+                .order('created_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+            
+            if (error) {
+                // Si falla por problemas de relación (JOIN), intentamos sin join
+                if (error.code === 'PGRST200' || error.message.includes('relationship')) {
+                    console.warn('[HistoryHandler] Reintentando listTickets sin JOIN debido a:', error.message);
+                    let fallbackQuery = supabase
+                        .from('tickets')
+                        .select('*')
+                        .eq('project_id', PROJECT_ID);
+                    
+                    if (chatId) fallbackQuery = fallbackQuery.eq('chat_id', chatId);
+                    if (estado) fallbackQuery = fallbackQuery.eq('estado', estado);
+                    else fallbackQuery = fallbackQuery.in('estado', ['Abierto', 'En progreso']);
+
+                    if (tipo) fallbackQuery = fallbackQuery.eq('tipo', tipo);
+
+                    const { data: fallbackData, error: fallbackError } = await fallbackQuery
+                        .order('created_at', { ascending: false })
+                        .range(offset, offset + limit - 1);
+                    
+                    if (fallbackError) throw fallbackError;
+                    return fallbackData || [];
+                }
+                throw error;
+            }
+            
+            return data || [];
+        } catch (err) {
+            console.error('[HistoryHandler] Error en listTickets:', err);
+            return [];
+        }
+    }
+    /**
+     * Actualiza el estado de un ticket
+     */
+    static async updateTicketStatus(ticketId: string, nuevoEstado: string) {
+        try {
+            const { data, error } = await supabase
+                .from('tickets')
+                .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
+                .eq('id', ticketId)
+                .eq('project_id', PROJECT_ID)
+                .select()
+                .maybeSingle();
+
+            if (error) throw error;
+            
+            // Notificar cambios
+            historyEvents.emit('ticket_updated', data);
+            
+            return { success: true, data };
+        } catch (err: any) {
+            console.error('[HistoryHandler] Error en updateTicketStatus:', err);
+            return { success: false, error: err.message };
+        }
+    }
+    /**
+     * Lista los leads que tienen datos de CRM (editados)
+     */
+    static async listEditedLeads(limit: number = 50, offset: number = 0) {
+        try {
+            const { data, error } = await supabase
                 .from('chats')
-                .select('metadata')
-                .eq('id', chatId)
+                .select('*')
+                .eq('project_id', PROJECT_ID)
+                .order('last_human_message_at', { ascending: false })
+                .range(offset, offset + limit - 1);
+
+            if (error) throw error;
+            return data || [];
+        } catch (err) {
+            console.error('[HistoryHandler] Error en listEditedLeads:', err);
+            return [];
+        }
+    }
+    /**
+     * Guarda o actualiza los datos de onboarding de Meta
+     */
+    static async saveMetaOnboardingData(wabaId: string, phoneId: string, token: string, extra: any = {}) {
+        try {
+            const { data, error } = await supabase
+                .from('meta_onboarding')
+                .upsert({
+                    project_id: PROJECT_ID,
+                    waba_id: wabaId,
+                    phone_number_id: phoneId,
+                    access_token: token,
+                    onboarding_data: extra,
+                    status: 'active',
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'project_id' })
+                .select()
+                .single();
+
+            if (error) throw error;
+            return { success: true, data };
+        } catch (err: any) {
+            console.error('[HistoryHandler] Error en saveMetaOnboardingData:', err);
+            return { success: false, error: err.message };
+        }
+    }
+
+    /**
+     * Obtiene los datos de onboarding configurados
+     */
+    static async getMetaOnboardingData() {
+        try {
+            const { data, error } = await supabase
+                .from('meta_onboarding')
+                .select('*')
                 .eq('project_id', PROJECT_ID)
                 .maybeSingle();
 
-            return data?.metadata?.clientContext || null;
+            if (error) throw error;
+            return data;
         } catch (err) {
-            console.error('[HistoryHandler] Error en getClientContext:', err);
+            console.error('[HistoryHandler] Error en getMetaOnboardingData:', err);
             return null;
         }
     }
+
+    static async saveSetting(key: string, value: string) {
+        if (!supabase) return;
+        const { error } = await supabase
+            .from('settings')
+            .upsert({ 
+                project_id: PROJECT_IDENTIFIER, 
+                key, 
+                value, 
+                updated_at: new Date().toISOString() 
+            }, { onConflict: 'project_id,key' });
+
+        if (error) console.error(`❌ [HistoryHandler] Error guardando setting ${key}:`, error);
+    }
+
+    static async getSetting(key: string): Promise<string | null> {
+        if (!supabase) return null;
+        const { data, error } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('project_id', PROJECT_IDENTIFIER)
+            .eq('key', key)
+            .single();
+
+        if (error && error.code !== 'PGRST116') {
+            console.error(`❌ [HistoryHandler] Error obteniendo setting ${key}:`, error);
+        }
+        return data ? data.value : null;
+    }
 }
 
-// Inicializar base de datos al cargar el modulo
-HistoryHandler.initDatabase();
+// Inicializar base de datos al cargar el modulo (Quitado para evitar race condition, se llama en app.ts main)
+// HistoryHandler.initDatabase();

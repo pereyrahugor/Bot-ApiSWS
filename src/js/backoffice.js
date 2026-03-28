@@ -1,4 +1,4 @@
-/* global io */
+/* global io, metaAppId, FB */
 const token = localStorage.getItem('backoffice_token');
 if (!token) window.location.href = '/login';
 
@@ -81,7 +81,19 @@ async function fetchChats(refresh = false) {
         }
 
         chatOffset = chats.length;
-        renderChatList(); // Ya no llamamos a handleSearch aquí, solo renderizamos lo que vino del server
+        renderChatList();
+        
+        // Auto-abrir chat si venimos desde el CRM
+        if (!activeChatId) {
+            const pendingChatId = localStorage.getItem('activeChat');
+            if (pendingChatId) {
+                localStorage.removeItem('activeChat');
+                console.log('[CRM] Auto-abriendo chat:', pendingChatId);
+                // Esperar un breve instante para asegurar que el DOM está listo
+                setTimeout(() => selectChat(pendingChatId), 100);
+                return;
+            }
+        }
         
         if (activeChatId) {
             const activeChat = chats.find(c => c.id === activeChatId);
@@ -188,6 +200,7 @@ async function selectChat(id) {
     }
 
     renderChatList();
+    loadCRMJump(id); // Cargamos los datos para el "Salto al CRM"
     fetchMessages(id, true);
 }
 
@@ -454,6 +467,43 @@ function toggleCRMPanel() {
     }
 }
 
+async function loadCRMJump(chatId) {
+    const container = document.getElementById('crm-jump-container');
+    const select = document.getElementById('crm-lead-jump');
+    if (!container || !select) return;
+
+    try {
+        // Buscamos TODOS los tickets para este chat_id (de cualquier estado)
+        const res = await fetch(`/api/backoffice/tickets?token=${token}&chatId=${chatId}&limit=50&estado=null`);
+        const tickets = await res.json();
+
+        if (Array.isArray(tickets) && tickets.length > 0) {
+            container.style.display = 'flex';
+            select.innerHTML = '<option value="">🚀 Ver en CRM...</option>' + 
+                tickets.map(t => `<option value="${t.id}" data-chat="${t.chat_id}">${t.titulo} (${t.tipo})</option>`).join('');
+        } else {
+            container.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('[loadCRMJump] Error:', e);
+        container.style.display = 'none';
+    }
+}
+
+function jumpToCRM() {
+    const select = document.getElementById('crm-lead-jump');
+    const ticketId = select.value;
+    if (!ticketId) return;
+
+    const option = select.options[select.selectedIndex];
+    const chatId = option.getAttribute('data-chat');
+
+    // Guardamos ambos IDs para que el CRM abra el modal específico
+    localStorage.setItem('activeChat', chatId);
+    localStorage.setItem('pendingTicket', ticketId);
+    window.location.href = '/crm';
+}
+
 function populateCRMFields(chat) {
     if (!chat) return;
     document.getElementById('crm-name').value = chat.name || '';
@@ -634,6 +684,300 @@ function logout() {
 }
 
 setInterval(() => fetchChats(true), 60000);
+socket.on('ticket_updated', (payload) => {
+    console.log('📡 Ticket actualizado:', payload);
+    fetchPendingTicketsCount();
+    if (document.getElementById('tickets-panel').classList.contains('active')) {
+        fetchTickets();
+    }
+});
+
+// --- TICKETS LOGIC ---
+
+let currentTicketsFilter = 'pending';
+
+async function fetchPendingTicketsCount() {
+    try {
+        const res = await fetch(`/api/backoffice/tickets/pending-count?token=${token}&tipo=Asistencia Externa`);
+        const { count } = await res.json();
+        
+        const badge = document.getElementById('tickets-badge');
+        if (count > 0) {
+            badge.innerText = count > 99 ? '99+' : count;
+            badge.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('Error fetching tickets count:', e);
+    }
+}
+
+function realToggleTickets(e) {
+    if (e) e.stopPropagation();
+    const panel = document.getElementById('tickets-panel');
+    if (!panel) return;
+    panel.classList.toggle('active');
+    if (panel.classList.contains('active')) {
+        setTicketsFilter('pending'); // Default to pending when opening
+    }
+}
+window.realToggleTickets = realToggleTickets;
+
+function setTicketsFilter(filter) {
+    currentTicketsFilter = filter;
+    
+    // Update tabs UI
+    document.getElementById('tab-pending').classList.toggle('active', filter === 'pending');
+    document.getElementById('tab-closed').classList.toggle('active', filter === 'Cerrado');
+    
+    fetchTickets();
+}
+
+async function fetchTickets() {
+    const list = document.getElementById('tickets-list');
+    list.innerHTML = '<div style="text-align:center; padding:20px; opacity:0.5;">Cargando tickets...</div>';
+    
+    try {
+        const estadoParam = currentTicketsFilter === 'pending' ? '' : `&estado=${currentTicketsFilter}`;
+        const res = await fetch(`/api/backoffice/tickets?token=${token}${estadoParam}&tipo=Asistencia Externa`);
+        const tickets = await res.json();
+
+        if (!Array.isArray(tickets) || tickets.length === 0) {
+            list.innerHTML = `<div style="text-align:center; padding:20px; opacity:0.5;">No hay tickets ${currentTicketsFilter === 'pending' ? 'pendientes' : 'cerrados'}</div>`;
+            return;
+        }
+
+        list.innerHTML = tickets.map(t => {
+            const date = new Date(t.created_at).toLocaleDateString();
+            const contactName = t.chats?.name || (t.chat_id ? t.chat_id.split('@')[0] : 'Sin contacto');
+            
+            return `
+                <div class="ticket-item">
+                    <div onclick="${t.chat_id ? `goToTicketChat('${t.chat_id}')` : ''}" style="cursor:pointer;">
+                        <div class="ticket-header">
+                            <div class="ticket-title">${t.titulo}</div>
+                            <div class="ticket-badge priority-${t.prioridad}">${t.prioridad}</div>
+                        </div>
+                        <div style="font-size:0.85rem; color:var(--text-main); margin-bottom:4px;">${contactName}</div>
+                        <div class="ticket-meta">
+                            <span><i class="far fa-calendar-alt"></i> ${date}</span>
+                            <span><i class="fas fa-tag"></i> ${t.tipo}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="ticket-status-row">
+                        <span style="font-size:0.75rem; color:var(--text-muted);">Estado:</span>
+                        <select class="status-select" onchange="updateTicketStatus('${t.id}', this.value)">
+                            <option value="Abierto" ${t.estado === 'Abierto' ? 'selected' : ''}>Abierto</option>
+                            <option value="En progreso" ${t.estado === 'En progreso' ? 'selected' : ''}>En progreso</option>
+                            <option value="Cerrado" ${t.estado === 'Cerrado' ? 'selected' : ''}>Cerrado</option>
+                        </select>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Error fetching tickets:', e);
+        list.innerHTML = '<div style="color:#f87171; text-align:center; padding:20px;">Error al cargar tickets</div>';
+    }
+}
+
+async function updateTicketStatus(ticketId, nuevoEstado) {
+    try {
+        const res = await fetch(`/api/backoffice/tickets/${ticketId}?token=${token}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estado: nuevoEstado })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+            showToast(`Ticket ${nuevoEstado === 'Cerrado' ? 'cerrado' : 'actualizado'} correctamente`);
+            fetchPendingTicketsCount();
+            fetchTickets(); // Refresh list to remove if closed
+        } else {
+            showToast('❌ Error al actualizar ticket: ' + (result.error || 'Desconocido'));
+        }
+    } catch (e) {
+        console.error('Error updating ticket status:', e);
+        showToast('❌ Error de conexión al actualizar ticket');
+    }
+}
+
+function goToTicketChat(chatId) {
+    realToggleTickets();
+    const chat = chats.find(c => c.id === chatId);
+    if (chat) {
+        selectChat(chatId);
+    } else {
+        // Si el chat no está en la lista actual (paginación), forzamos búsqueda
+        document.getElementById('search-input').value = chatId.split('@')[0];
+        fetchChats(true).then(() => {
+            selectChat(chatId);
+        });
+    }
+}
+
+function openTicketModal() {
+    if (!activeChatId) {
+        showToast('⚠️ Selecciona un chat primero', 'error');
+        return;
+    }
+    document.getElementById('ticket-modal').classList.add('active');
+    document.getElementById('ticket-title').focus();
+}
+
+function closeTicketModal() {
+    document.getElementById('ticket-modal').classList.remove('active');
+}
+
+async function createTicket() {
+    const titulo = document.getElementById('ticket-title').value.trim();
+    const descripcion = document.getElementById('ticket-desc').value.trim();
+    const tipo = document.getElementById('ticket-type').value;
+    const prioridad = document.getElementById('ticket-priority').value;
+
+    if (!titulo) {
+        showToast('⚠️ El título es obligatorio', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/backoffice/tickets?token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chatId: activeChatId,
+                titulo,
+                descripcion,
+                tipo,
+                prioridad
+            })
+        });
+
+        if (res.ok) {
+            showToast('✅ Ticket generado correctamente');
+            closeTicketModal();
+            fetchPendingTicketsCount();
+            
+            // Limpiar campos
+            document.getElementById('ticket-title').value = '';
+            document.getElementById('ticket-desc').value = '';
+        } else {
+            showToast('❌ Error al generar ticket', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Error de conexión', 'error');
+    }
+}
+
+// --- LEADS LOGIC ---
+
+function realToggleLeads(e) {
+    if (e) e.stopPropagation();
+    const panel = document.getElementById('leads-panel');
+    if (!panel) return;
+    panel.classList.toggle('active');
+    if (panel.classList.contains('active')) {
+        fetchLeads();
+    }
+}
+window.realToggleLeads = realToggleLeads;
+
+async function fetchLeads() {
+    const list = document.getElementById('leads-list');
+    list.innerHTML = '<div style="text-align:center; padding:20px; opacity:0.5;">Cargando leads editados...</div>';
+    
+    try {
+        const res = await fetch(`/api/backoffice/leads?token=${token}`);
+        const leads = await res.json();
+
+        if (!Array.isArray(leads) || leads.length === 0) {
+            list.innerHTML = '<div style="text-align:center; padding:20px; opacity:0.5;">No hay leads editados (con notas, email o fuente)</div>';
+            return;
+        }
+
+        list.innerHTML = leads.map(l => {
+            const date = l.last_human_message_at ? new Date(l.last_human_message_at).toLocaleDateString() : 'Sin actividad';
+            const name = l.name || l.id.split('@')[0];
+            
+            return `
+                <div class="ticket-item" onclick="selectLead('${l.id}')" style="cursor:pointer;">
+                    <div class="ticket-header">
+                        <div class="ticket-title">${name}</div>
+                        <div style="font-size:0.7rem; opacity:0.6;">${l.source || 'Sin fuente'}</div>
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+                        ${l.notes || 'Sin notas'}
+                    </div>
+                    <div class="ticket-meta">
+                        <span><i class="far fa-envelope"></i> ${l.email || 'Sin email'}</span>
+                        <span><i class="far fa-clock"></i> ${date}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Error fetching leads:', e);
+        list.innerHTML = '<div style="color:#f87171; text-align:center; padding:20px;">Error al cargar leads</div>';
+    }
+}
+
+function selectLead(chatId) {
+    realToggleLeads();
+    selectChat(chatId);
+}
+
+function realToggleMeta(e) {
+    if (e) e.stopPropagation();
+    const panel = document.getElementById('meta-panel');
+    if (!panel) return;
+    panel.classList.toggle('active');
+}
+window.realToggleMeta = realToggleMeta;
+
+function launchMetaOnboarding() {
+    const activeToken = localStorage.getItem('system_config_token') || localStorage.getItem('backoffice_token');
+    fetch('/api/backoffice/whatsapp/config?token=' + activeToken)
+      .then(res => res.json())
+      .then(data => {
+          if (!data.appId || !data.railwayProjectId) {
+              showToast('⚠️ Faltan credenciales de Meta o Project ID en el servidor', 'error');
+              return;
+          }
+          
+          // Abrir DuskCodes con parámetros de redirección dinámica
+          const url = new URL('https://duskcodes.com.ar/meta-auth');
+          const currentOrigin = window.location.origin;
+          
+          url.searchParams.append('railwayProjectId', data.railwayProjectId);
+          url.searchParams.append('RAILWAY_PROJECT_ID', data.railwayProjectId);
+          url.searchParams.append('projectId', data.railwayProjectId);
+          url.searchParams.append('metaAppId', data.appId);
+          url.searchParams.append('metaAppSecret', data.appSecret);
+          url.searchParams.append('projectUrl', currentOrigin);
+          url.searchParams.append('redirectUri', `${currentOrigin}/api/backoffice/whatsapp/onboard-callback`);
+          
+          const width = 600;
+          const height = 800;
+          const left = (window.screen.width / 2) - (width / 2);
+          const top = (window.screen.height / 2) - (height / 2);
+
+          window.open(url.toString(), 'MetaOnboarding', 
+            `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=no,menubar=no`);
+      })
+      .catch(err => {
+          console.error(err);
+          showToast('❌ Error de conexión al obtener configuración', 'error');
+      });
+}
+
+// Inicialización
+fetchPendingTicketsCount();
+setInterval(fetchPendingTicketsCount, 30000);
+
 fetchChats(true);
 fetchBotTags();
 

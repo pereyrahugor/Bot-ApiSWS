@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="/style/crm-common.css">
+    <link rel="stylesheet" href="/style/backoffice.css">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body data-theme="light">
@@ -16,11 +17,23 @@
     <div id="navbar">
         <div class="nav-item active" title="Conversaciones" onclick="window.location.href='/backoffice'"><i class="fas fa-comment-dots"></i></div>
         <div class="nav-item" title="Dashboard" onclick="window.location.href='/dashboard'"><i class="fas fa-th-large"></i></div>
-        <div class="nav-item" title="Variables" onclick="window.location.href='/variables'"><i class="fas fa-code"></i></div>
         <div class="nav-item" title="Webchat" onclick="window.location.href='/webchat'"><i class="fas fa-desktop"></i></div>
-        <div class="nav-item" title="Contactos"><i class="fas fa-address-book"></i></div>
-        <div class="nav-item" id="theme-toggle" title="Cambiar Tema"><i class="fas fa-moon"></i></div>
+        <div class="nav-item" title="CRM" onclick="window.location.href='/crm'"><i class="fas fa-user-friends"></i></div>
+        <div class="nav-item badge-container" title="Contactos" onclick="toggleLeadsPanel(event)">
+            <i class="fas fa-address-book"></i>
+        </div>
+        <div class="nav-item badge-container" title="Tickets Pendientes" onclick="toggleTicketsPanel(event)">
+            <i class="fas fa-ticket-alt"></i>
+            <span class="badge" id="tickets-badge" style="display:none;">0</span>
+        </div>
+        <div class="nav-item" title="Configuración" onclick="window.location.href='/system-config'"><i class="fas fa-cog"></i></div>
+        
         <div style="flex:1"></div>
+
+        <div class="nav-item" title="Coexistencia Meta" id="nav-meta-btn" onclick="toggleMetaPanel(event)" style="color: #0668E1; font-size: 1.4rem;">
+            <i class="fas fa-infinity"></i>
+        </div>
+        <div class="nav-item" id="theme-toggle" title="Cambiar Tema" style="margin-bottom: 10px;"><i class="fas fa-moon"></i></div>
         <div class="nav-item" onclick="logout()" title="Cerrar Sesión" style="color:#f87171;"><i class="fas fa-sign-out-alt"></i></div>
     </div>
 
@@ -30,19 +43,14 @@
                 <span>🤖</span>
             </div>
             <h3 style="margin:0; font-size:1rem; flex:1; margin-left:12px;">{{BOT_NAME}}</h3>
-            <div style="display:flex; gap:8px;">
-                <button class="btn-icon" onclick="toggleCRMPanel()" title="Detalles del Lead">
-                    <i class="fas fa-user-edit"></i>
-                </button>
-            </div>
         </div>
 
         <div class="search-container">
             <div class="search-wrapper">
-                <i class="fas fa-search" style="color:var(--text-muted); font-size: 0.8rem;"></i>
+                <i class="fas fa-search" style="color:var(--wa-text-secondary); font-size: 0.8rem;"></i>
                 <input type="text" id="search-input" class="search-input" placeholder="Buscar chat por ID o etiqueta..." oninput="handleSearch()">
             </div>
-            <select id="filter-tag" class="search-input" style="background:var(--bg-sidebar); border-radius:8px; width:100%; border:1px solid var(--border); margin-top:2px;" onchange="handleSearch()">
+            <select id="filter-tag" class="search-input" style="background:var(--wa-search-bg); border-radius:8px; width:100%; border:none; margin-top:2px;" onchange="handleSearch()">
                 <option value="">Todas las etiquetas</option>
             </select>
         </div>
@@ -58,12 +66,30 @@
                 <div class="chat-avatar" id="active-chat-avatar"></div>
                 <div>
                     <div style="font-weight:600;" id="active-chat-phone">Seleccione un chat</div>
-                    <div style="font-size:0.8rem; color:var(--text-muted);" id="active-chat-name"></div>
+                    <div style="font-size:0.8rem; color:var(--wa-text-secondary);" id="active-chat-name"></div>
                     <div id="active-chat-tags" style="display:flex; gap:4px; margin-top:2px;"></div>
                 </div>
             </div>
 
             <div class="switch-container">
+                <!-- Botones Móvidos y Nuevo Desplegable -->
+                <div style="display:flex; gap:12px; align-items:center; margin-right: 15px;">
+                    <button class="btn-icon" onclick="toggleCRMPanel()" title="Detalles del Lead">
+                        <i class="fas fa-user-edit"></i>
+                    </button>
+                    <button class="btn-icon" onclick="openTicketModal()" title="Generar Ticket" style="color: var(--accent);">
+                        <i class="fas fa-plus-circle"></i>
+                    </button>
+                    
+                    <div id="crm-jump-container" style="display:none; align-items:center; gap:8px; padding: 4px 10px; border-radius: 10px; background: #1e293b; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+                        <i class="fas fa-rocket" style="font-size: 0.8rem; color: var(--accent);"></i>
+                        <select id="crm-lead-jump" class="search-input" style="width:160px; margin:0; font-size:0.75rem; font-weight:600; background: transparent; border: none; color: white !important; cursor:pointer;" 
+                                onchange="jumpToCRM(this.value)">
+                            <option value="" style="background: #1e293b; color: white;">🚀 Ver en CRM...</option>
+                        </select>
+                    </div>
+                </div>
+
                 <span id="bot-status-text">Sin chat seleccionado</span>
                 <label class="switch">
                     <input type="checkbox" id="bot-toggle" disabled onchange="toggleBot(this.checked)">
@@ -91,7 +117,7 @@
                        onkeydown="if(event.key === 'Enter') sendMessage()">
             </div>
             
-            <button class="btn-icon" id="send-btn" title="Enviar mensaje" onclick="sendMessage()" disabled style="color: var(--accent);">
+            <button class="btn-icon" id="send-btn" title="Enviar mensaje" onclick="sendMessage()" disabled style="color: var(--wa-accent);">
                 <i class="fas fa-paper-plane"></i>
             </button>
         </div>
@@ -140,7 +166,7 @@
                     <div id="available-tags-to-assign" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
                 </div>
 
-                <div style="margin-top:20px; padding: 15px; background: var(--bg-sidebar); border-radius: 12px; border: 1px dashed var(--border);">
+                <div style="margin-top:20px; padding: 15px; background: var(--bg-sidebar); border-radius: 12px; border: 1px dashed var(--border-color);">
                     <h5 style="margin:0 0 10px 0;">Crear Nueva Etiqueta</h5>
                     <div style="display:flex; gap:8px;">
                         <input type="text" id="new-tag-name" class="crm-input" style="margin:0;" placeholder="Nombre...">
@@ -156,7 +182,136 @@
         </div>
     </div>
 
+    <!-- Modal Generar Ticket -->
+    <div id="ticket-modal" class="modal-overlay">
+        <div class="modal-content animate-pop">
+            <div class="modal-header">
+                <h3>🎫 Generar Nuevo Ticket</h3>
+                <button class="btn-icon" onclick="closeTicketModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <label>Título del Ticket</label>
+                <input type="text" id="ticket-title" class="crm-input" placeholder="Ej: Problema con el pago">
+                
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1">
+                        <label>Tipo</label>
+                        <select id="ticket-type" class="crm-input">
+                            <option value="Soporte">Soporte</option>
+                            <option value="Ventas">Ventas</option>
+                            <option value="Técnico">Técnico</option>
+                            <option value="Asistencia Externa">Asistencia Externa</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                    <div style="flex:1">
+                        <label>Prioridad</label>
+                        <select id="ticket-priority" class="crm-input">
+                            <option value="Baja">Baja</option>
+                            <option value="Media" selected>Media</option>
+                            <option value="Alta">Alta</option>
+                        </select>
+                    </div>
+                </div>
+
+                <label>Descripción</label>
+                <textarea id="ticket-desc" class="crm-input" rows="4" placeholder="Detalles de la incidencia..."></textarea>
+                
+                <button class="btn-primary" onclick="createTicket()" style="width:100%; margin-top:10px;">
+                    <i class="fas fa-save" style="margin-right:8px;"></i> Crear Ticket
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel de Tickets Lateral -->
+    <div id="tickets-panel" class="tickets-panel">
+        <div class="panel-header">
+            <h3><i class="fas fa-ticket-alt"></i> Tickets</h3>
+            <button class="btn-icon" onclick="toggleTicketsPanel(event)"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="panel-tabs">
+            <button id="tab-pending" class="tab-btn active" onclick="setTicketsFilter('pending')">Pendientes</button>
+            <button id="tab-closed" class="tab-btn" onclick="setTicketsFilter('Cerrado')">Cerrados</button>
+        </div>
+        <div id="tickets-list" class="tickets-list">
+            <div style="text-align:center; padding:20px; opacity:0.5;">Cargando tickets...</div>
+        </div>
+    </div>
+
     <script src="/js/crm-common.js"></script>
     <script src="/js/backoffice.js"></script>
 </body>
 </html>
+    <!-- Panel de Leads Lateral -->
+    <div id="leads-panel" class="tickets-panel">
+        <div class="panel-header">
+            <h3><i class="fas fa-address-book"></i> Leads Editados</h3>
+            <button class="btn-icon" onclick="toggleLeadsPanel(event)"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="leads-list" class="tickets-list" style="padding: 15px;">
+            <div style="text-align:center; padding:20px; opacity:0.5;">Cargando leads...</div>
+        </div>
+    </div>
+
+    <!-- Panel de Onboarding Meta Lateral -->
+    <div id="meta-panel" class="tickets-panel">
+        <div class="panel-header">
+            <h3><i class="fab fa-meta" style="color:#0668E1; margin-right:8px;"></i> Onboarding Meta</h3>
+            <button class="btn-icon" onclick="toggleMetaPanel(event)"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="tickets-list" style="padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; text-align: center; gap: 24px;">
+            <div style="background: linear-gradient(135deg, #0668E1, #00F2FE); width: 100px; height: 100px; border-radius: 24px; display: flex; align-items: center; justify-content: center; font-size: 3rem; color: white; box-shadow: 0 15px 30px rgba(6, 104, 225, 0.4); margin-top: 40px;">
+                <i class="fab fa-meta"></i>
+            </div>
+            <div>
+                <h2 style="margin: 0; color: var(--text-main); font-size: 1.6rem; font-weight: 700;">Coming Soon</h2>
+                <div style="height: 3px; width: 50px; background: #0668E1; margin: 10px auto; border-radius: 10px;"></div>
+                <p style="color: var(--text-muted); font-size: 1rem; margin-top: 15px; line-height: 1.6;">
+                    Estamos desarrollando la integración oficial con la <strong>API de WhatsApp Business</strong> mediante el flujo de registro incrustado de Meta.
+                </p>
+            </div>
+            
+            <div style="background: var(--bg-header); padding: 24px; border-radius: 20px; border: 1px solid var(--border); width: 100%; text-align: left;">
+                <h4 style="margin: 0 0 15px 0; color: #0668E1; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;">Lo que se viene:</h4>
+                <ul style="font-size: 0.9rem; padding-left: 20px; color: var(--text-main); line-height: 2.2;">
+                    <li>Integración por <strong>Coexistencia</strong> (App móvil + API).</li>
+                    <li>Registro rápido Cloud via <strong>Popup de Meta</strong>.</li>
+                    <li>Sincronización histórica de chats.</li>
+                    <li>Envío de HSM (High Structure Messages).</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 0.8rem; color: var(--text-muted); opacity: 0.8; margin-top: 20px;">
+                Escala tu negocio con el respaldo oficial de Meta y las nuevas capacidades de coexistencia.
+            </p>
+
+            <button class="btn-primary" onclick="launchMetaOnboarding()" style="width:100%; height:45px; display:flex; align-items:center; justify-content:center; gap:10px; background:#0668E1; border:none; border-radius:12px; font-weight:600; cursor:pointer; color:white;">
+                <i class="fab fa-meta"></i> Conectar con Meta
+            </button>
+        </div>
+    </div>
+
+    <!-- SDK de Meta -->
+    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/es_LA/sdk.js"></script>
+    <script>
+      let metaAppId = '';
+      
+      window.fbAsyncInit = function() {
+        const activeToken = localStorage.getItem('system_config_token') || localStorage.getItem('backoffice_token');
+        fetch('/api/backoffice/whatsapp/config?token=' + activeToken)
+          .then(res => res.json())
+          .then(data => {
+            metaAppId = data.appId;
+            if (metaAppId && metaAppId !== 'AQUI_TU_ID_DE_APP') {
+              FB.init({
+                appId      : metaAppId,
+                cookie     : true,
+                xfbml      : true,
+                version    : 'v20.0'
+              });
+              console.log('✅ SDK de Meta inicializado con AppID:', metaAppId);
+            }
+          });
+      };
+    </script>
