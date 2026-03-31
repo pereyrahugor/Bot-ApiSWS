@@ -92,8 +92,20 @@ function registerSafeErrorHandlers() {
  * Main function for Bot and Server Orchestration
  */
 const main = async () => {
+    console.log(`\n🚀 [Server] Iniciando aplicación...`);
+    console.log(`   - Proyecto: ${process.env.RAILWAY_PROJECT_NAME || 'Unknown'}`);
+    console.log(`   - Project ID: ${process.env.RAILWAY_PROJECT_ID || 'local-dev'}`);
+    console.log(`   - Puerto: ${PORT}`);
+    console.log(`   - Assistant ID: ${ASSISTANT_ID ? 'Configurado' : '⚠️ Faltante'}`);
+
     // 1. Storage cleanup and session restoration
-    await restoreSessionFromDb();
+    try {
+        await restoreSessionFromDb();
+        console.log(`✅ [Session] Restauración de sesión completada.`);
+    } catch (err) {
+        console.error(`❌ [Session] Error crítico en restoreSessionFromDb:`, err);
+    }
+    
     const qrPath = path.join(process.cwd(), "bot.qr.png");
 
     // 2. Initialize Providers

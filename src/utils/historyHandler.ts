@@ -14,8 +14,13 @@ export { supabase };
 export const historyEvents = new EventEmitter();
 
 // Identificador único para este bot específico
-const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "default_project";
+const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "local-dev";
 const PROJECT_IDENTIFIER = PROJECT_ID; // Unificamos para evitar discrepancias entre tablas
+
+console.log(`[History] Project ID: ${PROJECT_ID}`);
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    console.warn("⚠️ [Supabase] Missing SUPABASE_URL or SUPABASE_KEY. History may fail.");
+}
 
 export interface Chat {
     id: string; // WAID (Teléfono) o identificador de Webchat
@@ -42,6 +47,7 @@ export interface Message {
     id?: string;
     chat_id: string;
     project_id: string;
+    agent_id?: string; // Nuevo: Soporte para multi-agentes
     role: 'user' | 'assistant' | 'system';
     content: string;
     type: 'text' | 'image' | 'audio' | 'video' | 'location' | 'document';
@@ -93,13 +99,42 @@ export class HistoryHandler {
         try {
             await this.getOrCreateChat(chatId, chatId.includes('@') ? 'whatsapp' : 'webchat', contactName, userId);
             const { error } = await supabase.from('messages').insert({
-                chat_id: chatId, project_id: PROJECT_ID, role, content, type, created_at: new Date().toISOString()
+                chat_id: chatId, 
+                project_id: PROJECT_ID, 
+                role, 
+                content, 
+                type, 
+                agent_id: process.env.ASSISTANT_ID, // Soporte para multi-agentes
+                created_at: new Date().toISOString()
             });
             if (error) throw error;
             await supabase.from('chats').update({ last_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID);
             historyEvents.emit('new_message', { chatId, role, content, type });
         } catch (err) {
             console.error('[HistoryHandler] Error en saveMessage:', err);
+        }
+    }
+
+    /**
+     * Persiste el contexto del cliente en la base de datos (Supabase)
+     */
+    static async saveClientContext(chatId: string, data: any) {
+        try {
+            console.log(`[History] 💾 Guardando contexto cliente para ${chatId}...`);
+            const updateData: any = {
+                name: data.nombre || null,
+                email: data.email || null,
+                address: data.direccion || data.address || null,
+                cuit_dni: data.numCliente || data.cuit_dni || null,
+                tax_status: data.tax_status || null,
+                offered_product: data.offered_product || null,
+                is_lead: true
+            };
+            
+            const { error } = await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID);
+            if (error) throw error;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en saveClientContext:', err);
         }
     }
 

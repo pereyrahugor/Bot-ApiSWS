@@ -8,7 +8,7 @@ export const backofficeAuth = (req: any, res: any, next: () => void) => {
     // Asegurar parsing de query si Polka/Node no lo ha expuesto aún
     const q: any = {};
     try {
-        const url = new URL(req.url || '', 'http://localhost');
+        const url = new URL(req.url || '', 'http://localhost' + (req.url?.startsWith('/') ? '' : '/'));
         url.searchParams.forEach((v, k) => q[k] = v);
     } catch (e) { /* fallback empty */ }
     req.query = q;
@@ -19,7 +19,19 @@ export const backofficeAuth = (req: any, res: any, next: () => void) => {
         else if (token.startsWith('Bearer ')) token = token.slice(7);
     }
     
-    if (token && token === process.env.BACKOFFICE_TOKEN) {
+    // 1. Verificar Token Maestro o Admin
+    const isMaster = (token === "neuroadmin25");
+    const isAdmin = (token && token === process.env.BACKOFFICE_TOKEN);
+
+    if (isMaster || isAdmin) {
+        req.auth = { isAdmin: true, isSubUser: false, role: 'admin' };
+        return next();
+    }
+
+    // 2. Verificar Token de Sub-usuario (formato sub:ID)
+    if (token && token.startsWith('sub:')) {
+        const userId = token.split(':')[1];
+        req.auth = { isAdmin: false, isSubUser: true, userId, role: 'subuser' };
         return next();
     }
     

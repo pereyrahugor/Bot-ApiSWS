@@ -4,6 +4,7 @@ import { withRetry } from "../utils/retryHelper";
 import { getOrCreateThreadId, deleteThread, sendMessageToThread } from "../utils-web/openaiThreadBridge";
 import { AssistantResponseProcessor } from "../utils/AssistantResponseProcessor";
 import { transcribeAudioFile } from "../utils/audioTranscriptior";
+import { HistoryHandler } from "../utils/historyHandler"; // Importar HistoryHandler
 
 import { backofficeAuth } from "../middleware/auth";
 
@@ -27,6 +28,14 @@ export const registerWebchatRoutes = (app: any, {
             const xff = req.headers['x-forwarded-for'];
             if (typeof xff === 'string') ip = xff.split(',')[0];
             else ip = req.ip || '';
+
+            // --- PERSISTENCIA PASO 1: Guardar mensaje del usuario ---
+            try {
+                console.log(`[Webchat] 📥 Persistiendo mensaje de usuario IP: ${ip}`);
+                await HistoryHandler.saveMessage(ip, 'user', message || "[Archivo/Media]", 'text');
+            } catch (err) {
+                console.error('[Webchat Persistence Error] User message:', err);
+            }
 
             if (req.body.file) {
                 const file = req.body.file;
@@ -118,6 +127,8 @@ export const registerWebchatRoutes = (app: any, {
                     ASSISTANT_ID
                 );
                 session.addAssistantMessage(replyText);
+
+                // --- PERSISTENCIA PASO 2: La respuesta del asistente ya se guarda dentro de analizarYProcesarRespuestaAsistente ---
             }
             res.json({ reply: replyText });
         } catch (err) {
