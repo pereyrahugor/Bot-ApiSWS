@@ -237,7 +237,16 @@ export async function askWithFunctions(assistantId: string, message: string, sta
                         const consumo = Number(datos.saldos.saldoCuentaConsumo || 0);
                         const facturacion = Number(datos.saldos.saldoCuentaFacturacion || 0);
                         const saldoReal = consumo + facturacion;
-                        output = `Saldo total: ${saldoReal}`;
+                        
+                        // Verificar tipo de cliente desde el contexto
+                        const context = state.get('datosClienteContext') || {};
+                        const esFamilia = String(context.tipoCliente || '').toLowerCase() === 'familia';
+                        
+                        if (esFamilia) {
+                            output = `Saldo total: ${saldoReal}. Saldo Consumo: ${consumo}`;
+                        } else {
+                            output = `Saldo total: ${saldoReal}`;
+                        }
                     } else {
                         output = "No se pudieron obtener los saldos.";
                     }
@@ -529,6 +538,7 @@ export class AssistantResponseProcessor {
             apellido: '',
             direccion: '',
             numCliente: '',
+            tipoCliente: '',
             numIncidencias: 0,
             esCliente: 'No'
         };
@@ -539,6 +549,7 @@ export class AssistantResponseProcessor {
             apellido: data.apellido || current.apellido,
             direccion: data.direccion || data.domicilioCompleto || data.domicilio || current.direccion,
             numCliente: data.cliente_id || data.numCliente || current.numCliente,
+            tipoCliente: data.tipoCliente || current.tipoCliente,
             esCliente: (data.esCliente || (data.cliente_id || data.numCliente ? 'Si' : current.esCliente))
         };
 
@@ -1323,7 +1334,11 @@ export class AssistantResponseProcessor {
                     }
 
                     const resumen = esRespuestaExitosa(datos, apiResponse) 
-                        ? (datos.saldos ? `Saldo total: ${datos.saldos.saldoReal}` : `Saldo de cuenta: ${JSON.stringify(datos)}`) 
+                        ? (datos.saldos 
+                            ? (String((state.get('datosClienteContext') || {}).tipoCliente || '').toLowerCase() === 'familia'
+                                ? `Saldo total: ${datos.saldos.saldoReal}. Saldo Consumo: ${datos.saldos.saldoCuentaConsumo}`
+                                : `Saldo total: ${datos.saldos.saldoReal}`)
+                            : `Saldo de cuenta: ${JSON.stringify(datos)}`) 
                         : "No se pudo obtener el saldo de cuenta.";
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
                     await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);

@@ -865,6 +865,56 @@ export class HistoryHandler {
         }
         return data ? data.value : null;
     }
+
+    /**
+     * Obtiene el contexto del cliente guardado en metadata
+     */
+    static async getClientContext(chatId: string) {
+        try {
+            const { data } = await supabase
+                .from('chats')
+                .select('metadata')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+            
+            // Los datos que manejamos fuera de thread_id
+            return data?.metadata || null;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getClientContext:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Guarda el contexto del cliente en metadata, sin borrar el thread_id
+     */
+    static async saveClientContext(chatId: string, context: any) {
+        try {
+            // Obtener metadata actual para no perder el thread_id
+            const { data } = await supabase
+                .from('chats')
+                .select('metadata')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+
+            const currentMetadata = data?.metadata || {};
+            // Fusionamos preservando thread_id si existe
+            const threadId = currentMetadata.thread_id;
+            const updatedMetadata = { ...context, thread_id: threadId };
+
+            const { error } = await supabase
+                .from('chats')
+                .update({ metadata: updatedMetadata })
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID);
+
+            if (error) throw error;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en saveClientContext:', err);
+        }
+    }
 }
 
 // Inicializar base de datos al cargar el modulo (Quitado para evitar race condition, se llama en app.ts main)

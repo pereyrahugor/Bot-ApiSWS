@@ -51,6 +51,7 @@ export class AiManager {
 - Apellido: ${datosContext.apellido || 'No identificado'}
 - Dirección: ${datosContext.direccion || 'No registrada'}
 - Número de cliente: ${datosContext.numCliente || 'No asignado'}
+- Tipo cliente: ${datosContext.tipoCliente || 'No identificado'}
 - Incidencias generadas en esta sesión: ${datosContext.numIncidencias || 0}
 - Es cliente confirmado: ${datosContext.esCliente || 'No'}`;
         }
