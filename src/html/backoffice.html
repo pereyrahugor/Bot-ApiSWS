@@ -43,6 +43,9 @@
                 <span>🤖</span>
             </div>
             <h3 style="margin:0; font-size:1rem; flex:1; margin-left:12px;">{{BOT_NAME}}</h3>
+            <button class="btn-icon" onclick="openManualLeadModal()" title="Nuevo Lead Manual (Sin chat previo)" style="color: var(--accent);">
+                <i class="fas fa-user-plus"></i>
+            </button>
         </div>
 
         <div class="search-container">
@@ -127,7 +130,7 @@
     <div id="crm-panel">
         <div class="crm-header">
             <button class="btn-icon" onclick="toggleCRMPanel()"><i class="fas fa-times"></i></button>
-            <h3 style="margin:0;">Información del Lead</h3>
+            <h3 style="margin:0;">Ficha del Cliente</h3>
         </div>
         
         <div class="crm-content">
@@ -138,7 +141,24 @@
                 <label>Correo Electrónico</label>
                 <input type="email" id="crm-email" class="crm-input" placeholder="ejemplo@correo.com">
                 
-                <label>Fuente del Lead</label>
+                <label><i class="fas fa-id-card"></i> Cuil / Cuit / DNI</label>
+                <input type="text" id="crm-cuit" class="crm-input" placeholder="00-00000000-0">
+
+                <label><i class="fas fa-map-marker-alt"></i> Domicilio</label>
+                <input type="text" id="crm-address" class="crm-input" placeholder="Calle, Nro, Localidad...">
+
+                <label><i class="fas fa-file-invoice-dollar"></i> Situación Impositiva</label>
+                <select id="crm-tax-status" class="crm-input">
+                    <option value="Cons. Final">Cons. Final</option>
+                    <option value="Responsable Inscripto">Responsable Inscripto</option>
+                    <option value="Monotributo">Monotributo</option>
+                    <option value="Exento">Exento</option>
+                </select>
+
+                <label><i class="fas fa-shopping-bag"></i> Producto Ofrecido</label>
+                <input type="text" id="crm-product" class="crm-input" placeholder="Servicio/Producto...">
+                
+                <label><i class="fas fa-bullhorn"></i> Fuente / Canal</label>
                 <select id="crm-source" class="crm-input">
                     <option value="">Desconocida</option>
                     <option value="Instagram">Instagram</option>
@@ -146,14 +166,25 @@
                     <option value="WhatsApp">WhatsApp</option>
                     <option value="Web">Web</option>
                     <option value="Referido">Referido</option>
+                    <option value="Manual CRM">Manual CRM</option>
                 </select>
                 
-                <label>Notas / Observaciones</label>
-                <textarea id="crm-notes" class="crm-input" rows="4" placeholder="Escribe notas aquí..."></textarea>
+                <label><i class="fas fa-sticky-note"></i> Historial de Notas / Observaciones</label>
+                <textarea id="crm-notes" class="crm-input" rows="4" placeholder="Observaciones y comentarios..."></textarea>
                 
                 <button class="btn-primary" onclick="saveCRMDetails()" style="width:100%; margin-top:10px;">
-                    <i class="fas fa-save" style="margin-right:8px;"></i> Guardar Cambios
+                    <i class="fas fa-save" style="margin-right:8px;"></i> Guardar Ficha de Cliente
                 </button>
+            </div>
+
+            <div class="crm-divider"></div>
+
+            <div class="crm-section">
+                <h4 style="margin:0 0 10px 0;"><i class="fas fa-user-check"></i> Asignación de Operador</h4>
+                <label>Asignado a:</label>
+                <select id="crm-assigned-to" class="crm-input" onchange="assignChat(this.value)">
+                    <option value="">(Sin asignar)</option>
+                </select>
             </div>
 
             <div class="crm-divider"></div>
@@ -219,6 +250,52 @@
                 
                 <button class="btn-primary" onclick="createTicket()" style="width:100%; margin-top:10px;">
                     <i class="fas fa-save" style="margin-right:8px;"></i> Crear Ticket
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nuevo Lead Manual -->
+    <div id="manual-lead-modal" class="modal-overlay">
+        <div class="modal-content animate-pop" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3>🆕 Crear Nuevo Lead Manual</h3>
+                <button class="btn-icon" onclick="closeManualLeadModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 20px;">
+                    Crea un nuevo registro en el CRM y asignale un ticket inicial. Esto no envía mensajes por WhatsApp automáticamente.
+                </p>
+                
+                <label>Número de WhatsApp (con código de país)</label>
+                <input type="text" id="manual-lead-phone" class="crm-input" placeholder="Ej: 54911...">
+                
+                <label>Nombre Completo</label>
+                <input type="text" id="manual-lead-name" class="crm-input" placeholder="Nombre का cliente">
+                
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1">
+                        <label>Email</label>
+                        <input type="email" id="manual-lead-email" class="crm-input" placeholder="Opcional">
+                    </div>
+                    <div style="flex:1">
+                        <label>CUIT / DNI</label>
+                        <input type="text" id="manual-lead-cuit" class="crm-input" placeholder="Opcional">
+                    </div>
+                </div>
+
+                <label>Situación Impositiva</label>
+                <select id="manual-lead-tax" class="crm-input">
+                    <option value="Cons. Final">Cons. Final</option>
+                    <option value="Responsable Inscripto">Responsable Inscripto</option>
+                    <option value="Monotributo">Monotributo</option>
+                </select>
+
+                <label>Primer mensaje o motivo (Generará un ticket)</label>
+                <textarea id="manual-lead-msg" class="crm-input" rows="3" placeholder="Ej: Consulta por aire acondicionado..."></textarea>
+                
+                <button class="btn-primary" onclick="createManualLead()" style="width:100%; margin-top:10px;">
+                    <i class="fas fa-check-circle" style="margin-right:8px;"></i> Dar de Alta Lead
                 </button>
             </div>
         </div>

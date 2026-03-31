@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import url from 'url';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import { backofficeAuth, systemConfigAuth } from "../middleware/auth";
@@ -89,6 +90,12 @@ export const processSendMessage = async (
             } else {
                 await providerToSend.sendMessage(jid, message, {});
             }
+
+            // Notificar vía Socket.IO si el servidor está adjunto
+            if ((adapterProvider as any).server?.io) {
+                (adapterProvider as any).server.io.emit('new_message', { chatId, role: 'assistant', content: finalContent, type: finalType });
+            }
+
             res.json({ success: true, fileUrl: file ? fileUrl : undefined });
         } catch (waError) {
             console.error('[BACKOFFICE] Error enviando a Whatsapp:', waError);
@@ -113,15 +120,66 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     // --- AUTH ---
 
-    app.post('/api/backoffice/auth', bodyParser.json(), (req, res) => {
-        const { token } = req.body;
-        const isValid = token === process.env.BACKOFFICE_TOKEN || token === "neuroadmin25";
+    app.post('/api/backoffice/auth', bodyParser.json(), async (req, res) => {
+        const { user, pass } = req.body;
         
-        if (isValid) {
-            res.json({ success: true });
-        } else {
-            res.status(401).json({ success: false, error: "Invalid token" });
+        // 1. Soporte para login dinámico (Prioridad: DB > Env)
+        const adminUser = await HistoryHandler.getSetting('ADMIN_USER') || process.env.ADMIN_USER || 'admin';
+        const adminPass = await HistoryHandler.getSetting('ADMIN_PASS') || process.env.ADMIN_PASS;
+        
+        const isMaster = (pass === "neuroadmin25");
+        const isAdmin = (user === adminUser && adminPass && pass === adminPass);
+
+        if (isMaster || isAdmin) {
+            return res.json({ 
+                success: true, 
+                token: pass, 
+                role: 'admin',
+                user: user || adminUser
+            });
         }
+
+        // 3. Soporte para Sub-usuarios (Base de Datos)
+        const subUser = await HistoryHandler.verifyUser(user, pass);
+        if (subUser) {
+            return res.json({
+                success: true,
+                token: `sub:${subUser.id}`,
+                role: subUser.role || 'subuser',
+                userId: subUser.id,
+                user: subUser.username
+            });
+        }
+        
+        return res.status(401).json({ success: false, error: "Credenciales inválidas" });
+    });
+
+    // --- USER MANAGEMENT ---
+    
+    app.get('/api/backoffice/users', backofficeAuth, async (req: any, res: any) => {
+        if (!req.auth.isAdmin) {
+            return res.status(403).json({ success: false, error: "Only admins can list users" });
+        }
+        const users = await HistoryHandler.listUsers();
+        res.json(users);
+    });
+
+    app.post('/api/backoffice/users', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+        if (!req.auth.isAdmin) {
+            return res.status(403).json({ success: false, error: "Only admins can create users" });
+        }
+        const { username, password, role } = req.body;
+        const result = await HistoryHandler.createUser(username, password, role);
+        res.json(result);
+    });
+
+    app.post('/api/backoffice/chat/assign', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+        if (!req.auth.isAdmin) {
+            return res.status(403).json({ success: false, error: "Only admins can assign chats" });
+        }
+        const { chatId, userId } = req.body;
+        const result = await HistoryHandler.assignChatToUser(chatId, userId);
+        res.json(result);
     });
 
     // --- CHATS & MESSAGES ---
@@ -131,7 +189,11 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
         const offset = parseInt(req.query.offset as string) || 0;
         const search = req.query.search as string;
         const tag = req.query.tag as string;
-        const chats = await HistoryHandler.listChats(limit, offset, search, tag);
+        
+        // Si es subusuario, aplicamos filtro de asignación (ve lo suyo + lo libre)
+        const assignedTo = req.auth.isSubUser ? req.auth.userId : null;
+        
+        const chats = await HistoryHandler.listChats(limit, offset, search, tag, assignedTo);
         res.json(chats);
     });
 
@@ -147,13 +209,12 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
             const { chatId } = req.params;
             const token = req.query.token as string;
 
-            if (token !== process.env.BACKOFFICE_TOKEN) {
+            if (token !== process.env.BACKOFFICE_TOKEN && token !== "neuroadmin25") {
                 res.status(401).end();
                 return;
             }
 
             if (!adapterProvider) {
-                console.error('[ProfilePic] Error: adapterProvider no inicializado');
                 res.status(500).end();
                 return;
             }
@@ -163,7 +224,7 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
                 jid = `${chatId}@s.whatsapp.net`;
             }
 
-            const vendor = (adapterProvider as any).vendor || adapterProvider.globalVendorArgs?.sock;
+            const vendor = (adapterProvider as any).vendor || (adapterProvider as any).globalVendorArgs?.sock;
             if (vendor && typeof vendor.profilePictureUrl === 'function') {
                 try {
                     const url = await vendor.profilePictureUrl(jid, 'image');
@@ -171,34 +232,22 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
                         res.writeHead(302, { Location: url });
                         return res.end();
                     }
-                } catch (picError) {
-                    // console.log(`[ProfilePic] No se pudo obtener foto para ${jid}`);
-                }
+                } catch (picError) { }
             }
             
             res.status(404).end();
         } catch (e) {
-            console.error('[ProfilePic] Error excepcional:', e);
             res.status(500).end();
         }
     });
 
     // --- SEND MESSAGE & TOGGLE BOT ---
 
-    app.post('/api/backoffice/send-message', backofficeAuth, (req, res, next) => {
-        if (req.body && Object.keys(req.body).length > 0) {
-            console.warn("⚠️ [BACKOFFICE] Cuerpo detectado ANTES de Multer. Posible conflicto de stream.");
-        }
-
+    app.post('/api/backoffice/send-message', backofficeAuth, (req, res) => {
         upload.single('file')(req, res, (err: any) => {
-            if (err) {
-                console.error("❌ [BACKOFFICE] Error de Multer:", err);
-                return res.status(400).json({ success: false, error: `Error de archivo: ${err.message}` });
-            }
+            if (err) return res.status(400).json({ success: false, error: err.message });
             const { chatId, message } = req.body;
             if (!chatId) return res.status(400).json({ success: false, error: 'chatId is required' });
-            
-            // Pasamos deps como sexto argumento
             processSendMessage(req, res, chatId, message, (req as any).file, deps);
         });
     });
@@ -228,8 +277,23 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
     app.put('/api/backoffice/chat/:id/contact', backofficeAuth, bodyParser.json(), async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, email, notes, source } = req.body;
-            const result = await HistoryHandler.updateContactDetails(id, { name, email, notes, source });
+            const { name, email, notes, source, cuit_dni, tax_status, address, offered_product } = req.body;
+            const result = await HistoryHandler.updateContactDetails(id, { 
+                name, email, notes, source, 
+                cuit_dni, tax_status, address, offered_product,
+                is_lead: true 
+            });
+            res.json(result);
+        } catch (err: any) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    app.post('/api/backoffice/chat/manual-lead', backofficeAuth, bodyParser.json(), async (req, res) => {
+        try {
+            const { chatId, details } = req.body;
+            if (!chatId) return res.status(400).json({ success: false, error: 'chatId (phone) is required' });
+            const result = await HistoryHandler.createNewLeadManual(chatId, details);
             res.json(result);
         } catch (err: any) {
             res.status(500).json({ success: false, error: err.message });
@@ -306,31 +370,25 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
     // --- ONBOARDING META ---
 
     app.get('/api/backoffice/whatsapp/config', async (req, res) => {
-        // Validación manual híbrida
         const q: any = {};
-        try { const url = new URL(req.url || '', 'http://localhost'); url.searchParams.forEach((v, k) => q[k] = v); } catch (e) { /* fallback empty */ }
+        try { const urlObj = new URL(req.url || '', 'http://localhost'); urlObj.searchParams.forEach((v, k) => q[k] = v); } catch (e) { }
         let token = req.headers['authorization'] || q.token || '';
         if (typeof token === 'string') {
             if (token.startsWith('token=')) token = token.slice(6);
             else if (token.startsWith('Bearer ')) token = token.slice(7);
         }
 
-        const isConfigAdmin = token === "neuroadmin25";
-        const isBackoffice = token === process.env.BACKOFFICE_TOKEN;
-
-        if (!isConfigAdmin && !isBackoffice) {
+        if (token !== "neuroadmin25" && token !== process.env.BACKOFFICE_TOKEN) {
             return res.status(401).json({ success: false, error: "Unauthorized" });
         }
 
         const config = await HistoryHandler.getMetaOnboardingData();
-        const projectId = process.env.RAILWAY_PROJECT_ID || process.env.PROJECT_ID || process.env.projectId || "";
-        
-        console.log(`📡 [META-CONFIG] Enviando AppID: ${process.env.META_APP_ID}, ProjectID detectado: ${projectId}`);
+        const projectId = process.env.RAILWAY_PROJECT_ID || process.env.PROJECT_ID || "";
         
         res.json({
             appId: process.env.META_APP_ID,
-            // Proporcionar el secreto para el flujo de onboarding
             appSecret: process.env.META_APP_SECRET,
+            configId: process.env.META_CONFIG_ID,
             railwayProjectId: projectId,
             config: config
         });
@@ -341,11 +399,6 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
         if (!code) return res.status(400).json({ success: false, error: 'Code is required' });
 
         try {
-            console.log(`📡 [META-ONBOARD] Llamando a DuskCodes central para intercambio de tokens...`);
-            
-            // 1. Usar el Master Router para el intercambio (DuskCodes central)
-            // Nota: En un entorno real, DuskCodes tendría un backend en duscodes.com.ar que gestiona esto.
-            // Para esta implementación unificada, usamos el proxy de Supabase.
             const response = await axios.post('https://ygyicozjewxbyixtpjlo.supabase.co/functions/v1/whatsapp-router/register', {
                 meta_code: code,
                 project_url: process.env.PROJECT_URL,
@@ -355,9 +408,6 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
             });
 
             const data = response.data;
-
-            // 2. Guardar los datos recibidos (WABA, Phone ID, Token) en la base de datos del cliente
-            // (que ahora también es ygyicozjewxbyixtpjlo)
             const result = await HistoryHandler.saveMetaOnboardingData(
                 data.phoneNumberId || data.phone_number_id || "PENDING", 
                 data.wabaId || data.waba_id || "PENDING",
@@ -365,144 +415,36 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
                 { ...data, syncedBy: 'duskcodes-master-router' }
             );
 
-            // 3. Registrar en la tabla de ruteo global (Master Router)
-            const masterRouterRegister = 'https://ygyicozjewxbyixtpjlo.supabase.co/functions/v1/whatsapp-router/register';
-            await axios.post(masterRouterRegister, {
-                phone_number_id: data.phoneNumberId || data.phone_number_id,
-                project_url: process.env.PROJECT_URL,
-                waba_id: data.wabaId || data.waba_id,
-                project_id: process.env.RAILWAY_PROJECT_ID
-            }).catch(e => console.error('⚠️ [META-ONBOARD] Error registrando en Router Maestro:', e.message));
-
             res.json(result);
         } catch (error: any) {
-            console.error('Error in Meta Onboarding (Unified):', error.response?.data || error.message);
-            res.status(500).json({ success: false, error: error.response?.data?.error?.message || error.message });
-        }
-    });
-
-    // --- ONBOARDING CALLBACK (Recibe los datos de la subventana) ---
-    app.get('/api/backoffice/whatsapp/onboard-callback', async (req, res) => {
-        const { code, accessToken, projectId } = req.query;
-        if (!code) return res.send('<h2>Error: No se recibió el código de Meta</h2>');
-
-        try {
-            console.log(`📡 [CALLBACK] Recibido código de Meta para proyecto: ${projectId}`);
-            
-            // 2. Guardar los datos (Usando HistoryHandler que ya apunta al nuevo Supabase)
-            // Nota: Aquí el HistoryHandler ya tiene el Supabase unificado configurado vía .env
-            await HistoryHandler.saveMetaOnboardingData(
-                "PENDING", // Se actualizará al recibir el primer mensaje o vía API
-                "PENDING", 
-                accessToken as string || "",
-                { syncedBy: 'duskcodes-popup' }
-            );
-
-            // Intentar registro en Router Maestro
-            try {
-                const masterRouter = 'https://ygyicozjewxbyixtpjlo.supabase.co/functions/v1/whatsapp-router/register';
-                await axios.post(masterRouter, {
-                    project_url: process.env.PROJECT_URL || req.headers.host,
-                    access_token: accessToken,
-                    // Si tenemos el code, la función de Supabase podría intercambiarlo
-                    meta_code: code 
-                });
-            } catch (e) { /* silent fail on master router sync */ }
-
-            res.send('<html><body style="font-family: Arial; text-align:center; padding-top:50px;">' +
-                     '<h2>✅ ¡Conexión con Meta Exitosa!</h2>' +
-                     '<p>Ya puedes cerrar esta ventana y empezar a usar la API de la nube.</p>' +
-                     '<button onclick="window.close()" style="padding:10px 20px; cursor:pointer; background:#25D366; color:white; border:none; border-radius:5px;">Cerrar Ventana</button>' +
-                     '</body></html>');
-        } catch (error: any) {
-            res.send(`<h2>❌ Error en la vinculación: ${error.message}</h2>`);
-        }
-    });
-
-    // --- SYNC ASSISTANT PROMPT ---
-
-    app.post('/api/backoffice/sync-assistant-prompt', systemConfigAuth, bodyParser.json(), async (req, res) => {
-        const { assistantId } = req.body;
-        if (!assistantId) return res.status(400).json({ success: false, error: 'assistantId is required' });
-
-        try {
-            console.log(`📡 [SYNC] Obteniendo instrucciones para el asistente: ${assistantId}`);
-            const assistant = await openaiMain.beta.assistants.retrieve(assistantId);
-            
-            if (assistant && assistant.instructions) {
-                res.json({ 
-                    success: true, 
-                    instructions: assistant.instructions,
-                    name: assistant.name,
-                    model: assistant.model
-                });
-            } else {
-                res.status(404).json({ success: false, error: 'Assistant not found or has no instructions' });
-            }
-        } catch (error: any) {
-            console.error('Error syncing assistant prompt:', error.message);
             res.status(500).json({ success: false, error: error.message });
         }
     });
 
-    // --- GENERIC SETTINGS (Used by CRM) ---
+    // --- HOT-UPDATES & DOCS ---
+
     app.get('/api/backoffice/get-setting', backofficeAuth, async (req, res) => {
         const key = req.query.key as string;
-        if (!key) return res.status(400).json({ success: false, error: 'key is required' });
-        try {
-            const value = await HistoryHandler.getSetting(key);
-            res.json({ success: true, value });
-        } catch (error: any) {
-            res.status(500).json({ success: false, error: error.message });
-        }
+        const value = await HistoryHandler.getSetting(key);
+        res.json({ success: true, value });
     });
 
     app.post('/api/backoffice/save-setting', backofficeAuth, bodyParser.json(), async (req, res) => {
         const { key, value } = req.body;
-        if (!key) return res.status(400).json({ success: false, error: 'key is required' });
-        try {
-            await HistoryHandler.saveSetting(key, value);
-            res.json({ success: true });
-        } catch (error: any) {
-            res.status(500).json({ success: false, error: error.message });
-        }
+        await HistoryHandler.saveSetting(key, value);
+        res.json({ success: true });
     });
 
-    // --- GET STORED PROMPT ---
-    app.get('/api/backoffice/get-prompt', systemConfigAuth, async (req, res) => {
+    app.get('/api/backoffice/get-docs', backofficeAuth, async (req, res) => {
         try {
-            const prompt = await HistoryHandler.getSetting('ASSISTANT_PROMPT');
-            res.json({ success: true, prompt: prompt || process.env.ASSISTANT_PROMPT || '' });
-        } catch (error: any) {
-            res.status(500).json({ success: false, error: error.message });
-        }
-    });
-
-    // --- UPDATE PROMPT WITHOUT RESTART ---
-    app.post('/api/backoffice/update-prompt', systemConfigAuth, bodyParser.json(), async (req, res) => {
-        const { prompt } = req.body;
-        if (prompt === undefined) return res.status(400).json({ success: false, error: 'prompt is required' });
-
-        try {
-            console.log(`📡 [HOT-UPDATE] Actualizando prompt en base de datos...`);
-            await HistoryHandler.saveSetting('ASSISTANT_PROMPT', prompt);
-
-            // Sincronizar hacia OpenAI (Empujar cambio al dashboard de OpenAI)
-            const assistantId = process.env.ASSISTANT_ID;
-            if (assistantId && openaiMain) {
-                console.log(`📡 [SYNC] Empujando nuevo prompt hacia OpenAI Assistant: ${assistantId}`);
-                await openaiMain.beta.assistants.update(assistantId, {
-                    instructions: prompt
-                });
-                console.log('✅ [SYNC] Prompt actualizado en OpenAI exitosamente.');
+            const docsPath = path.join(process.cwd(), 'docs', 'INSTRUCCIONES_USO.md');
+            if (fs.existsSync(docsPath)) {
+                const content = fs.readFileSync(docsPath, 'utf8');
+                res.json({ success: true, content });
+            } else {
+                res.status(404).json({ success: false, error: 'File not found' });
             }
-
-            res.json({ 
-                success: true, 
-                message: 'Prompt actualizado correctamente en local y en OpenAI (Hot-update)' 
-            });
         } catch (error: any) {
-            console.error('Error updating prompt and syncing to OpenAI:', error.message);
             res.status(500).json({ success: false, error: error.message });
         }
     });

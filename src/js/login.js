@@ -1,23 +1,37 @@
 async function login() {
-    const token = document.getElementById('token').value;
+    const user = document.getElementById('user').value.trim();
+    const pass = document.getElementById('pass').value.trim();
     const errorDiv = document.getElementById('error');
+    const btn = document.getElementById('login-btn');
     const urlParams = new URLSearchParams(window.location.search);
     const target = urlParams.get('target');
     
-    if (!token) return;
+    if (!pass) {
+        showError('⚠️ La contraseña es obligatoria');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validando...';
+    errorDiv.style.display = 'none';
 
     try {
-        // Enviar el token al servidor para validación genérica 
-        // (El servidor responderá success si el token coincide con CUALQUIERA de las claves válidas)
-        // Pero el cliente guardará el que corresponda
         const response = await fetch('/api/backoffice/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token })
+            body: JSON.stringify({ user, pass })
         });
 
         const result = await response.json();
+
         if (result.success) {
+            const token = result.token; // El token puede ser el de admin o el de subuser (id)
+            
+            // Guardamos información clave del usuario
+            localStorage.setItem('user_role', result.role || 'subuser'); // admin o subuser
+            localStorage.setItem('user_id', result.userId || '');
+            localStorage.setItem('user_name', result.user || user);
+
             if (target === 'system-config') {
                 localStorage.setItem('system_config_token', token);
                 window.location.href = '/system-config';
@@ -26,16 +40,26 @@ async function login() {
                 window.location.href = '/backoffice';
             }
         } else {
-            errorDiv.innerText = 'Token Inválido';
-            errorDiv.style.display = 'block';
+            showError('🚫 Usuario o Contraseña Inválidos');
         }
     } catch (e) {
         console.error('Error de autenticación:', e);
-        errorDiv.innerText = 'Error al conectar con el servidor';
-        errorDiv.style.display = 'block';
+        showError('❌ Error al conectar con el servidor');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Entrar al Sistema</span> <i class="fas fa-arrow-right"></i>';
     }
 }
 
-document.getElementById('token')?.addEventListener('keypress', (e) => {
+function showError(msg) {
+    const errorDiv = document.getElementById('error');
+    errorDiv.querySelector('span').innerText = msg;
+    errorDiv.style.display = 'flex';
+    errorDiv.classList.add('animate-shake');
+    setTimeout(() => errorDiv.classList.remove('animate-shake'), 500);
+}
+
+// Escuchar Enter en la página completa
+document.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') login();
 });

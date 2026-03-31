@@ -508,8 +508,13 @@ function populateCRMFields(chat) {
     if (!chat) return;
     document.getElementById('crm-name').value = chat.name || '';
     document.getElementById('crm-email').value = chat.email || '';
+    document.getElementById('crm-cuit').value = chat.cuit || '';
+    document.getElementById('crm-address').value = chat.address || '';
+    document.getElementById('crm-tax-status').value = chat.tax_status || 'Cons. Final';
+    document.getElementById('crm-product').value = chat.offered_product || '';
     document.getElementById('crm-source').value = chat.source || '';
     document.getElementById('crm-notes').value = chat.notes || '';
+    document.getElementById('crm-assigned-to').value = chat.assigned_to || '';
 }
 
 async function saveCRMDetails() {
@@ -518,6 +523,10 @@ async function saveCRMDetails() {
     const details = {
         name: document.getElementById('crm-name').value,
         email: document.getElementById('crm-email').value,
+        cuit: document.getElementById('crm-cuit').value,
+        address: document.getElementById('crm-address').value,
+        tax_status: document.getElementById('crm-tax-status').value,
+        offered_product: document.getElementById('crm-product').value,
         source: document.getElementById('crm-source').value,
         notes: document.getElementById('crm-notes').value
     };
@@ -974,12 +983,103 @@ function launchMetaOnboarding() {
       });
 }
 
+// --- CRM MANUAL LEAD & ASSIGNMENT ---
+
+function openManualLeadModal() {
+    document.getElementById('manual-lead-modal').classList.add('active');
+    document.getElementById('manual-lead-phone').focus();
+}
+
+function closeManualLeadModal() {
+    document.getElementById('manual-lead-modal').classList.remove('active');
+}
+
+async function createManualLead() {
+    const phone = document.getElementById('manual-lead-phone').value.trim();
+    const name = document.getElementById('manual-lead-name').value.trim();
+    const email = document.getElementById('manual-lead-email').value.trim();
+    const cuit = document.getElementById('manual-lead-cuit').value.trim();
+    const taxStatus = document.getElementById('manual-lead-tax').value;
+    const initialMsg = document.getElementById('manual-lead-msg').value.trim();
+
+    if (!phone || !name || !initialMsg) {
+        showToast('⚠️ Teléfono, nombre y mensaje son obligatorios', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/backoffice/chat/manual-lead?token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone,
+                name,
+                email,
+                cuit,
+                taxStatus,
+                message: initialMsg
+            })
+        });
+
+        if (res.ok) {
+            showToast('✅ Lead creado exitosamente');
+            closeManualLeadModal();
+            fetchChats(true);
+            // Limpiar
+            document.getElementById('manual-lead-phone').value = '';
+            document.getElementById('manual-lead-name').value = '';
+            document.getElementById('manual-lead-email').value = '';
+            document.getElementById('manual-lead-cuit').value = '';
+            document.getElementById('manual-lead-msg').value = '';
+        } else {
+            const err = await res.json();
+            showToast('❌ ' + (err.error || 'Error al crear lead'), 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Error de conexión', 'error');
+    }
+}
+
+async function fetchUsers() {
+    try {
+        const res = await fetch(`/api/backoffice/users?token=${token}`);
+        const users = await res.json();
+        const select = document.getElementById('crm-assigned-to');
+        if (select) {
+            select.innerHTML = '<option value="">(Sin asignar)</option>' + 
+                users.map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+        }
+    } catch (e) { console.error('Error fetching users:', e); }
+}
+
+async function assignChat(userId) {
+    if (!activeChatId) return;
+    try {
+        const res = await fetch(`/api/backoffice/chat/assign?token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chatId: activeChatId, userId: userId || null })
+        });
+        if (res.ok) {
+            showToast('✅ Chat asignado correctamente');
+            fetchChats(true);
+        } else {
+            showToast('❌ Error al asignar chat', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Error de conexión', 'error');
+    }
+}
+
 // Inicialización
 fetchPendingTicketsCount();
 setInterval(fetchPendingTicketsCount, 30000);
 
 fetchChats(true);
 fetchBotTags();
+fetchUsers();
 
 // Listeners para Infinite Scroll
 document.getElementById('chat-list').addEventListener('scroll', function() {
