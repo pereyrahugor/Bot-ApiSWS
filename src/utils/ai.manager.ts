@@ -206,11 +206,24 @@ export class AiManager {
             return state;
 
         } catch (error: any) {
+            console.error(`🔥 [AiManager Critical Error] for ${ctx.from}:`, error?.message || error);
+            
+            // 1. Reportar error de forma segura
             await this.errorReporter.reportError(error, ctx.from, `https://wa.me/${ctx.from}`);
 
-            if (ctx.type === EVENTS.VOICE_NOTE) return gotoFlow(this.flows.welcomeFlowVoice);
-            if (ctx.type === EVENTS.ACTION) return gotoFlow(this.flows.welcomeFlowButton);
-            return gotoFlow(this.flows.welcomeFlowTxt);
+            // 2. Notificar al usuario (opcional, para que no piense que el bot está muerto)
+            try {
+                const errorMsg = "⚠️ Lo siento, ocurrió un error interno al procesar tu solicitud. Por favor, intenta de nuevo en unos momentos.";
+                await flowDynamic([{ body: errorMsg }]);
+                // No guardamos este mensaje de error en el historial para no ensuciar el CRM, 
+                // o lo guardamos como 'system' si es necesario.
+            } catch (notifyError) {
+                console.error("❌ No se pudo notificar el error al usuario:", notifyError);
+            }
+
+            // ⚠️ IMPORTANTE: No hacemos gotoFlow de vuelta al welcomeFlowTxt porque causaría un bucle infinito
+            // de re-encolamiento si el error persiste.
+            return state;
         }
     };
 }

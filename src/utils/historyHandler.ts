@@ -56,6 +56,31 @@ export interface Message {
 
 export class HistoryHandler {
 
+    static async getClientContext(chatId: string) {
+        try {
+            const { data, error } = await supabase
+                .from('chats')
+                .select('*')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+
+            if (error) return null;
+            if (!data) return null;
+
+            return {
+                nombre: data.name,
+                direccion: data.address,
+                email: data.email,
+                dni_cuit: data.cuit_dni,
+                tax_status: data.tax_status,
+                offered_product: data.offered_product
+            };
+        } catch (err) {
+            return null;
+        }
+    }
+
     static async initDatabase() {
         if (!supabase) return;
         console.log('🔍 [HistoryHandler] Verificando tablas de historial...');

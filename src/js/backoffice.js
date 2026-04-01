@@ -272,8 +272,14 @@ async function fetchMessages(chatId, reset = false) {
         const container = document.getElementById('messages');
         const oldScrollHeight = container.scrollHeight;
 
-        // Concatenar al inicio (los nuevos/viejos mensajes según el offset)
-        allMessages = [...newMessages, ...allMessages];
+        if (reset) {
+            allMessages = newMessages;
+        } else {
+            // Evitar duplicados basado en ID o timestamp+contenido si no hay ID
+            const existingKeys = new Set(allMessages.map(m => m.id || `${m.created_at}_${m.content}`));
+            const filteredNew = newMessages.filter(m => !existingKeys.has(m.id || `${m.created_at}_${m.content}`));
+            allMessages = [...filteredNew, ...allMessages];
+        }
         
         renderMessages();
 
@@ -283,7 +289,7 @@ async function fetchMessages(chatId, reset = false) {
             container.scrollTop = container.scrollHeight - oldScrollHeight;
         }
 
-        messageOffset += newMessages.length;
+        messageOffset = allMessages.length;
     } catch (e) {
         console.error(e);
     } finally {

@@ -11,26 +11,43 @@ class ErrorReporter {
     }
 
     async reportError(error: Error, userId: string, userLink: string) {
-        if (!this.provider || !this.groupId) {
-            console.warn("⚠️ [ErrorReporter] No se puede reportar el error (falta provider o groupId)");
-            return;
-        }
-
-        const errorMessage = `🤖 *Error Detectado*\n\n` +
-                             `👤 *Usuario:* ${userId}\n` +
-                             `🔗 *Enlace:* ${userLink}\n\n` +
-                             `❌ *Error:* ${error.message || String(error)}\n\n` +
-                             `⚠️ _Se recomienda verificar manualmente._`;
-
         try {
-            // Intentar usar sendText como método más directo para mensajes planos si existe
-            if ((this.provider as any).sendText) {
-                await (this.provider as any).sendText(this.groupId, errorMessage);
-            } else {
-                await this.provider.sendMessage(this.groupId, errorMessage, {});
+            // 1. Verificaciones básicas de configuración
+            if (!this.provider || !this.groupId) {
+                return;
             }
-        } catch (sendError) {
-            console.error("❌ [ErrorReporter] Fallo crítico al enviar reporte al grupo:", sendError?.message || sendError);
+
+            // 2. Verificación de estado de conexión (evitar 'Cannot read properties of undefined (reading id)')
+            // El error suele venir de que this.provider.vendor es undefined si no hay sesión activa.
+            const isReady = !!(
+                (this.provider as any).vendor?.user || 
+                (this.provider as any).globalVendorArgs?.sock?.user
+            );
+
+            if (!isReady) {
+                console.warn("⚠️ [ErrorReporter] El proveedor no está conectado. No se puede enviar el reporte.");
+                return;
+            }
+
+            const errorMessage = `🤖 *Error Detectado*\n\n` +
+                                 `👤 *Usuario:* ${userId}\n` +
+                                 `🔗 *Enlace:* ${userLink}\n\n` +
+                                 `❌ *Error:* ${error.message || String(error)}\n\n` +
+                                 `⚠️ _Se recomienda verificar manualmente._`;
+
+            // 3. Intento de envío con fallback
+            try {
+                if ((this.provider as any).sendText) {
+                    await (this.provider as any).sendText(this.groupId, errorMessage);
+                } else {
+                    await this.provider.sendMessage(this.groupId, errorMessage, {});
+                }
+            } catch (sendError) {
+                console.error("❌ [ErrorReporter] Error interno al intentar enviar reporte:", sendError?.message || sendError);
+            }
+        } catch (fatal) {
+            // Este bloque asegura que NADA que pase aquí rompa el flujo principal del bot
+            console.error("🔥 [ErrorReporter] Error fatal inesperado:", fatal?.message || fatal);
         }
     }
 }

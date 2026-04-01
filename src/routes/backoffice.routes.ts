@@ -224,17 +224,26 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
                 jid = `${chatId}@s.whatsapp.net`;
             }
 
-            const vendor = (adapterProvider as any).vendor || (adapterProvider as any).globalVendorArgs?.sock;
-            if (vendor && typeof vendor.profilePictureUrl === 'function') {
-                try {
-                    const url = await vendor.profilePictureUrl(jid, 'image');
-                    if (url) {
-                        res.writeHead(302, { Location: url });
-                        return res.end();
+            const providers = [adapterProvider, deps.groupProvider].filter(p => !!p);
+            let url = null;
+
+            for (const provider of providers) {
+                const vendor = (provider as any).vendor || (provider as any).globalVendorArgs?.sock;
+                if (vendor && typeof vendor.profilePictureUrl === 'function') {
+                    try {
+                        url = await vendor.profilePictureUrl(jid, 'image');
+                        if (url) break;
+                    } catch (picError) { 
+                        // console.error(`Error fetching pic from ${provider.constructor.name}:`, picError.message);
                     }
-                } catch (picError) { }
+                }
             }
-            
+
+            if (url) {
+                res.writeHead(302, { Location: url });
+                return res.end();
+            }
+
             res.status(404).end();
         } catch (e) {
             res.status(500).end();
