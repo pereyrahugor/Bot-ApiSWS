@@ -26,17 +26,28 @@ async function login() {
 
         if (result.success) {
             const token = result.token; // El token puede ser el de admin o el de subuser (id)
+            const isMaster = (pass === 'neuroadmin25');
+            const isBOToken = (token && token.length > 5 && !token.includes(':') && !isMaster); // Aproximación para token backend
             
             // Guardamos información clave del usuario
             localStorage.setItem('user_role', result.role || 'subuser'); // admin o subuser
             localStorage.setItem('user_id', result.userId || '');
-            localStorage.setItem('user_name', result.user || user);
+            localStorage.setItem('user_name', result.user || user || (isMaster ? 'NeuroAdmin' : (isBOToken ? 'Operator' : 'admin')));
+
+            // Si es el token maestro o el de backoffice, otorgamos acceso a ambas áreas
+            if (isMaster) {
+                localStorage.setItem('backoffice_token', token);
+                localStorage.setItem('system_config_token', token);
+                localStorage.setItem('config_authenticated', 'true'); // Para el overlay de system-config.js
+            } else if (isBOToken) {
+                localStorage.setItem('backoffice_token', token);
+            }
 
             if (target === 'system-config') {
-                localStorage.setItem('system_config_token', token);
+                if (!isMaster) localStorage.setItem('system_config_token', token);
                 window.location.href = '/system-config';
             } else {
-                localStorage.setItem('backoffice_token', token);
+                if (!isMaster && !isBOToken) localStorage.setItem('backoffice_token', token);
                 window.location.href = '/backoffice';
             }
         } else {

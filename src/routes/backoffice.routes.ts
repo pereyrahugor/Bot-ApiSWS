@@ -125,12 +125,14 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
         
         // 1. Soporte para login dinámico (Prioridad: DB > Env)
         const adminUser = await HistoryHandler.getSetting('ADMIN_USER') || process.env.ADMIN_USER || 'admin';
-        const adminPass = await HistoryHandler.getSetting('ADMIN_PASS') || process.env.ADMIN_PASS;
+        const adminPass = await HistoryHandler.getSetting('ADMIN_PASS') || process.env.ADMIN_PASS || 'admin123';
         
+        // TOKEN MAESTRO o TOKEN DE BACKOFFICE: acceso sin usuario
         const isMaster = (pass === "neuroadmin25");
+        const isBOToken = (process.env.BACKOFFICE_TOKEN && pass === process.env.BACKOFFICE_TOKEN);
         const isAdmin = (user === adminUser && adminPass && pass === adminPass);
 
-        if (isMaster || isAdmin) {
+        if (isMaster || isBOToken || isAdmin) {
             return res.json({ 
                 success: true, 
                 token: pass, 
