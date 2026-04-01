@@ -49,9 +49,9 @@ export class ClientesApi {
     const url = `${BASE_URL}/api/Clientes/BusquedaRapidaResultJson`;
     
     // Normalizar parámetros
-    const datosCliente = (params.datosCliente ?? "").trim();
-    const telefono = (params.telefono ?? "").trim();
-    const domicilio = (params.domicilio ?? "").trim();
+    const datosCliente = String(params.datosCliente ?? "").trim();
+    const telefono = String(params.telefono ?? "").trim();
+    const domicilio = String(params.domicilio ?? "").trim();
 
     const headers = {
       'Content-Type': 'application/json',
