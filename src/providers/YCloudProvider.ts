@@ -42,30 +42,34 @@ class YCloudProvider extends ProviderClass {
         if (!msg) return 'no-file';
 
         let mediaId = '';
+        let mediaUrl = '';
         let ext = 'ogg';
 
-        if (msg.audio?.id) {
-            mediaId = msg.audio.id;
-        } else if (msg.image?.id) {
-            mediaId = msg.image.id;
-            ext = 'jpg';
-        } else if (msg.video?.id) {
-            mediaId = msg.video.id;
-            ext = 'mp4';
-        } else if (msg.document?.id) {
-            mediaId = msg.document.id;
-            ext = 'pdf';
-        } else if (msg.voice?.id) {
-            mediaId = msg.voice.id;
-        } else {
-            const media = msg[msg.type];
-            if (media && media.id) {
-                mediaId = media.id;
+        // Intentar obtener el objeto de media de diversas formas
+        const mediaObj = msg.audio || msg.image || msg.video || msg.document || msg.voice || msg[msg.type];
+
+        if (mediaObj) {
+            mediaId = mediaObj.id || '';
+            mediaUrl = mediaObj.link || mediaObj.url || '';
+            
+            // Determinar extensión por tipo de mensaje
+            if (msg.image || msg.type === 'image') ext = 'jpg';
+            else if (msg.video || msg.type === 'video') ext = 'mp4';
+            else if (msg.document || msg.type === 'document') ext = 'pdf';
+            else if (msg.audio || msg.voice || msg.type === 'audio' || msg.type === 'voice') ext = 'ogg';
+
+            // Refinar extensión si hay un mime_type explícito
+            const mime = mediaObj.mime_type || mediaObj.mimetype;
+            if (mime) {
+                if (mime.includes('audio')) ext = 'ogg';
+                if (mime.includes('image')) ext = 'jpg';
+                if (mime.includes('video')) ext = 'mp4';
+                if (mime.includes('pdf')) ext = 'pdf';
             }
         }
 
-        if (!mediaId) {
-            console.error('❌ [YCloudProvider] Media ID no encontrado en payload.');
+        if (!mediaId && !mediaUrl) {
+            console.error('❌ [YCloudProvider] Media ID o URL no encontrado en payload.');
             return 'no-file';
         }
 
@@ -77,12 +81,17 @@ class YCloudProvider extends ProviderClass {
             fs.mkdirSync(outPath, { recursive: true });
         }
 
-        const filename = `${Date.now()}-${mediaId}.${ext}`;
+        // Nombre de archivo basado en ID o un identificador aleatorio
+        const identifier = mediaId || Math.random().toString(36).substring(7);
+        const filename = `${Date.now()}-${identifier}.${ext}`;
         const dest = pathStr.join(outPath, filename);
 
+        // URL final: priorizar URL directa si existe, de lo contrario construir la de YCloud
+        const finalUrl = mediaUrl || `https://api.ycloud.com/v2/whatsapp/media/${mediaId}`;
+
         try {
-            console.log(`[YCloudProvider] Descargando media ${mediaId} de YCloud...`);
-            const response = await axios.get(`https://api.ycloud.com/v2/whatsapp/media/${mediaId}`, {
+            console.log(`[YCloudProvider] Descargando media de: ${finalUrl}`);
+            const response = await axios.get(finalUrl, {
                 headers: {
                     'X-API-Key': apiKey,
                 },
@@ -93,8 +102,14 @@ class YCloudProvider extends ProviderClass {
             response.data.pipe(writer);
 
             return new Promise((resolve, reject) => {
-                writer.on('finish', () => resolve(dest));
-                writer.on('error', reject);
+                writer.on('finish', () => {
+                    console.log(`✅ [YCloudProvider] Archivo guardado: ${dest}`);
+                    resolve(dest);
+                });
+                writer.on('error', (err: any) => {
+                    console.error('❌ [YCloudProvider] Error writing file:', err);
+                    reject(err);
+                });
             });
         } catch (error: any) {
             console.error('❌ [YCloudProvider] Error al descargar archivo:', error?.message);
@@ -226,7 +241,7 @@ class YCloudProvider extends ProviderClass {
                     from: msg.wa_id || msg.from.replace('+', ''),
                     phoneNumber: msg.from.replace('+', ''),
                     name: msg.customerProfile?.name || 'User',
-                    type: msg.type,
+                    type: msg.type === 'audio' ? 'voice' : msg.type,
                     payload: msg
                 };
 
@@ -258,7 +273,7 @@ class YCloudProvider extends ProviderClass {
                                     from: wa_id || msg.from.replace('+', ''),
                                     phoneNumber: msg.from.replace('+', ''),
                                     name: contact?.profile?.name || msg.profile?.name || 'User',
-                                    type: msg.type,
+                                    type: msg.type === 'audio' ? 'voice' : msg.type,
                                     payload: msg
                                 };
                                 this.emit('message', formatedMessage);

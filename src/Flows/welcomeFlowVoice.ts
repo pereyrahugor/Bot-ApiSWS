@@ -54,33 +54,46 @@ export const welcomeFlowVoice = addKeyword<BaileysProvider, MemoryDB>(EVENTS.VOI
 
         // Guardar el archivo de audio localmente
         const localPath = await provider.saveFile(ctx, { path: "./temp/voiceNote/" });
-        console.log(`📂 Ruta del archivo de audio: ${localPath}`);
-
-        // Transcribir el audio antes de procesarlo
-        const transcription = await transcribeAudioFile(`${localPath}`);
-
-        if (!transcription) {
-            await flowDynamic("⚠️ No pude transcribir el audio. Inténtalo de nuevo.");
+        
+        if (!localPath || localPath === 'no-file') {
+            console.error("❌ [welcomeFlowVoice] No se pudo guardar el archivo de audio.");
+            // No podemos procesar si no hay archivo
             return;
         }
 
-        console.log(`📝 Transcripción: ${transcription}`);
-        ctx.body = transcription;
+        console.log(`📂 Ruta del archivo de audio: ${localPath}`);
 
-        // Enviar la transcripción al asistente
-        const queue = userQueues.get(userId);
-        queue.push({ ctx, flowDynamic, state, provider, gotoFlow });
+        try {
+            // Transcribir el audio antes de procesarlo
+            const transcription = await transcribeAudioFile(`${localPath}`);
 
-        if (!userLocks.get(userId) && queue.length === 1) {
-            await handleQueue(userId);
-        }
-
-        // Eliminar el archivo temporal
-        fs.unlink(localPath, (err) => {
-            if (err) {
-                console.error(`❌ Error al eliminar el archivo: ${localPath}`, err);
+            if (!transcription) {
+                console.warn("⚠️ [welcomeFlowVoice] Transcripción vacía o fallida.");
+                await flowDynamic("⚠️ No pude transcribir el audio. Inténtalo de nuevo o escribe tu mensaje.");
             } else {
-                console.log(`🗑️ Archivo eliminado: ${localPath}`);
+                console.log(`📝 Transcripción: ${transcription}`);
+                ctx.body = transcription;
+
+                // Enviar la transcripción al asistente
+                const queue = userQueues.get(userId);
+                queue.push({ ctx, flowDynamic, state, provider, gotoFlow });
+
+                if (!userLocks.get(userId) && queue.length === 1) {
+                    await handleQueue(userId);
+                }
             }
-        });
+        } catch (error) {
+            console.error("❌ [welcomeFlowVoice] Error durante la transcripción:", error);
+        } finally {
+            // Eliminar el archivo temporal solo si existe y no es 'no-file'
+            if (localPath && localPath !== 'no-file' && fs.existsSync(localPath)) {
+                fs.unlink(localPath, (err) => {
+                    if (err) {
+                        console.error(`❌ Error al eliminar el archivo: ${localPath}`, err);
+                    } else {
+                        console.log(`🗑️ Archivo temporal eliminado: ${localPath}`);
+                    }
+                });
+            }
+        }
     });
