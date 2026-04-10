@@ -119,16 +119,38 @@ export class SupabaseBaileysProvider extends BaileysProvider {
                     msg.message?.conversation || 
                     msg.message?.extendedTextMessage?.text || 
                     msg.message?.imageMessage?.caption || 
+                    msg.message?.videoMessage?.caption ||
                     '';
                 
                 const from = msg.key.remoteJid;
                 
+                // Extraer el tipo real
+                const messageType = Object.keys(msg.message || {})[0] || 'text';
+                
+                // Mapear tipos nativos a tipos estándar de BuilderBot
+                const typeMapping: any = {
+                    audioMessage: 'voice',
+                    imageMessage: 'image',
+                    videoMessage: 'video',
+                    documentMessage: 'document',
+                    locationMessage: 'location',
+                    buttonsResponseMessage: 'buttons',
+                    templateButtonReplyMessage: 'buttons',
+                    contactMessage: 'contact'
+                };
+
+                const type = typeMapping[messageType] || 'text';
+
+                // Si el body está vacío (común en audios/imágenes sin caption), ponemos un placeholder
+                const finalBody = body || (type !== 'text' ? `_event_${type}_` : '');
+
                 // Mapear eventos nativos de Baileys al formato de BuilderBot
                 const payload = {
-                    body,
+                    body: finalBody,
                     from,
+                    phoneNumber: from?.split('@')[0],
                     name: msg.pushName || 'User',
-                    type: Object.keys(msg.message)[0],
+                    type,
                     payload: msg 
                 };
 

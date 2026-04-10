@@ -61,77 +61,96 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
         console.warn(`⚠️ ${prefix} HOST_FAILURE: Problema de conexión con WhatsApp.`, payload);
     });
 
-    provider.on('message', (ctx: any) => {
-        // Para YCloud, el mensaje ya viene pre-formateado en su handleWebhook
-        // Pero para Baileys (grupos) necesitamos normalizarlo aquí
-        if (isGroupProvider) {
-            // 1. Desenvolver el mensaje
-            const message = obtenerMensajeUnwrapped(ctx);
-            if (message) {
-                ctx.message = message;
-            }
+    provider.on('message', async (ctx: any) => {
+        try {
+            console.log(`${prefix} 📩 Mensaje entrante - Tipo: ${ctx.type}, De: ${ctx.from}`);
             
-            // 2. Extraer texto base
-            const textoExtraido = obtenerTextoDelMensaje(message);
-
-            // Si el body está vacío o es un evento genérico, lo reemplazamos por el texto extraído
-            if (!ctx.body || ctx.body === '' || ctx.body === '_event_media_' || ctx.body === '_event_document_' || ctx.body === '_event_voice_note_') {
-                ctx.body = textoExtraido;
+            // Si el mensaje es una nota de voz, forzamos el log específico para confirmar detección
+            if (ctx.type === 'voice' || ctx.type === EVENTS.VOICE_NOTE) {
+                console.log(`${prefix} 🎙️ NOTA DE VOZ DETECTADA. Enviando a los flujos...`);
             }
 
-            // Detección de tipos especiales
-            const isLocation = message?.locationMessage || message?.liveLocationMessage;
-            const isOrder = message?.orderMessage || message?.productMessage;
-            const isAd = message?.extendedTextMessage?.contextInfo?.externalAdReply;
-            const isButton = message?.buttonsResponseMessage || 
-                             message?.templateButtonReplyMessage || 
-                             message?.interactiveResponseMessage ||
-                             message?.listResponseMessage;
-            
-            if (isLocation) {
-                ctx.type = EVENTS.LOCATION;
-                ctx.body = ctx.body || '_event_location_';
-            } else if (isOrder) {
-                ctx.type = EVENTS.ACTION;
-                ctx.body = message?.orderMessage ? `Orden: ${message.orderMessage.orderId}` : 'Producto en catálogo';
-            } else if (isButton) {
-                if (message?.buttonsResponseMessage) {
-                    ctx.body = message.buttonsResponseMessage.selectedDisplayText || message.buttonsResponseMessage.selectedId;
-                } else if (message?.templateButtonReplyMessage) {
-                    ctx.body = message.templateButtonReplyMessage.selectedDisplayText || message.templateButtonReplyMessage.selectedId;
-                } else if (message?.listResponseMessage) {
-                    ctx.body = message.listResponseMessage.title || message.listResponseMessage.singleSelectReply?.selectedRowId;
-                } else if (message?.interactiveResponseMessage) {
-                    const interactive = message.interactiveResponseMessage;
-                    if (interactive.nativeFlowResponseMessage) {
-                        try {
-                            const params = JSON.parse(interactive.nativeFlowResponseMessage.paramsJson);
-                            ctx.body = params.id || params.flow_token || 'flow_response';
-                        } catch (e) { ctx.body = 'flow_interaction'; }
-                    } else if (interactive.buttonReply) {
-                        ctx.body = interactive.buttonReply.title || interactive.buttonReply.id;
-                    } else if (interactive.listReply) {
-                        ctx.body = interactive.listReply.title || interactive.listReply.id;
-                    }
-                }
-                ctx.type = EVENTS.ACTION;
-            } else if (isAd || message?.extendedTextMessage) {
-                const extText = message?.extendedTextMessage;
-                if (!ctx.body || ctx.body === '') {
-                    ctx.body = extText?.text || '';
+            // Para YCloud, el mensaje ya viene pre-formateado en su handleWebhook
+            // Pero para Baileys (grupos) necesitamos normalizarlo aquí
+            if (isGroupProvider) {
+                // 1. Desenvolver el mensaje
+                const message = obtenerMensajeUnwrapped(ctx);
+                if (message) {
+                    ctx.message = message;
                 }
                 
-                if (isAd) {
-                    const adTitle = isAd.title || '';
-                    const adBody = isAd.body || '';
-                    ctx.body = `${ctx.body} [Contexto Anuncio: ${adTitle} - ${adBody}]`.trim();
+                // 2. Extraer texto base
+                const textoExtraido = obtenerTextoDelMensaje(message);
+
+                // Si el body está vacío o es un evento genérico, lo reemplazamos por el texto extraído
+                if (!ctx.body || ctx.body === '' || ctx.body === '_event_media_' || ctx.body === '_event_document_' || ctx.body === '_event_voice_note_') {
+                    ctx.body = textoExtraido;
                 }
-            } else if (ctx.type === 'desconocido' || !ctx.body) {
-                 if (message?.contactMessage || message?.contactsArrayMessage) {
-                     ctx.type = EVENTS.ACTION;
-                     ctx.body = 'Contacto Compartido';
-                 }
+
+                // Detección de tipos especiales
+                const isLocation = message?.locationMessage || message?.liveLocationMessage;
+                const isOrder = message?.orderMessage || message?.productMessage;
+                const isAd = message?.extendedTextMessage?.contextInfo?.externalAdReply;
+                const isButton = message?.buttonsResponseMessage || 
+                                 message?.templateButtonReplyMessage || 
+                                 message?.interactiveResponseMessage ||
+                                 message?.listResponseMessage;
+                
+                if (isLocation) {
+                    ctx.type = EVENTS.LOCATION;
+                    ctx.body = ctx.body || '_event_location_';
+                } else if (isOrder) {
+                    ctx.type = EVENTS.ACTION;
+                    ctx.body = message?.orderMessage ? `Orden: ${message.orderMessage.orderId}` : 'Producto en catálogo';
+                } else if (isButton) {
+                    if (message?.buttonsResponseMessage) {
+                        ctx.body = message.buttonsResponseMessage.selectedDisplayText || message.buttonsResponseMessage.selectedId;
+                    } else if (message?.templateButtonReplyMessage) {
+                        ctx.body = message.templateButtonReplyMessage.selectedDisplayText || message.templateButtonReplyMessage.selectedId;
+                    } else if (message?.listResponseMessage) {
+                        ctx.body = message.listResponseMessage.title || message.listResponseMessage.singleSelectReply?.selectedRowId;
+                    } else if (message?.interactiveResponseMessage) {
+                        const interactive = message.interactiveResponseMessage;
+                        if (interactive.nativeFlowResponseMessage) {
+                            try {
+                                const params = JSON.parse(interactive.nativeFlowResponseMessage.paramsJson);
+                                ctx.body = params.id || params.flow_token || 'flow_response';
+                            } catch (e) { ctx.body = 'flow_interaction'; }
+                        } else if (interactive.buttonReply) {
+                            ctx.body = interactive.buttonReply.title || interactive.buttonReply.id;
+                        } else if (interactive.listReply) {
+                            ctx.body = interactive.listReply.title || interactive.listReply.id;
+                        }
+                    }
+                    ctx.type = EVENTS.ACTION;
+                } else if (isAd || message?.extendedTextMessage) {
+                    const extText = message?.extendedTextMessage;
+                    if (!ctx.body || ctx.body === '') {
+                        ctx.body = extText?.text || '';
+                    }
+                    
+                    if (isAd) {
+                        const adTitle = isAd.title || '';
+                        const adBody = isAd.body || '';
+                        ctx.body = `${ctx.body} [Contexto Anuncio: ${adTitle} - ${adBody}]`.trim();
+                    }
+                } else if (ctx.type === 'desconocido' || !ctx.body) {
+                     if (message?.contactMessage || message?.contactsArrayMessage) {
+                         ctx.type = EVENTS.ACTION;
+                         ctx.body = 'Contacto Compartido';
+                     }
+                }
             }
+
+            // --- PERSISTENCIA AL HISTORIAL ---
+            // Guardamos el mensaje entrante en Supabase (si no es un evento de sistema vacío)
+            if (ctx.body && !ctx.body.startsWith('_event_')) {
+                const { HistoryHandler } = await import('../utils/historyHandler');
+                const chatId = ctx.from?.includes('@') ? ctx.from.split('@')[0] : ctx.from;
+                await HistoryHandler.saveMessage(chatId, 'user', ctx.body, ctx.type || 'text');
+            }
+        } catch (err) {
+            console.error(`❌ ${prefix} Error en el logger de mensajes entrantes:`, err);
         }
     });
 
