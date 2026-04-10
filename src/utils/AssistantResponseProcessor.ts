@@ -214,6 +214,10 @@ export async function askWithFunctions(assistantId: string, message: string, sta
                         estadoIncidente_ids: 1
                     };
                     const res = await IncidentesApi.crearTicket(payload);
+                    const incidenteId = res.data?.incidente?.id || res.data?.id;
+                    if (incidenteId) {
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, { incidencia_generada: incidenteId });
+                    }
                     output = JSON.stringify(res.data);
                 } else if (functionName === "buscarIncidencia" || functionName === "BUSCAR_INCIDENCIA") {
                     const today = moment().tz("America/Argentina/Buenos_Aires");
@@ -539,7 +543,7 @@ export class AssistantResponseProcessor {
             direccion: '',
             numCliente: '',
             tipoCliente: '',
-            numIncidencias: 0,
+            incidencias_ids: [],
             esCliente: 'No'
         };
 
@@ -554,16 +558,20 @@ export class AssistantResponseProcessor {
         };
 
         if (data.incidencia_generada) {
-            updated.numIncidencias = (updated.numIncidencias || 0) + 1;
+            updated.incidencias_ids = Array.isArray(updated.incidencias_ids) ? updated.incidencias_ids : [];
+            updated.incidencias_ids.push(String(data.incidencia_generada));
+        }
+
+        // Clean up legacy property if it exists
+        if ('numIncidencias' in updated) {
+            delete updated.numIncidencias;
         }
 
         await state.update({ datosClienteContext: updated });
 
         // PERSISTENCIA EN DB: Si tenemos el chatId, guardamos permanentemente en Supabase 
-        // EXCLUIMOS numIncidencias para que el contador sea puramente por sesión
         if (chatId) {
-            const { numIncidencias, ...persistedData } = updated;
-            await HistoryHandler.saveClientContext(chatId, persistedData);
+            await HistoryHandler.saveClientContext(chatId, updated);
         }
     }
 
@@ -1012,10 +1020,10 @@ export class AssistantResponseProcessor {
                     console.log('[API Debug] Respuesta INCIDENCIA:', util.inspect(apiResponse, { depth: 4 }));
                     let resumen = "";
                     if (esRespuestaExitosa(apiResponse.data)) {
-                        const id = apiResponse.data?.incidente?.id;
+                        const id = apiResponse.data?.incidente?.id || apiResponse.data?.id;
                         
-                        // ACTUALIZACIÓN DE CONTEXTO: Incrementar contador de incidencias
-                        await AssistantResponseProcessor.actualizarContextoCliente(state, { incidencia_generada: true }, ctx.from);
+                        // ACTUALIZACIÓN DE CONTEXTO: Guardar ID de incidencia
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, { incidencia_generada: id }, ctx.from);
 
                         resumen = `✅ Incidencia registrada exitosamente. ID: ${id ?? 'desconocido'}`;
                     } else {

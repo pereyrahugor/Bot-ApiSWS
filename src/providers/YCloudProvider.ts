@@ -31,8 +31,75 @@ class YCloudProvider extends ProviderClass {
         return [];
     };
 
-    public saveFile() {
-        return Promise.resolve('no-file');
+    public async saveFile(ctx: any, options: { path?: string } = {}): Promise<string> {
+        const apiKey = process.env.YCLOUD_API_KEY;
+        if (!apiKey) {
+            console.error('❌ [YCloudProvider] Falta YCLOUD_API_KEY para descargar medios');
+            return 'no-file';
+        }
+
+        const msg = ctx.payload;
+        if (!msg) return 'no-file';
+
+        let mediaId = '';
+        let ext = 'ogg';
+
+        if (msg.audio?.id) {
+            mediaId = msg.audio.id;
+        } else if (msg.image?.id) {
+            mediaId = msg.image.id;
+            ext = 'jpg';
+        } else if (msg.video?.id) {
+            mediaId = msg.video.id;
+            ext = 'mp4';
+        } else if (msg.document?.id) {
+            mediaId = msg.document.id;
+            ext = 'pdf';
+        } else if (msg.voice?.id) {
+            mediaId = msg.voice.id;
+        } else {
+            const media = msg[msg.type];
+            if (media && media.id) {
+                mediaId = media.id;
+            }
+        }
+
+        if (!mediaId) {
+            console.error('❌ [YCloudProvider] Media ID no encontrado en payload.');
+            return 'no-file';
+        }
+
+        const fs = require('fs');
+        const pathStr = require('path');
+        const outPath = options.path || './temp/';
+        
+        if (!fs.existsSync(outPath)) {
+            fs.mkdirSync(outPath, { recursive: true });
+        }
+
+        const filename = `${Date.now()}-${mediaId}.${ext}`;
+        const dest = pathStr.join(outPath, filename);
+
+        try {
+            console.log(`[YCloudProvider] Descargando media ${mediaId} de YCloud...`);
+            const response = await axios.get(`https://api.ycloud.com/v2/whatsapp/media/${mediaId}`, {
+                headers: {
+                    'X-API-Key': apiKey,
+                },
+                responseType: 'stream'
+            });
+
+            const writer = fs.createWriteStream(dest);
+            response.data.pipe(writer);
+
+            return new Promise((resolve, reject) => {
+                writer.on('finish', () => resolve(dest));
+                writer.on('error', reject);
+            });
+        } catch (error: any) {
+            console.error('❌ [YCloudProvider] Error al descargar archivo:', error?.message);
+            return 'no-file';
+        }
     }
 
     /**

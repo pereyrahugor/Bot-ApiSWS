@@ -37,8 +37,8 @@ export class AiManager {
         if (!datosContext && userId) {
             const persistedData = await HistoryHandler.getClientContext(userId);
             if (persistedData) {
-                // Forzar numIncidencias a 0 para que sea solo de esta sesión
-                datosContext = { ...persistedData, numIncidencias: 0 };
+                // Forzar incidencias a vacío para que sea solo de esta sesión
+                datosContext = { ...persistedData, incidencias_ids: [] };
                 if (state && typeof state.update === 'function') {
                     await state.update({ datosClienteContext: datosContext });
                 }
@@ -52,8 +52,12 @@ export class AiManager {
 - Dirección: ${datosContext.direccion || 'No registrada'}
 - Número de cliente: ${datosContext.numCliente || 'No asignado'}
 - Tipo cliente: ${datosContext.tipoCliente || 'No identificado'}
-- Incidencias generadas en esta sesión: ${datosContext.numIncidencias || 0}
+- Incidencias generadas en esta sesión: ${Array.isArray(datosContext.incidencias_ids) ? datosContext.incidencias_ids.length : 0}
 - Es cliente confirmado: ${datosContext.esCliente || 'No'}`;
+
+            if (datosContext.esCliente === 'Si' || datosContext.numCliente) {
+                systemPrompt += `\n\nREGLA OBLIGATORIA: El usuario actual YA ES UN CLIENTE ACTIVO (o confirmado). NO debes informar sobre listas de precios. La información sobre precios está estrictamente reservada SOLAMENTE para clientes nuevos o en proceso de alta.`;
+            }
         }
         
         const finalMessage = systemPrompt + "\n" + message;

@@ -48,10 +48,12 @@ export class ClientesApi {
     const token = getSessionToken() || '';
     const url = `${BASE_URL}/api/Clientes/BusquedaRapidaResultJson`;
     
-    // Normalizar parámetros
-    const datosCliente = String(params.datosCliente ?? "").trim();
-    const telefono = String(params.telefono ?? "").trim();
-    const domicilio = String(params.domicilio ?? "").trim();
+    // Sanitizar parámetros para evitar Syntax Error en Full-Text Search del backend SQL
+    const sanitizeQuery = (str: string) => str.replace(/[^a-zA-Z0-9\sñÑáéíóúÁÉÍÓÚ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    const datosCliente = sanitizeQuery(String(params.datosCliente ?? ""));
+    const telefono = sanitizeQuery(String(params.telefono ?? ""));
+    const domicilio = sanitizeQuery(String(params.domicilio ?? ""));
 
     const headers = {
       'Content-Type': 'application/json',
@@ -87,6 +89,17 @@ export class ClientesApi {
           }
       }
       
+      // Sub-filtro si la búsqueda es claramente por número de ID (1-7 dígitos) y arroja múltiples
+      let resultData = response.data?.data || [];
+      if (resultData.length > 1 && /^\d{1,7}$/.test(datosCliente)) {
+          console.log(`[ClientesApi] Múltiples resultados devueltos para ID numérico '${datosCliente}'. Aplicando sub-filtro estricto por ID...`);
+          const subFilter = resultData.filter((c: any) => String(c.id) === datosCliente || String(c.cliente_id) === datosCliente);
+          if (subFilter.length > 0) {
+              console.log(`[ClientesApi] Coincidencia de ID encontrada! Priorizando sobre ${resultData.length - 1} resultados irrelevantes.`);
+              response.data.data = subFilter;
+          }
+      }
+
       return response;
     } catch (error: any) {
       console.error('[ClientesApi] Error en busquedaRapida:', error.message);

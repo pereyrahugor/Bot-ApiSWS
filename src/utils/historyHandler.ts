@@ -40,6 +40,8 @@ export interface Chat {
     tax_status?: string | null;
     address?: string | null;
     offered_product?: string | null;
+    tipo_cliente?: string | null;
+    incidencias_ids?: string[] | null;
     is_lead?: boolean;
 }
 
@@ -74,7 +76,9 @@ export class HistoryHandler {
                 email: data.email,
                 dni_cuit: data.cuit_dni,
                 tax_status: data.tax_status,
-                offered_product: data.offered_product
+                offered_product: data.offered_product,
+                tipoCliente: data.tipo_cliente,
+                incidencias_ids: data.incidencias_ids
             };
         } catch (err) {
             return null;
@@ -161,6 +165,8 @@ export class HistoryHandler {
                 cuit_dni: data.numCliente || data.cuit_dni || null,
                 tax_status: data.tax_status || null,
                 offered_product: data.offered_product || null,
+                tipo_cliente: data.tipoCliente || data.tipo_cliente || null,
+                incidencias_ids: data.incidencias_ids || null,
                 is_lead: true
             };
             
