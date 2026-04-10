@@ -44,10 +44,6 @@ export const processSendMessage = async (
 
         console.log(`[BACKOFFICE] Procesando envío para ${chatId}...`);
         
-        // 2. GUARDAR PRIMERO (Feedback instantáneo)
-        await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType);
-        await HistoryHandler.updateLastHumanMessage(chatId);
-
         // 3. Inyectar en thread OpenAI (silencioso)
         HistoryHandler.getThreadId(chatId).then((threadId: string) => {
             if (threadId && (message || file)) {
@@ -66,32 +62,46 @@ export const processSendMessage = async (
             console.log(`[BACKOFFICE] Enviando via ${providerToSend.constructor.name} a ${chatId}`);
 
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+            let result: any = null;
+
             if (file) {
                 const absolutePath = path.resolve(file.path);
                 if (finalType === 'image') {
                     if (typeof providerToSend.sendImage === 'function') {
-                        await providerToSend.sendImage(jid, absolutePath, message || '');
+                        result = await providerToSend.sendImage(jid, absolutePath, message || '');
                     } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                        result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
                     }
                 } else if (finalType === 'video') {
                     if (typeof (providerToSend as any).sendVideo === 'function') {
-                        await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
+                        result = await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
                     } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                        result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
                     }
                 } else {
                     if (typeof (providerToSend as any).sendFile === 'function') {
-                        await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
+                        result = await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
                     } else {
-                        await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
+                        result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
                     }
                 }
             } else {
-                await providerToSend.sendMessage(jid, message, {});
+                result = await providerToSend.sendMessage(jid, message, {});
             }
 
-            // Notificar vía Socket.IO si el servidor está adjunto
+            // Capturar ID de WhatsApp para deduplicación
+            const waId = result?.key?.id || result?.id;
+            if (waId) {
+                console.log(`[BACKOFFICE] Mensaje enviado con ID: ${waId}. Guardando en historial...`);
+                await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType, null, null, waId);
+            } else {
+                // Fallback si no hay ID
+                await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType);
+            }
+            
+            await HistoryHandler.updateLastHumanMessage(chatId);
+
+            // Notificar vía Socket.IO si el servidor está adjunto para feedback inmediato
             if ((adapterProvider as any).server?.io) {
                 (adapterProvider as any).server.io.emit('new_message', { chatId, role: 'assistant', content: finalContent, type: finalType });
             }

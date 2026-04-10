@@ -120,23 +120,29 @@ export class AiManager {
                 return state;
             }
 
-            // Filtro de Eco
+            // Filtro de Eco y registro de mensajes manuales
             const botNumber = (process.env.YCLOUD_WABA_NUMBER || '').replace(/\D/g, '');
             const senderNumber = (ctx.from || '').replace(/\D/g, '');
-            if (ctx.key?.fromMe || (botNumber && senderNumber === botNumber)) {
+            const isFromMe = ctx.key?.fromMe || (botNumber && senderNumber === botNumber);
+
+            // Registro del mensaje en el historial
+            // Si es de nosotros (manual desde el móvil), lo guardamos como 'assistant'
+            await HistoryHandler.saveMessage(
+                ctx.from, 
+                isFromMe ? 'assistant' : 'user', 
+                body || (ctx.type === EVENTS.VOICE_NOTE ? "[Audio]" : "[Media]"), 
+                ctx.type,
+                ctx.pushName || null,
+                null,
+                ctx.key?.id || ctx.id
+            );
+
+            if (isFromMe) {
                 stop(ctx);
                 return;
             }
 
             stop(ctx);
-
-            await HistoryHandler.saveMessage(
-                ctx.from, 
-                'user', 
-                body || (ctx.type === EVENTS.VOICE_NOTE ? "[Audio]" : "[Media]"), 
-                ctx.type,
-                ctx.pushName || null
-            );
 
             const isBotActiveForUser = await HistoryHandler.isBotEnabled(ctx.from);
             if (!isBotActiveForUser) {

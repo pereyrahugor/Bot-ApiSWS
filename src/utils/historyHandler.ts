@@ -124,7 +124,7 @@ export class HistoryHandler {
         }
     }
 
-    static async saveMessage(chatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null, userId: string | null = null) {
+    static async saveMessage(chatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null, userId: string | null = null, messageId: string | null = null) {
         try {
             await this.getOrCreateChat(chatId, chatId.includes('@') ? 'whatsapp' : 'webchat', contactName, userId);
             
@@ -137,12 +137,17 @@ export class HistoryHandler {
                 created_at: new Date().toISOString()
             };
 
+            if (messageId) {
+                messageData.id = messageId;
+            }
+
             // Intentar con agent_id si está configurado
             if (process.env.ASSISTANT_ID) {
                 messageData.agent_id = process.env.ASSISTANT_ID;
             }
 
-            const { error } = await supabase.from('messages').insert(messageData);
+            // Usamos upsert para evitar duplicados si se proporciona el messageId de WhatsApp
+            const { error } = await supabase.from('messages').upsert(messageData, { onConflict: 'id,project_id' });
             if (error) throw error;
 
             await supabase.from('chats').update({ last_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID);
