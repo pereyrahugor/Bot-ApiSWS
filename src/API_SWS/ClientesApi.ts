@@ -226,6 +226,21 @@ export class ClientesApi {
     // Enviar el campo correcto 'cliente_id' en el body
     return axios.post(url, { cliente_id }, { headers });
   }
+
+  /**
+   * Buscar un cliente por sus datos de contacto (teléfono o email)
+   * Endpoint: GET /Clientes/BuscarClientePorContacto
+   */
+  static async buscarClientePorContacto(params: { telefono?: string; email?: string }) {
+    await ensureValidToken();
+    const token = getSessionToken() || '';
+    const url = `${BASE_URL}/Clientes/BuscarClientePorContacto`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'CURRENTTOKENVALUE': token
+    };
+    return axios.get(url, { headers, params });
+  }
 }
 
 // Transforma un string de domicilio en un objeto compatible con el backend

@@ -58,6 +58,16 @@ export interface Message {
 
 export class HistoryHandler {
 
+    /**
+     * Normaliza el ID del chat eliminando el sufijo de WhatsApp si existe.
+     * Esto asegura que el historial sea consistente independientemente de cómo
+     * el proveedor entregue el ID.
+     */
+    static normalizeId(chatId: string): string {
+        if (!chatId) return chatId;
+        return chatId.split('@')[0];
+    }
+
     static async getClientContext(chatId: string) {
         try {
             const { data, error } = await supabase
@@ -92,41 +102,66 @@ export class HistoryHandler {
         // pero asegurando que HistoryHandler tiene los métodos que siguen)
     }
     
-    static async getOrCreateChat(chatId: string, type: 'whatsapp' | 'webchat', name: string | null = null, userId: string | null = null): Promise<Chat | null> {
+
+    static async getOrCreateChat(rawChatId: string, type: 'whatsapp' | 'webchat', name: string | null = null, userId: string | null = null): Promise<Chat | null> {
+        const chatId = this.normalizeId(rawChatId);
         try {
-            let data: Chat | null = null;
-            if (userId) {
-                const { data: byUserId } = await supabase.from('chats').select('*').eq('user_id', userId).eq('project_id', PROJECT_ID).maybeSingle();
-                data = byUserId;
-            }
-            if (!data) {
-                const { data: byChatId } = await supabase.from('chats').select('*').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
-                data = byChatId;
-                if (data && userId && !data.user_id) {
-                    await supabase.from('chats').update({ user_id: userId }).eq('id', chatId).eq('project_id', PROJECT_ID);
-                    data.user_id = userId;
+            // 1. Intentar recuperación rápida por ID limpio
+            const { data: existingChat, error: selectError } = await supabase
+                .from('chats')
+                .select('*')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+            
+            if (existingChat) {
+                // Actualizar userId o name si faltan
+                let needsUpdate = false;
+                const updateData: any = {};
+                if (userId && !existingChat.user_id) {
+                    updateData.user_id = userId;
+                    needsUpdate = true;
                 }
+                if (name && !existingChat.name) {
+                    updateData.name = name;
+                    needsUpdate = true;
+                }
+                if (needsUpdate) {
+                    await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID);
+                }
+                return { ...existingChat, ...updateData };
             }
-            if (!data) {
-                const { data: newData, error: insertError } = await supabase.from('chats').insert({
-                    id: chatId, user_id: userId, project_id: PROJECT_ID, type, name, bot_enabled: true, last_message_at: new Date().toISOString()
-                }).select().single();
-                if (insertError) throw insertError;
-                return newData;
+
+            // 2. Si no existe, usamos upsert para creación atómica
+            const { data: newData, error: upsertError } = await supabase.from('chats').upsert({
+                id: chatId, 
+                user_id: userId, 
+                project_id: PROJECT_ID, 
+                type: 'webchat', // Forzado a webchat para compatibilidad con el backoffice según logs previos
+                name: name, 
+                bot_enabled: true, 
+                last_message_at: new Date().toISOString()
+            }, { onConflict: 'id,project_id' }).select().maybeSingle();
+
+            if (upsertError) {
+                // Si aún así falla con 23505, intentamos un último select (otro hilo ganó la carrera)
+                if (upsertError.code === '23505') {
+                    const { data: lastChance } = await supabase.from('chats').select('*').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
+                    return lastChance;
+                }
+                throw upsertError;
             }
-            if (name && !data.name) {
-                await supabase.from('chats').update({ name }).eq('id', chatId).eq('project_id', PROJECT_ID);
-            }
-            return data;
+            return newData;
         } catch (err) {
             console.error('[HistoryHandler] Error en getOrCreateChat:', err);
             return null;
         }
     }
 
-    static async saveMessage(chatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null, userId: string | null = null, messageId: string | null = null) {
+    static async saveMessage(rawChatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null, userId: string | null = null, messageId: string | null = null) {
         try {
-            await this.getOrCreateChat(chatId, chatId.includes('@') ? 'whatsapp' : 'webchat', contactName, userId);
+            const chatId = this.normalizeId(rawChatId);
+            await this.getOrCreateChat(chatId, 'webchat', contactName, userId);
             
             const messageData: any = {
                 chat_id: chatId, 

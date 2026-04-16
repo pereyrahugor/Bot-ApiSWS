@@ -204,6 +204,9 @@ export async function askWithFunctions(assistantId: string, message: string, sta
                 } else if (functionName === "buscarCliente") {
                     const res = await ClientesApi.busquedaRapida(args);
                     output = JSON.stringify(res.data);
+                } else if (functionName === "buscarClientePorContacto") {
+                    const res = await ClientesApi.buscarClientePorContacto(args);
+                    output = JSON.stringify(res.data);
                 } else if (functionName === "crearIncidencia") {
                     // Forzar campos fijos como se hacía en el procesador original
                     const payload = { 
@@ -907,6 +910,43 @@ export class AssistantResponseProcessor {
                         if (filtrosAplicados.length > 0) {
                             resumen += ` (se aplicaron filtros - ${filtrosAplicados.join(', ')})`;
                         }
+                    }
+                    
+                    const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);
+                    await AssistantResponseProcessor.procesarRespuestaAsistente(assistantApiResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID);
+                    return;
+                }
+
+                // BUSCAR_CLIENTE_POR_CONTACTO
+                if (tipo === "BUSCAR_CLIENTE_POR_CONTACTO") {
+                    // buscarClientePorContacto espera: { telefono, email }
+                    const apiResponse = await ClientesApi.buscarClientePorContacto({
+                        telefono: jsonData.telefono ?? '',
+                        email: jsonData.email ?? ''
+                    });
+                    logApiResponse('BUSCAR_CLIENTE_POR_CONTACTO', apiResponse);
+                    
+                    const respuestaApi = apiResponse.data || {};
+                    const clientes = respuestaApi.clientes || [];
+                    let datosCliente = null;
+
+                    if (clientes.length === 1) {
+                        datosCliente = clientes[0];
+                    }
+
+                    let resumen;
+                    if (datosCliente) {
+                        // ACTUALIZACIÓN DE CONTEXTO: Guardar datos del cliente encontrado
+                        await AssistantResponseProcessor.actualizarContextoCliente(state, datosCliente, ctx.from);
+                        resumen = `Se encontró el cliente coincidente:\n${JSON.stringify(datosCliente, null, 2)}`;
+                    } else if (clientes.length > 1) {
+                        resumen = `⚠️ SE ENCONTRARON MÚLTIPLES COINCIDENCIAS (${clientes.length}). Solicitar datos adicionales para identificar al cliente único.\n\nResumen de resultados:\n${JSON.stringify(clientes.slice(0, 3).map((c: any) => ({ 
+                            cliente_id: c.cliente_id, 
+                            nombre: c.nombreCliente || c.nombrePersona,
+                            domicilio: c.DomicilioCompleto
+                        })), null, 2)}`;
+                    } else {
+                        resumen = "No se encontró ningún cliente registrado con ese teléfono o email de contacto.";
                     }
                     
                     const assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, resumen, state, undefined, ctx.from, ctx.thread_id);

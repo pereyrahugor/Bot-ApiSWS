@@ -147,7 +147,8 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
             if (ctx.body && !ctx.body.startsWith('_event_')) {
                 const { HistoryHandler } = await import('../utils/historyHandler');
                 const chatId = ctx.from?.includes('@') ? ctx.from.split('@')[0] : ctx.from;
-                await HistoryHandler.saveMessage(chatId, 'user', ctx.body, ctx.type || 'text');
+                const messageId = ctx.key?.id || ctx.id;
+                await HistoryHandler.saveMessage(chatId, 'user', ctx.body, ctx.type || 'text', null, null, messageId);
             }
         } catch (err) {
             console.error(`❌ ${prefix} Error en el logger de mensajes entrantes:`, err);

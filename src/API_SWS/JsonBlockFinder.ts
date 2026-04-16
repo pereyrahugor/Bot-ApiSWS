@@ -12,6 +12,7 @@ export class JsonBlockFinder {
         "LINK_PAGO",
         // Clientes
         "BUSCAR_CLIENTE",
+        "BUSCAR_CLIENTE_POR_CONTACTO",
         "CREAR_CLIENTE",
         "BUSCAR_CLEINTE",
         "AGREGAR_CONTACTO",
