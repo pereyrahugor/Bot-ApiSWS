@@ -315,7 +315,7 @@ const main = async () => {
             check();
         };
         waitForServer();
-        startHumanInactivityWorker(15);
+        startHumanInactivityWorker(45);
 
         console.log(`✅ [Server] Listo en puerto ${PORT}`);
     }

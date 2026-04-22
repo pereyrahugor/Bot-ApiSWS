@@ -1,0 +1,22 @@
+=========================================
+      REPORTE DE ENRIQUECIMIENTO DNI
+=========================================
+Fecha: 22/4/2026, 11:50:09
+Proyecto: 276503c6-752a-4852-9c00-13a6a52aaa54
+Duración: 18.72s
+
+MÉTRICAS:
+- Total inspeccionados: 64
+- Contactos enriquecidos: 4
+- No encontrados en SWS: 54
+- Múltiples coincidencias (SWS): 6
+- Errores: 0
+
+-----------------------------------------
+DETALLE: ACTUALIZACIONES
+-----------------------------------------
+- 3515292327: (F) PAFUNDI MARIA (dentro de Los Sueños) (DNI: 120555)
+- 3513079283: (F) INAUDI JOSE AGUSTIN (DNI: 98250)
+- 3516501921: ARDISSONO ALICIA (Altos del Chateau) (DNI: 145)
+- 3513960394: RODRIGUEZ TOMAS (DNI: 128340)
+=========================================

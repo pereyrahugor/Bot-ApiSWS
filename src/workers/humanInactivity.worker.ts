@@ -2,7 +2,7 @@ import { HistoryHandler, supabase } from "../utils/historyHandler";
 
 /**
  * Inicia un worker que verifica cada minuto los chats con intervención humana (bot desactivado).
- * Si no han recibido un mensaje humano en 15 minutos, reactiva el bot automáticamente.
+ * Si no han recibido un mensaje humano en 45 minutos, reactiva el bot automáticamente.
  */
 export const startHumanInactivityWorker = (timeoutMinutes = 45) => {
     console.log(`🤖 [Worker] Iniciando worker de inactividad humana (${timeoutMinutes} min)...`);
