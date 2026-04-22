@@ -126,16 +126,20 @@ export class AiManager {
             const isFromMe = ctx.key?.fromMe || (botNumber && senderNumber === botNumber);
 
             // Registro del mensaje en el historial
-            // Si es de nosotros (manual desde el móvil), lo guardamos como 'assistant'
-            await HistoryHandler.saveMessage(
-                ctx.from, 
-                isFromMe ? 'assistant' : 'user', 
-                body || (ctx.type === EVENTS.VOICE_NOTE ? "[Audio]" : "[Media]"), 
-                ctx.type,
-                ctx.pushName || null,
-                null,
-                ctx.key?.id || ctx.id
-            );
+            // IMPORTANTE: Para WhatsApp, el guardado ya lo hace provider.manager.ts.
+            // Aquí solo guardamos si es un canal que no sea WhatsApp (como WebChat) para evitar duplicados.
+            const isWhatsApp = !!(ctx.key || (ctx.id && ctx.id.length > 15));
+            if (!isWhatsApp) {
+                await HistoryHandler.saveMessage(
+                    ctx.from, 
+                    isFromMe ? 'assistant' : 'user', 
+                    body || (ctx.type === EVENTS.VOICE_NOTE ? "[Audio]" : "[Media]"), 
+                    ctx.type,
+                    ctx.pushName || null,
+                    null,
+                    ctx.key?.id || ctx.id
+                );
+            }
 
             if (isFromMe) {
                 stop(ctx);

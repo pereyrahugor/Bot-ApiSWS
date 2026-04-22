@@ -148,7 +148,21 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 const { HistoryHandler } = await import('../utils/historyHandler');
                 const chatId = ctx.from?.includes('@') ? ctx.from.split('@')[0] : ctx.from;
                 const messageId = ctx.key?.id || ctx.id;
-                await HistoryHandler.saveMessage(chatId, 'user', ctx.body, ctx.type || 'text', null, null, messageId);
+
+                // Detectar si el mensaje es un "eco" (enviado desde el mismo número del bot)
+                const botNumber = (process.env.YCLOUD_WABA_NUMBER || '').replace(/\D/g, '');
+                const senderNumber = (chatId || '').replace(/\D/g, '');
+                const isFromMe = ctx.key?.fromMe || (botNumber && senderNumber === botNumber);
+
+                await HistoryHandler.saveMessage(
+                    chatId, 
+                    isFromMe ? 'assistant' : 'user', 
+                    ctx.body, 
+                    ctx.type || 'text', 
+                    null, 
+                    null, 
+                    messageId
+                );
             }
         } catch (err) {
             console.error(`❌ ${prefix} Error en el logger de mensajes entrantes:`, err);
