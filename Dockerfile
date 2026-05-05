@@ -1,5 +1,5 @@
 # Image size ~ 400MB
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 
 WORKDIR /app
@@ -38,7 +38,7 @@ RUN apt-get remove -y python3 make g++ git && apt-get autoremove -y && rm -rf /v
 
 
 
-FROM node:20-slim AS deploy
+FROM node:22-slim AS deploy
 
 # Instalar poppler-utils en la imagen final para que pdftoppm esté disponible
 RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*
