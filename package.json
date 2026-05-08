@@ -78,5 +78,16 @@
   },
   "overrides": {
     "sharp": "0.32.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@ffmpeg-installer/linux-x64",
+      "@whiskeysockets/baileys",
+      "baileys",
+      "esbuild",
+      "protobufjs",
+      "sharp",
+      "typechecker"
+    ]
   }
 }
