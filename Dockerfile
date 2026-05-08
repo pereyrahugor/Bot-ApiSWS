@@ -5,7 +5,7 @@ FROM node:22-slim AS builder
 WORKDIR /app
 
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 ENV PNPM_HOME=/usr/local/bin
 
 
@@ -13,7 +13,6 @@ ENV PNPM_HOME=/usr/local/bin
 
 # Copiar archivos de configuración y dependencias primero para aprovechar la cache
 COPY package*.json ./
-COPY pnpm-workspace.yaml* ./
 COPY *-lock.yaml ./
 COPY rollup.config.js ./
 COPY tsconfig.json ./
@@ -67,7 +66,7 @@ COPY --from=builder /app/src/js ./src/js
 COPY --from=builder /app/src/style ./src/style
 
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 ENV PNPM_HOME=/usr/local/bin
 RUN mkdir /app/tmp
 # Copiar node_modules funcional del builder (Evita que ffmpeg o scripts binarios se rompan en producción)
