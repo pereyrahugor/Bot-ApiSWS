@@ -1,0 +1,11 @@
+packages:
+  - '.'
+
+allowBuilds:
+  - '@ffmpeg-installer/linux-x64'
+  - '@whiskeysockets/baileys'
+  - 'baileys'
+  - 'esbuild'
+  - 'protobufjs'
+  - 'sharp'
+  - 'typechecker'

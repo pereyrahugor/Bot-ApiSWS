@@ -13,6 +13,7 @@ ENV PNPM_HOME=/usr/local/bin
 
 # Copiar archivos de configuración y dependencias primero para aprovechar la cache
 COPY package*.json ./
+COPY pnpm-workspace.yaml* ./
 COPY *-lock.yaml ./
 COPY rollup.config.js ./
 COPY tsconfig.json ./
