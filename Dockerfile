@@ -21,6 +21,7 @@ COPY tsconfig.json ./
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates poppler-utils && update-ca-certificates
 
 # Instalar dependencias node
+RUN pnpm config set block-exotic-subdeps false
 RUN pnpm install
 
 # Copiar el resto del código fuente y carpetas necesarias antes del build

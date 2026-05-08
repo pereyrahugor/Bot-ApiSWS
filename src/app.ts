@@ -115,7 +115,7 @@ const main = async () => {
 
     // Proveedor de grupos (Baileys)
     groupProvider = createProvider(BaileysProvider, {
-        version: [2, 3000, 1030817285],
+        version: [2, 3000, 1038711718],
         groupsIgnore: false,
         readStatus: false,
         disableHttpServer: true,
