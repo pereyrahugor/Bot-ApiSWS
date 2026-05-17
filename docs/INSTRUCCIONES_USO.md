@@ -1,99 +1,107 @@
-# Backoffice — Guía de instalación en otro proyecto
+# 📘 Guía de Instrucciones de Uso - Bot-RialWay
 
-## Requisitos previos
+Esta guía detalla el funcionamiento integral del sistema, desde la conexión inicial hasta la gestión avanzada de clientes, automatizaciones de IA e importación masiva de datos.
 
-- Node.js con soporte ESM (`"type": "module"` en `package.json`)
-- Servidor HTTP compatible con Polka o Express
-- Cuenta en Supabase (las credenciales ya están embebidas en `db/vault.ts`)
+---
 
-## Dependencias npm necesarias
+## 1. Conexión del Bot (WhatsApp)
+Existen dos formas de conectar el sistema a WhatsApp, dependiendo de tus necesidades de estabilidad y volumen.
 
-```bash
-npm install @supabase/supabase-js dotenv axios body-parser multer xlsx serve-static qrcode
-```
+### 1-a. Proveedor No Oficial (Baileys / Código QR)
+Este método utiliza una instancia de WhatsApp Web para conectar el bot:
+1. Accede a la sección **Conexión** (Icono QR) en el menú lateral.
+2. Si el bot no está vinculado, aparecerá un Código QR.
+3. Desde tu teléfono de WhatsApp Business, ve a **Dispositivos Vinculados > Vincular un dispositivo**.
+4. Escanea el QR. Una vez vinculado, verás el estado "Conectado".
+- **Ventaja**: Implementación inmediata sin procesos de aprobación de Meta.
+- **Limitación**: Sujeto a cierres de sesión por inactividad del teléfono físico.
 
-## Pasos para integrar
+### 1-b. Proveedor Oficial (Meta Cloud API)
+Este método utiliza la API oficial de WhatsApp para empresas:
+1. Accede a **Meta Info** en el menú lateral (icono de Meta).
+2. Configura los parámetros desde el portal [Meta for Developers](https://developers.facebook.com/):
+    - **WABA ID / Phone ID**: Identificadores únicos de tu cuenta y número.
+    - **Access Token**: Token de acceso permanente (System User).
+    - **Webhook**: Configura la URL de tu servidor y el *Verify Token* definido en `System Config`.
+3. **Sincronización SMB**: Desde este panel puedes forzar la sincronización de contactos e historial de mensajes acumulados en Meta.
+- **Ventaja**: Máxima estabilidad, soporte multi-agente robusto y cumplimiento oficial de políticas.
 
-### 1. Copiar la carpeta
+---
 
-Copiá toda la carpeta `backoffice/` al `src/` del proyecto destino. La estructura debe quedar así:
+## 2. Importación Masiva y Plantillas (Excel)
+Carga bases de datos de clientes existentes de forma masiva:
+- **Ubicación**: En la sección de **Conversaciones**, haz clic en el botón de la nube (Importar).
+- **Plantilla Oficial**: Haz clic en **"Descargar Plantilla Excel"** para obtener el formato compatible.
+- **Campos**: `phone` (obligatorio), `name` y `tags` (opcionales).
+- **Resultado**: El sistema creará los chats y asignará etiquetas inmediatamente, permitiendo segmentar tu base antes de que los clientes escriban.
 
-```
-src/
-  backoffice/
-    db/           <- vault.ts + historyHandler.ts (capa DB interna)
-    html/         <- archivos HTML del panel
-    js/           <- frontend del panel
-    style/        <- CSS del panel
-    middleware/   <- auth.ts
-    routes/       <- backoffice.routes.ts, dashboard.routes.ts, static.routes.ts
-    types/        <- provider.interface.ts
-    mount.ts
-    index.ts
-```
+---
 
-### 2. Implementar la interfaz del provider
+## 3. Atención Multimedia y Notas de Voz
+> [!IMPORTANT]
+> **Funcionalidad exclusiva de la versión con Bot de Inteligencia Artificial.**
 
-Tu provider de WhatsApp debe cumplir la interfaz `BackofficeProvider`:
+El asistente no solo lee texto, sino que interactúa con contenido multimedia:
+- **Notas de Voz**: El bot escucha y transcribe los audios de los clientes para responder contextualmente.
+- **Análisis de Imágenes**: Puede procesar fotos (comprobantes, capturas de pantalla, productos) para extraer información o responder dudas sobre lo que "ve".
+- **Interacción Fluida**: Los usuarios pueden alternar entre audio y texto sin que el bot pierda el hilo de la conversación.
 
-```typescript
-import type { BackofficeProvider } from './backoffice/index';
+---
 
-const miProvider: BackofficeProvider = {
-  sendTemplate: async (phone, templateName, languageCode, components) => {
-    // tu lógica para enviar templates de WhatsApp
-  },
-  getTemplates: async () => {
-    // tu lógica para obtener templates disponibles
-    return [];
-  },
-  qrCodeString: undefined, // opcional: string del QR si usás Baileys
-};
-```
+## 4. Automatización y Derivación Inteligente
+> [!IMPORTANT]
+> **Funcionalidad exclusiva de la versión con Bot de Inteligencia Artificial.**
 
-### 3. Montar el backoffice
+La IA actúa como un gestor activo del flujo de ventas:
+- **Movimiento de Columnas en CRM**: Al detectar un avance (ej: el cliente pide presupuesto o confirma una compra), la IA mueve la tarjeta del lead automáticamente en el tablero CRM.
+- **Handover (Derivación entre Asistentes)**: El sistema puede derivar a un cliente entre diferentes "perfiles" de IA (ej: de un *Recepcionista* a un *Vendedor Especializado*) de forma transparente para el usuario.
+- **Asignación de Etiquetas**: La IA categoriza al cliente en tiempo real (ej: "Urgente", "Interesado en Plan X") basándose en el análisis de la conversación.
 
-```typescript
-import { mountBackoffice } from './backoffice/index';
+---
 
-// Dentro de tu función main, una vez que tengas el servidor (app):
-mountBackoffice(app, {
-  provider: miProvider,
-  groupProvider: miGroupProvider, // opcional
-  openaiMain: openaiInstance,     // opcional, para funciones de IA
-  upload: multerInstance,          // opcional, para subida de archivos
-});
-```
+## 5. Gestión de CRM y Tablero Kanban
+El centro de gestión comercial de tu equipo:
+- **Tablero Visual**: Organiza a tus clientes en columnas según su etapa de venta.
+- **Búsqueda y Filtros**: Puedes buscar clientes por nombre, teléfono, notas o etiquetas. Utiliza la barra de búsqueda superior para encontrar contactos específicos rápidamente.
+- **Ficha del Lead**: Haz clic en cualquier tarjeta para ver el historial de notas, datos fiscales y actualizar el estado manualmente si es necesario.
+- **Sincronización Real-Time**: Todos los movimientos se reflejan instantáneamente en las pantallas de todo el equipo mediante WebSockets.
 
-### 4. Servir los archivos estáticos
+---
 
-El backoffice sirve sus propios archivos desde `backoffice/html/`, `backoffice/js/` y `backoffice/style/`. No se necesita configuración adicional — `mountBackoffice` lo registra automáticamente.
+## 6. Coexistencia Bot/Humano
+Intervención manual sin conflictos:
+- **Interruptor Bot/Humano**: Pausa la IA en cualquier momento para tomar el control de la charla.
+- **Reactivación**: El bot puede configurarse para reanudarse tras un periodo de inactividad del humano (Parametrizado por el administrador).
 
-Si usás esbuild u otro bundler, asegurate de que los archivos estáticos del panel (html/js/css) se copien al directorio de salida en el deploy.
+---
 
-### 5. Variables de entorno opcionales
+## 7. Comandos de Control (WhatsApp)
+Controla el sistema mediante mensajes de texto (Solo números autorizados):
+- **#ON#**: Activa el bot **exclusivamente para el chat actual**.
+- **#OFF#**: Desactiva el bot para el chat actual. No se reactiva por tiempo.
+- **#RESET#**: Borra el historial de memoria del asistente para ese usuario.
+- **#ACTUALIZAR#**: 
+    - *Solo IA*: Sincroniza en caliente los datos de Google Sheets y refresca las instrucciones (Prompts) sin reiniciar el servidor.
 
-El backoffice funciona sin `.env` gracias a `db/vault.ts`. Sin embargo, algunas funciones mejoran con estas variables:
+---
 
-| Variable | Uso |
-|---|---|
-| `ADMIN_PASS` | Contraseña del panel (si no está, lee de DB) |
-| `RAILWAY_PROJECT_ID` | Identificador único del proyecto en Supabase |
-| `RAILWAY_SERVICE_NAME` | Nombre del servicio |
-| `ASSISTANT_NAME` | Nombre del bot que aparece en el panel |
+## 8. Reportes Externos (Google Sheets)
+> [!NOTE]
+> **Los resúmenes automáticos requieren la versión con Bot de Inteligencia Artificial.**
 
-### 6. Acceder al panel
+- **Sincronización de Resúmenes**: Al finalizar o pausarse una conversación, la IA genera un resumen estructurado.
+- **Hoja de Cálculo Central**: Este resumen se envía automáticamente a una Google Sheet configurada, permitiendo llevar un registro de ventas, tickets o consultas fuera del sistema para análisis posterior.
 
-Una vez montado, el panel estará disponible en:
+---
 
-- `/backoffice` — Panel principal de mensajes
-- `/dashboard` — Dashboard con métricas
-- `/login` — Login del panel
-- `/crm` — CRM de leads
-- `/system-config` — Configuración del sistema
+## 9. Dashboards y KPIs
+Visualiza el rendimiento operativo en tiempo real:
+- **Métricas**: Tasa de conversión, volumen de mensajes y proactividad del bot.
+- **Ayuda Visual**: Pasa el ratón sobre el icono `(i)` para ver el detalle de cada cálculo.
 
-## Notas importantes
+---
 
-- La autenticación usa `ADMIN_PASS` de la tabla `settings` en Supabase, o la variable de entorno del mismo nombre como fallback.
-- El `RAILWAY_PROJECT_ID` separa los datos de cada proyecto en Supabase (multitenancy). Si no está definido, usa `"default_project"`.
-- Los archivos HTML/JS/CSS del panel **no son parte del bundle** — deben desplegarse como estáticos junto al código compilado.
+## 10. Gestión de Equipo (Multi-agentes)
+- **Roles**: Administradores (acceso total) y Operadores (acceso limitado).
+    - *Nota: El rol de administrador debe solicitar la creación de sus credenciales directamente al equipo de Soporte.*
+- **Asignación de Leads**: Los administradores pueden asignar clientes a operadores específicos. Los operadores solo verán sus clientes asignados o aquellos "Libres".
