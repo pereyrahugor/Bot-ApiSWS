@@ -103,11 +103,6 @@ export const processSendMessage = async (
             
             await HistoryHandler.updateLastHumanMessage(chatId);
 
-            // Notificar vía Socket.IO si el servidor está adjunto para feedback inmediato
-            if ((adapterProvider as any).server?.io) {
-                (adapterProvider as any).server.io.emit('new_message', { chatId, role: 'assistant', content: finalContent, type: finalType });
-            }
-
             res.json({ success: true, fileUrl: file ? fileUrl : undefined });
         } catch (waError) {
             console.error('[BACKOFFICE] Error enviando a Whatsapp:', waError);

@@ -102,10 +102,11 @@ socket.on('new_message', (msg) => {
 
     // 1. Si es el chat activo, añadir mensaje a la vista
     if (cid === activeChatId) {
-        // Evitar duplicados si el mensaje ya está en la lista (comparando ID y external_id)
+        // Evitar duplicados si el mensaje ya está en la lista (comparando ID, external_id, o contenido/rol/tiempo)
         const isDuplicate = allMessages.some(m => 
-            (m.id === msg.id && msg.id !== undefined) || 
-            (m.external_id === msg.external_id && msg.external_id !== undefined && msg.external_id !== null)
+            (m.id === msg.id && msg.id !== undefined && msg.id !== null) || 
+            (m.external_id === msg.external_id && msg.external_id !== undefined && msg.external_id !== null) ||
+            (m.role === msg.role && m.content === msg.content && Math.abs(new Date(m.created_at || 0) - new Date(msg.created_at || Date.now())) < 5000)
         );
         if (!isDuplicate) {
             allMessages.push(msg);

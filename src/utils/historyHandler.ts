@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { EventEmitter } from "events";
 import dotenv from "dotenv";
 import path from 'path';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -163,7 +164,9 @@ export class HistoryHandler {
             const chatId = this.normalizeId(rawChatId);
             await this.getOrCreateChat(chatId, 'webchat', contactName, userId);
             
+            const finalId = messageId || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
             const messageData: any = {
+                id: finalId,
                 chat_id: chatId, 
                 project_id: PROJECT_ID, 
                 role, 
@@ -171,10 +174,6 @@ export class HistoryHandler {
                 type, 
                 created_at: new Date().toISOString()
             };
-
-            if (messageId) {
-                messageData.id = messageId;
-            }
 
             // Intentar con agent_id si está configurado
             if (process.env.ASSISTANT_ID) {
@@ -186,7 +185,15 @@ export class HistoryHandler {
             if (error) throw error;
 
             await supabase.from('chats').update({ last_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID);
-            historyEvents.emit('new_message', { chatId, role, content, type });
+            historyEvents.emit('new_message', { 
+                id: finalId,
+                chat_id: chatId, 
+                chatId,
+                role, 
+                content, 
+                type,
+                created_at: messageData.created_at
+            });
         } catch (err) {
             console.error('[HistoryHandler] Error en saveMessage:', err);
         }
