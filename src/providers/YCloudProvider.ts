@@ -234,6 +234,7 @@ class YCloudProvider extends ProviderClass {
                 }
 
                 const formatedMessage = {
+                    id: msg.id,
                     body: msg.text?.body || 
                           msg.interactive?.button_reply?.title || 
                           msg.interactive?.list_reply?.title || 
@@ -266,6 +267,7 @@ class YCloudProvider extends ProviderClass {
 
                             value.messages.forEach((msg: any) => {
                                 const formatedMessage = {
+                                    id: msg.id,
                                     body: msg.text?.body || 
                                           msg.interactive?.button_reply?.title || 
                                           msg.interactive?.list_reply?.title || 

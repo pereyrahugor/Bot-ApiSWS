@@ -153,7 +153,7 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
             if (ctx.body && !ctx.body.startsWith('_event_')) {
                 const { HistoryHandler } = await import('../utils/historyHandler');
                 const chatId = ctx.from?.includes('@') ? ctx.from.split('@')[0] : ctx.from;
-                const messageId = ctx.key?.id || ctx.id;
+                const messageId = ctx.key?.id || ctx.id || ctx.payload?.id;
 
                 // Detectar si el mensaje es un "eco" (enviado desde el mismo número del bot)
                 const botNumber = (process.env.YCLOUD_WABA_NUMBER || '').replace(/\D/g, '');
