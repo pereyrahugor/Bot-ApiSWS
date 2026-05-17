@@ -63,6 +63,12 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
 
     provider.on('message', async (ctx: any) => {
         try {
+            const isGroup = ctx.key?.remoteJid?.endsWith('@g.us') || ctx.from?.includes('@g.us');
+            if (isGroupProvider && !isGroup) {
+                console.log(`${prefix} 🤫 Ignorando mensaje directo en el proveedor de grupos para evitar duplicados.`);
+                return;
+            }
+
             console.log(`${prefix} 📩 Mensaje entrante - Tipo: ${ctx.type}, De: ${ctx.from}`);
             
             // Si el mensaje es una nota de voz, forzamos el log específico para confirmar detección
