@@ -219,7 +219,8 @@ export class HistoryHandler {
 
     static async updateContactDetails(chatId: string, details: any) {
         try {
-            const { error } = await supabase.from('chats').update(details).eq('id', chatId).eq('project_id', PROJECT_ID);
+            const normalizedChatId = this.normalizeId(chatId);
+            const { error } = await supabase.from('chats').update(details).eq('id', normalizedChatId).eq('project_id', PROJECT_ID);
             if (error) throw error;
             return { success: true };
         } catch (err: any) {
@@ -300,11 +301,17 @@ export class HistoryHandler {
         return { success: !error };
     }
     static async addTagToChat(chatId: string, tagId: string) {
-        const { error } = await supabase.from('chat_tags').insert({ chat_id: chatId, tag_id: tagId, project_id: PROJECT_ID });
+        const normalizedChatId = this.normalizeId(chatId);
+        const { error } = await supabase.from('chat_tags').upsert({
+            chat_id: normalizedChatId,
+            tag_id: tagId,
+            project_id: PROJECT_ID
+        }, { onConflict: 'chat_id,tag_id,project_id' });
         return { success: !error };
     }
     static async removeTagFromChat(chatId: string, tagId: string) {
-        const { error } = await supabase.from('chat_tags').delete().eq('chat_id', chatId).eq('tag_id', tagId).eq('project_id', PROJECT_ID);
+        const normalizedChatId = this.normalizeId(chatId);
+        const { error } = await supabase.from('chat_tags').delete().eq('chat_id', normalizedChatId).eq('tag_id', tagId).eq('project_id', PROJECT_ID);
         return { success: !error };
     }
 
@@ -321,6 +328,23 @@ export class HistoryHandler {
     static async getThreadId(chatId: string): Promise<string | null> {
         const { data } = await supabase.from('chats').select('metadata').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
         return data?.metadata?.thread_id || null;
+    }
+
+    static async getChat(rawChatId: string): Promise<any | null> {
+        try {
+            const chatId = this.normalizeId(rawChatId);
+            const { data, error } = await supabase
+                .from('chats')
+                .select('*')
+                .eq('id', chatId)
+                .eq('project_id', PROJECT_ID)
+                .maybeSingle();
+            if (error) throw error;
+            return data || null;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en getChat:', err);
+            return null;
+        }
     }
 
     static async createTicket(chatId: string, titulo: string, descripcion: string, tipo: string = 'Soporte', prioridad: string = 'Media') {
@@ -378,6 +402,68 @@ export class HistoryHandler {
     static async getSetting(key: string): Promise<string | null> {
         const { data } = await supabase.from('settings').select('value').eq('project_id', PROJECT_IDENTIFIER).eq('key', key).single();
         return data?.value || null;
+    }
+
+    static async mapStatusToId(statusLabel: string): Promise<string> {
+        if (!statusLabel || statusLabel === '-') return statusLabel;
+        try {
+            const crmColumnsRaw = await this.getSetting('CRM_COLUMNS');
+            if (!crmColumnsRaw) return statusLabel;
+
+            const columns = JSON.parse(crmColumnsRaw);
+            if (!Array.isArray(columns)) return statusLabel;
+
+            const normalizedInput = statusLabel.trim().toLowerCase();
+
+            const matchByTitle = columns.find((col: any) =>
+                col?.title && String(col.title).trim().toLowerCase() === normalizedInput
+            );
+            if (matchByTitle?.id) return matchByTitle.id;
+
+            const matchById = columns.find((col: any) =>
+                col?.id && String(col.id).trim().toLowerCase() === normalizedInput
+            );
+            if (matchById?.id) return matchById.id;
+
+            return statusLabel;
+        } catch (err) {
+            console.error('[HistoryHandler] Error en mapStatusToId:', err);
+            return statusLabel;
+        }
+    }
+
+    static async assignTagsToContact(rawChatId: string, tagsList: string[]) {
+        try {
+            const chatId = this.normalizeId(rawChatId);
+            if (!Array.isArray(tagsList) || tagsList.length === 0) return { success: true };
+
+            const existingTags = await this.getTags();
+            const tagMap = new Map<string, any>();
+            for (const t of existingTags) tagMap.set(String(t.name || '').trim().toLowerCase(), t);
+
+            for (const tagNameRaw of tagsList) {
+                const tagName = String(tagNameRaw || '').trim();
+                if (!tagName || tagName === '-') continue;
+
+                let tag = tagMap.get(tagName.toLowerCase());
+                if (!tag) {
+                    const created = await this.createTag(tagName, '#6366f1');
+                    if (created?.success && created?.tag) {
+                        tag = created.tag;
+                        tagMap.set(tagName.toLowerCase(), tag);
+                    }
+                }
+
+                if (tag?.id) {
+                    await this.addTagToChat(chatId, tag.id);
+                }
+            }
+
+            return { success: true };
+        } catch (err: any) {
+            console.error('[HistoryHandler] Error en assignTagsToContact:', err);
+            return { success: false, error: err.message };
+        }
     }
 
     // --- User Management (New) ---

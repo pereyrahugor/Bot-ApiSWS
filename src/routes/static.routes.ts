@@ -66,6 +66,10 @@ export const registerStaticRoutes = (app: any, { __dirname }: { __dirname: strin
     serveHtmlPage("/system-config", "system-config.html");
     serveHtmlPage("/login", "login.html");
     serveHtmlPage("/backoffice", "backoffice.html");
+    serveHtmlPage("/backoffice-preview", "backoffice-preview.html");
+    serveHtmlPage("/conexion", "conexion.html");
+    serveHtmlPage("/documentacion", "docs.html");
+    serveHtmlPage("/docs", "docs.html");
     serveHtmlPage("/crm", "crm.html");
 
     // Servir archivos estáticos
@@ -82,6 +86,16 @@ export const registerStaticRoutes = (app: any, { __dirname }: { __dirname: strin
             fs.createReadStream(qrPath).pipe(res);
         } else {
             res.status(404).send('QR not found');
+        }
+    });
+
+    app.get("/bot.groups.qr.png", (req: any, res: any) => {
+        const qrPath = path.join(process.cwd(), 'bot.groups.qr.png');
+        if (fs.existsSync(qrPath)) {
+            res.setHeader('Content-Type', 'image/png');
+            fs.createReadStream(qrPath).pipe(res);
+        } else {
+            res.status(404).send('QR Groups not found');
         }
     });
 

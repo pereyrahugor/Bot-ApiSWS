@@ -13,3 +13,13 @@ instructivo_variables_entorno.txt
 node_modules
 info_meta_template,md
 logs/enrich_dni_2026-04-22T14-52-30-230Z.txt
+
+# Directorios de herramientas, logs y gemini/knowledge
+logs/
+scratch/
+scripts/
+.gemini/
+knowledge/
+.knowledge/
+.rollup.cache/
+

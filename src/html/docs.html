@@ -3,20 +3,22 @@
 <head>
     <script src="/js/auth-check.js"></script>
     <meta charset="UTF-8">
-    <title>Web Chat Bot</title>
+    <title>Manual de Usuario | {{BOT_NAME}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style/backoffice.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/style/crm-common.css">
-    <link rel="stylesheet" href="style/style.css" />
+    <link rel="stylesheet" href="/style/docs.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
-<body data-theme="light">
+<body>
     <!-- Navbar -->
     <div id="navbar">
         <div class="nav-item" title="Conversaciones" onclick="window.location.href='/backoffice'"><i class="fas fa-comments"></i><span class="nav-label">Conversaciones</span></div>
         <div class="nav-item" title="Dashboard" onclick="window.location.href='/dashboard'"><i class="fas fa-chart-simple"></i><span class="nav-label">Dashboard</span></div>
         <div class="nav-item" title="Conexión" onclick="window.location.href='/conexion'"><i class="fas fa-plug-circle-bolt"></i><span class="nav-label">Conexión</span></div>
-        <div class="nav-item active" title="Webchat" onclick="window.location.href='/webchat'"><i class="fas fa-headset"></i><span class="nav-label">Webchat</span></div>
+        <div class="nav-item" title="Webchat" onclick="window.location.href='/webchat'"><i class="fas fa-headset"></i><span class="nav-label">Webchat</span></div>
         <div class="nav-item" title="CRM" onclick="window.location.href='/crm'"><i class="fas fa-id-card-clip"></i><span class="nav-label">CRM</span></div>
         <div class="nav-item" title="Contactos" onclick="toggleLeadsPanel(event)"><i class="fas fa-user-group"></i><span class="nav-label">Contactos</span></div>
         <div class="nav-item" title="Tickets" onclick="toggleTicketsPanel(event)">
@@ -28,7 +30,7 @@
         <div class="nav-spacer"></div>
 
         <div class="nav-item" title="Configuración" onclick="window.location.href='/system-config'"><i class="fas fa-gears"></i><span class="nav-label">Configuración</span></div>
-        <div class="nav-item" title="Manual" onclick="window.location.href='/docs'"><i class="fas fa-book"></i><span class="nav-label">Manual</span></div>
+        <div class="nav-item active" title="Manual" onclick="window.location.href='/docs'"><i class="fas fa-book"></i><span class="nav-label">Manual</span></div>
         <div class="nav-item" title="Conexión Meta" id="nav-meta-btn" onclick="toggleMetaPanel(event)">
             <i class="fab fa-meta"></i>
             <span class="nav-label">Meta Info</span>
@@ -37,55 +39,48 @@
         <div class="nav-item nav-item-logout" onclick="logout()" title="Cerrar Sesión"><i class="fas fa-power-off"></i><span class="nav-label">Salir</span></div>
     </div>
 
-    <div class="crm-main-container">
-    <div id="container">
-        <div id="header">
-            <img id="avatar"
-                src="https://img.freepik.com/vector-gratis/robot-vectorial-graident-ai_78370-4114.jpg?semt=ais_hybrid&w=740&q=80"
-                alt="Bot" /> <!-- Cambiar imagen -->
-            <div class="meta">
-                <div class="name">Asistente demo</div>
-                <div class="sub">en línea</div>
+    <div class="docs-container wrapper">
+        <div class="docs-card animate-fade">
+            <div class="doc-header">
+                <div>
+                  <h1 class="doc-page-title">📘 Centro de Ayuda</h1>
+                  <p class="doc-page-subtitle">Guía operacional de {{BOT_NAME}}</p>
+                </div>
+                <button class="btn-print" onclick="window.print()">
+                    <i class="fas fa-file-pdf"></i> Guardar PDF
+                </button>
+            </div>
+            
+            <div id="content" class="doc-content">
+                Cargando manual de usuario...
             </div>
         </div>
-        <div id="chat"></div>
-        <div id="inputRow">
-            <div class="inputWrapper">
-                <button id="attach">+</button>
-                <textarea id="input" autocomplete="off" placeholder="Escribe un mensaje..."></textarea>
-            </div>
-
-            <button id="send"></button>
-
-            <input type="file" id="fileInput" hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx" />
-        </div>
     </div>
-    </div>
-    <script src="/js/crm-common.js"></script>
+
     <script>
-        (function() {
-            const token = localStorage.getItem('backoffice_token');
-            window.handleAuthAction = function() {
-                if (token) logout();
-                else window.location.href = '/login';
-            };
-            function updateAuthUI() {
-                const authBtn = document.getElementById('auth-btn');
-                if (authBtn) {
-                    if (!token) {
-                        authBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i>';
-                        authBtn.title = 'Iniciar Sesión';
-                        authBtn.style.color = 'var(--primary)';
-                    } else {
-                        authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
-                        authBtn.title = 'Cerrar Sesión';
-                        authBtn.style.color = '#f87171';
-                    }
+        const activeToken = localStorage.getItem('backoffice_token');
+        if (!activeToken) window.location.href = '/login';
+
+        async function loadDocs() {
+            try {
+                const response = await fetch('/api/backoffice/get-docs?token=' + activeToken);
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('content').innerHTML = marked.parse(data.content);
+                } else {
+                    document.getElementById('content').innerHTML = '<div style="color:red">Error: ' + data.error + '</div>';
                 }
+            } catch (err) {
+                document.getElementById('content').innerHTML = '<div style="color:red">Error de conexión con el servidor de documentación.</div>';
             }
-            updateAuthUI();
-        })();
+        }
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/login';
+        }
+
+        document.addEventListener('DOMContentLoaded', loadDocs);
     </script>
-    <script src="js/main.js?v=2.1"></script>
 </body>
 </html>

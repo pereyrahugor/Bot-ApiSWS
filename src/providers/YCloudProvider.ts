@@ -1,5 +1,7 @@
 import { ProviderClass } from '@builderbot/bot';
 import axios from 'axios';
+import fs from 'fs';
+import pathStr from 'path';
 
 /**
  * Proveedor especializado para YCloud (Meta Cloud API alternative)
@@ -73,8 +75,6 @@ class YCloudProvider extends ProviderClass {
             return 'no-file';
         }
 
-        const fs = require('fs');
-        const pathStr = require('path');
         const outPath = options.path || './temp/';
         
         if (!fs.existsSync(outPath)) {

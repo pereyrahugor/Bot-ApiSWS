@@ -25,6 +25,7 @@ import { registerBackofficeRoutes, processSendMessage, BackofficeDependencies } 
 import { registerRailwayRoutes } from "./routes/railway.routes";
 import { registerWebchatRoutes } from "./routes/webchat.routes";
 import { registerStaticRoutes } from "./routes/static.routes";
+import { registerDashboardRoutes } from "./routes/dashboard.routes";
 import { initSocketIO } from "./sockets/socket.manager";
 import { registerProviderEvents, hasActiveSession } from "./providers/provider.manager";
 import { startHumanInactivityWorker } from "./workers/humanInactivity.worker";
@@ -256,6 +257,7 @@ const main = async () => {
         registerRailwayRoutes(app, { RailwayApi });
         registerWebchatRoutes(app, { webChatManager, openaiVision, ASSISTANT_ID, processUserMessage: aiManager.processUserMessage });
         registerStaticRoutes(app, { __dirname });
+        registerDashboardRoutes(app);
 
         // API Health & Info
         app.get("/health", (_req, res) => res.json({ status: "ok", time: new Date().toISOString() }));

@@ -3,7 +3,9 @@ import fs from 'fs';
 import url from 'url';
 import bodyParser from 'body-parser';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 import { backofficeAuth, systemConfigAuth } from "../middleware/auth";
+import { supabase } from '../utils/historyHandler';
 
 /**
  * Registra las rutas del backoffice en la instancia de Polka.
@@ -127,6 +129,7 @@ export const processSendMessage = async (
  */
 export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies) => {
     const { adapterProvider, HistoryHandler, openaiMain, upload } = deps;
+    const projectId = process.env.RAILWAY_PROJECT_ID || "local-dev";
 
     // --- AUTH ---
 
@@ -392,7 +395,7 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
 
     app.get('/api/backoffice/whatsapp/config', async (req, res) => {
         const q: any = {};
-        try { const urlObj = new URL(req.url || '', 'http://localhost'); urlObj.searchParams.forEach((v, k) => q[k] = v); } catch (e) { }
+        try { const urlObj = new URL(req.url || '', 'http://localhost'); urlObj.searchParams.forEach((v, k) => q[k] = v); } catch (e) { /* ignore */ }
         let token = req.headers['authorization'] || q.token || '';
         if (typeof token === 'string') {
             if (token.startsWith('token=')) token = token.slice(6);
@@ -468,5 +471,254 @@ export const registerBackofficeRoutes = (app: any, deps: BackofficeDependencies)
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
         }
+    });
+
+    // --- COMPAT ROUTES PARA FRONT WEB (RIALWAY) ---
+
+    app.get('/api/backoffice/settings', backofficeAuth, async (_req: any, res: any) => {
+        try {
+            const { data, error } = await supabase
+                .from('settings')
+                .select('key, value')
+                .eq('project_id', projectId);
+            if (error) throw error;
+            const settings: Record<string, string> = {};
+            for (const row of data || []) settings[row.key] = row.value;
+            res.json(settings);
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/backoffice/config', systemConfigAuth, async (_req: any, res: any) => {
+        try {
+            const { data, error } = await supabase
+                .from('settings')
+                .select('key, value')
+                .eq('project_id', projectId);
+            if (error) throw error;
+
+            const variables: Record<string, any> = { ...process.env };
+            for (const row of data || []) variables[row.key] = row.value;
+            res.json({ success: true, variables });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/backoffice/save-settings-bulk', systemConfigAuth, bodyParser.json(), async (req: any, res: any) => {
+        const { settings } = req.body || {};
+        if (!settings || typeof settings !== 'object') {
+            return res.status(400).json({ success: false, error: 'settings object is required' });
+        }
+        try {
+            const entries = Object.entries(settings);
+            await Promise.all(entries.map(([key, value]) => HistoryHandler.saveSetting(key, String(value ?? ''))));
+            res.json({ success: true, saved: entries.length });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/backoffice/sync-assistant-prompt', systemConfigAuth, bodyParser.json(), async (req: any, res: any) => {
+        try {
+            const { assistantId } = req.body || {};
+            if (!assistantId) return res.status(400).json({ success: false, error: 'assistantId is required' });
+            if (!openaiMain) return res.status(503).json({ success: false, error: 'OpenAI not configured' });
+
+            const assistant = await openaiMain.beta.assistants.retrieve(assistantId);
+            res.json({
+                success: true,
+                instructions: assistant?.instructions || '',
+                name: assistant?.name || ''
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.put('/api/backoffice/crm/ticket/:id', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+        try {
+            const { id } = req.params;
+            const { titulo, contact } = req.body || {};
+            const { data: ticketRow } = await supabase
+                .from('tickets')
+                .select('chat_id')
+                .eq('id', id)
+                .eq('project_id', projectId)
+                .maybeSingle();
+            const ticketChatId = ticketRow?.chat_id || contact?.chat_id || req.body?.chatId || '';
+
+            if (titulo) {
+                await supabase
+                    .from('tickets')
+                    .update({ titulo, updated_at: new Date().toISOString() })
+                    .eq('id', id)
+                    .eq('project_id', projectId);
+            }
+
+            if (contact?.crm_status !== undefined || contact?.crm_due_date !== undefined) {
+                const updateData: any = {};
+                if (contact.crm_status !== undefined) updateData.crm_status = contact.crm_status;
+                if (contact.crm_due_date !== undefined) updateData.crm_due_date = contact.crm_due_date;
+                if (Object.keys(updateData).length > 0) {
+                    await supabase
+                        .from('chats')
+                        .update(updateData)
+                        .eq('id', ticketChatId)
+                        .eq('project_id', projectId);
+                }
+            }
+
+            if (ticketChatId) {
+                await HistoryHandler.updateContactDetails(ticketChatId, {
+                    name: contact.name,
+                    email: contact.email,
+                    notes: contact.notes,
+                    source: contact.source,
+                    cuit_dni: contact.cuit_dni,
+                    tax_status: contact.tax_status,
+                    address: contact.address,
+                    offered_product: contact.offered_product,
+                    is_lead: true
+                });
+            }
+
+            res.json({ success: true });
+        } catch (error: any) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/backoffice/settings/bot-status', backofficeAuth, async (_req: any, res: any) => {
+        const enabled = (await HistoryHandler.getSetting('GLOBAL_BOT_ENABLED')) !== 'false';
+        res.json({ success: true, enabled });
+    });
+
+    app.post('/api/backoffice/settings/toggle-bot', bodyParser.json(), async (req: any, res: any) => {
+        const token = req.body?.token;
+        if (token !== "neuroadmin25" && token !== process.env.BACKOFFICE_TOKEN) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
+        }
+        const enabled = !!req.body?.enabled;
+        await HistoryHandler.saveSetting('GLOBAL_BOT_ENABLED', enabled ? 'true' : 'false');
+        res.json({ success: true, enabled });
+    });
+
+    app.post('/api/backoffice/system/restart', bodyParser.json(), async (req: any, res: any) => {
+        const token = req.body?.token;
+        if (token !== "neuroadmin25" && token !== process.env.BACKOFFICE_TOKEN) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
+        }
+        try {
+            const { RailwayApi } = await import('../Api-RailWay/Railway');
+            const result = await RailwayApi.restartActiveDeployment();
+            if (result?.success) return res.json({ success: true });
+            return res.status(500).json({ success: false, error: result?.error || 'Restart failed' });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/backoffice/whatsapp/templates', backofficeAuth, async (_req: any, res: any) => {
+        try {
+            if (typeof (adapterProvider as any)?.getTemplates === 'function') {
+                const templates = await (adapterProvider as any).getTemplates();
+                return res.json({ success: true, templates: templates || [] });
+            }
+            return res.json({ success: true, templates: [] });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/backoffice/whatsapp/templates', backofficeAuth, bodyParser.json(), async (req: any, res: any) => {
+        try {
+            if (typeof (adapterProvider as any)?.createTemplate === 'function') {
+                const result = await (adapterProvider as any).createTemplate(req.body || {});
+                return res.json({ success: true, result });
+            }
+            return res.status(400).json({ success: false, error: 'Creación de plantillas no soportada en este proveedor' });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/backoffice/whatsapp/library-templates', backofficeAuth, async (_req: any, res: any) => {
+        res.json({ success: true, templates: [] });
+    });
+
+    app.post('/api/backoffice/whatsapp/send-bulk-template', backofficeAuth, (_req: any, res: any) => {
+        res.status(400).json({
+            success: false,
+            error: 'Envio masivo de plantillas no disponible para la configuracion actual'
+        });
+    });
+
+    app.get('/api/backoffice/whatsapp/template-excel/:name', backofficeAuth, (req: any, res: any) => {
+        const tplName = req.params.name || 'template';
+        const csv = `phone,param1,param2,header_media_url\n5491111111111,Ejemplo 1,Ejemplo 2,\n`;
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${tplName}-bulk-template.csv"`);
+        res.end(csv);
+    });
+
+    app.post('/api/backoffice/whatsapp/sync-contacts', backofficeAuth, async (_req: any, res: any) => {
+        res.json({
+            success: true,
+            summary: { contacts: 0, labels: 0, associations: 0, meta_sync_triggered: false }
+        });
+    });
+
+    app.get('/api/backoffice/chats/import-template', backofficeAuth, (_req: any, res: any) => {
+        const csv = `phone,name,tags\n5491111111111,Cliente Demo,VIP\n`;
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="contacts-import-template.csv"');
+        res.end(csv);
+    });
+
+    app.post('/api/backoffice/chats/import', backofficeAuth, (req: any, res: any) => {
+        upload.single('file')(req, res, async (err: any) => {
+            if (err) return res.status(400).json({ success: false, error: err.message });
+            try {
+                const file = (req as any).file;
+                if (!file) return res.status(400).json({ success: false, error: 'No file uploaded' });
+
+                const workbook = XLSX.readFile(file.path);
+                const sheetName = workbook.SheetNames[0];
+                const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+                let imported = 0;
+
+                for (const row of rows) {
+                    const phone = String(row.phone || row.Phone || '').replace(/\D/g, '');
+                    if (!phone) continue;
+                    await HistoryHandler.createNewLeadManual(phone, {
+                        name: row.name || row.Name || '',
+                        source: row.source || 'Importacion',
+                        notes: row.notes || '',
+                        offered_product: row.offered_product || ''
+                    });
+                    imported++;
+                }
+
+                try { fs.unlinkSync(file.path); } catch { /* ignore */ }
+                res.json({ success: true, imported });
+            } catch (error: any) {
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+    });
+
+    app.get('/api/backoffice/whatsapp/onboard-callback', (_req: any, res: any) => {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Onboarding Meta</title></head><body style="font-family:Arial,sans-serif;padding:24px"><h3>Procesando onboarding...</h3><p id="status">Esperando codigo...</p><script>
+const p=new URLSearchParams(window.location.search);const code=p.get('code');const st=document.getElementById('status');
+if(!code){st.textContent='No se recibio codigo.';}else{
+const token=localStorage.getItem('backoffice_token')||'';
+fetch('/api/backoffice/whatsapp/onboard',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({code})})
+.then(r=>r.json()).then(d=>{st.textContent=d.success?'Onboarding completado. Ya puedes cerrar esta ventana.':'Error: '+(d.error||'desconocido');})
+.catch(()=>{st.textContent='Error de red al completar onboarding.';});
+}
+</script></body></html>`);
     });
 };

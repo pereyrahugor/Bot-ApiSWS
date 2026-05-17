@@ -4,6 +4,17 @@ const activeToken = backofficeToken;
 
 if (!activeToken) window.location.href = '/login';
 
+const userRole = localStorage.getItem('user_role') || 'subuser';
+const userId = localStorage.getItem('user_id');
+const isAdmin = (userRole === 'admin' || activeToken === 'neuroadmin25');
+const userName = localStorage.getItem('user_name') || 'Usuario';
+
+let teamUsers = [];
+let allLeads = [];
+let allTickets = [];
+let crmData = {};
+let botTags = [];
+
 let kanbanBoard = null;
 let columns = [
     { id: 'UNASSIGNED', title: 'Tickets Nuevos', fixed: true },
@@ -13,17 +24,32 @@ let columns = [
     { id: 'cierre', title: 'Cierre' }
 ];
 
-let allLeads = [];
-let allTickets = [];
-let crmData = {}; // Para guardar metadatos (alertas, notas adicionales) de cada prospecto
+// crmConfig y applyCRMConfig ahora se cargan desde crm-common.js
 
 // --- Inicialización ---
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 Iniciando CRM...');
-    showToast('🚀 Iniciando CRM...');
+    console.log('🚀 Iniciando CRM como:', userName, `(${userRole})`);
+    showToast(`Bienvenido ${userName}`, 'success');
     
-    // Cargamos primero el estado (columnas)
-    await loadCRMState();
+    // Mostrar botones de admin si corresponde
+    if (isAdmin) {
+        const btnNewUser = document.getElementById('btn-new-user');
+        const assigneeSection = document.getElementById('assignee-section');
+        if (btnNewUser) btnNewUser.style.display = 'block';
+        if (assigneeSection) assigneeSection.style.display = 'block';
+        
+        // Cargar equipo para los selects
+        await loadTeam();
+    }
+
+    // Cargar etiquetas (para todos)
+    await fetchTags();
+
+    // Cargamos primero el estado (columnas) y la configuración de campos
+    await Promise.all([
+        loadCRMState(),
+        window.fetchCRMConfig()
+    ]);
     // Luego sincronizamos los datos (tickets, leads y metadatos de posicionamiento)
     await syncCRM();
 
@@ -39,12 +65,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Auto-check de alertas cada minuto
     setInterval(checkAlertsVisual, 60000);
+    
+    // Cargar config de campos
+    await window.fetchCRMConfig();
+    
     console.log('✅ CRM Listo');
 });
 
 // Exportar globalmente para botones HTML
 window.syncCRM = syncCRM;
 window.addNewColumn = addNewColumn;
+window.openCardModal = openCardModal;
+window.closeCardModal = closeCardModal;
+window.editColumn = editColumn;
+window.closeColumnModal = closeColumnModal;
+window.deleteCurrentColumn = deleteCurrentColumn;
+window.saveColumnName = saveColumnName;
 
 async function loadCRMState() {
     // Intentar cargar el orden de las columnas desde el servidor
@@ -53,6 +89,10 @@ async function loadCRMState() {
         const data = await res.json();
         if (data.success && data.value) {
             columns = JSON.parse(data.value);
+            // Asegurarse de que UNASSIGNED siempre esté presente primero
+            if (!columns.some(c => c.id === 'UNASSIGNED')) {
+                columns.unshift({ id: 'UNASSIGNED', title: 'Tickets Nuevos', fixed: true });
+            }
         }
     } catch (e) {
         console.log('Usando columnas por defecto');
@@ -81,24 +121,143 @@ async function syncCRM() {
             fetch(`/api/backoffice/tickets?token=${activeToken}&estado=Abierto`) // Forzamos solo abiertos para el tablero
         ]);
 
-        allLeads = await resLeads.json();
-        const ticketsData = await resTickets.json();
+        const leadsData = await resLeads.json();
+        allLeads = Array.isArray(leadsData) ? leadsData : [];
+        
+        const ticketsRaw = await resTickets.json();
+        const ticketsData = Array.isArray(ticketsRaw) ? ticketsRaw : [];
+        
         // El CRM solo muestra los tickets que NO son Asistencia Externa y que NO estén cerrados
-        allTickets = (ticketsData || []).filter(t => t.tipo !== 'Asistencia Externa' && t.estado !== 'Cerrado');
-        console.log(`[CRM] Tickets activos: ${allTickets.length} (excluidos cerrados y externos)`);
+        allTickets = ticketsData.filter(t => t.tipo !== 'Asistencia Externa' && t.estado !== 'Cerrado');
+        console.log(`[CRM] Tickets activos: ${allTickets.length}`);
 
         const resSettings = await fetch(`/api/backoffice/get-setting?key=CRM_METADATA&token=${activeToken}`);
         const setJson = await resSettings.json();
-        if (setJson.success && setJson.value) {
+        if (setJson && setJson.success && setJson.value) {
             crmData = JSON.parse(setJson.value);
+        } else {
+            crmData = {};
         }
 
         renderBoard();
+        await loadTasksDashboard();
     } catch (e) {
         console.error(e);
         showToast('❌ Error al sincronizar datos', 'error');
     }
 }
+
+window.toggleTasksDashboard = () => {
+    const panel = document.getElementById('tasks-dashboard');
+    const btn = document.getElementById('btn-tasks-dashboard');
+    panel.classList.toggle('active');
+    if (btn) btn.classList.toggle('active');
+    
+    if (panel.classList.contains('active')) {
+        loadTasksDashboard();
+    }
+};
+
+async function loadTasksDashboard() {
+    const container = document.getElementById('tasks-list-content');
+    if (!container) return;
+
+    try {
+        console.log('[Tasks] Cargando dashboard de tareas...');
+        const tasks = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const limitDate = new Date(today);
+        limitDate.setDate(today.getDate() + 7); // Ver hasta 7 días adelante
+        limitDate.setHours(23, 59, 59, 999);
+
+        allTickets.forEach(ticket => {
+            const lead = allLeads.find(l => l.id === ticket.chat_id) || {};
+            const metadata = crmData[ticket.id] || {};
+            
+            // Prioridad: 1. Metadata del Kanban, 2. Campo del Lead en DB
+            let alertDateStr = metadata.alertDate || (lead.crm_due_date ? lead.crm_due_date.split('T')[0] : null);
+            
+            if (alertDateStr) {
+                // Normalizar fecha para evitar problemas de zona horaria
+                const dateParts = alertDateStr.split('-');
+                const alertD = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+                alertD.setHours(0, 0, 0, 0);
+                
+                // Incluir todas las vencidas Y las que vencen en los próximos 7 días
+                if (alertD <= limitDate) {
+                    const colTitle = columns.find(c => c.id === metadata.columnId)?.title || lead.crm_status || 'NUEVO';
+                    tasks.push({
+                        ticket_id: ticket.id,
+                        chat_id: ticket.chat_id,
+                        name: lead.name || 'Lead sin nombre',
+                        crm_status: colTitle,
+                        crm_due_date: alertDateStr,
+                        priority: metadata.priority || 'Media',
+                        alertD: alertD // Guardamos objeto Date para sort preciso
+                    });
+                }
+            }
+        });
+
+        // Ordenar: Vencidas primero (más viejas), luego por fecha ascendente
+        tasks.sort((a, b) => a.alertD - b.alertD);
+
+        console.log(`[Tasks] Tareas encontradas: ${tasks.length}`);
+
+        if (tasks.length === 0) {
+            container.innerHTML = `
+                <div class="tasks-empty">
+                    <i class="fas fa-check-double" style="font-size: 2rem; display: block; margin-bottom: 10px; opacity: 0.5;"></i>
+                    No hay tareas pendientes o vencidas.
+                </div>`;
+            return;
+        }
+
+        const todayStr = today.toISOString().split('T')[0];
+
+        container.innerHTML = tasks.map(t => {
+            const dateStr = t.crm_due_date;
+            const isToday = dateStr === todayStr;
+            const isOverdue = t.alertD < today;
+            const statusClass = isToday ? 'today' : (isOverdue ? 'overdue' : '');
+            const priorityColor = getPriorityColor(t.priority);
+            
+            return `
+                <div class="task-item ${statusClass}" onclick="openCardModalFromTask('${t.chat_id}')">
+                    <div class="task-date ${statusClass}">
+                        ${formatDate(dateStr)} ${isToday ? '(HOY)' : (isOverdue ? '(VENCIDO)' : '')}
+                    </div>
+                    <div class="task-title">${t.name}</div>
+                    <div class="task-footer-info">
+                        <span class="task-badge-status"><i class="fas fa-columns"></i> ${t.crm_status}</span>
+                        <span class="task-badge-priority" style="border-left: 3px solid ${priorityColor}; padding-left: 5px;">
+                            ${t.priority}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('[Tasks] Error:', e);
+        container.innerHTML = '<div class="tasks-empty" style="color:#ef4444;">Error al cargar tareas en el dashboard.</div>';
+    }
+}
+
+
+async function openCardModalFromTask(chatId) {
+    // Buscar el ticket asociado a este chat
+    const ticket = allTickets.find(t => t.chat_id === chatId);
+    if (ticket) {
+        openCardModal(ticket.id);
+    } else {
+        // Si no hay ticket abierto en el tablero, saltar al backoffice
+        localStorage.setItem('activeChat', chatId);
+        window.location.href = '/backoffice';
+    }
+}
+window.openCardModalFromTask = openCardModalFromTask;
 window.syncCRM = syncCRM; // Exportar globalmente
 
 function renderBoard() {
@@ -136,7 +295,8 @@ function distributeCards() {
     allTickets.forEach(ticket => {
         const lead = allLeads.find(l => l.id === ticket.chat_id);
         const metadata = crmData[ticket.id] || {};
-        const columnId = metadata.columnId || 'UNASSIGNED';
+        // Priorizar el posicionamiento manual del metadata, pero caer al crm_status de la DB si es nuevo
+        const columnId = metadata.columnId || lead?.crm_status || 'UNASSIGNED';
         
         const container = document.getElementById(`cards-${columnId}`);
         if (container) {
@@ -154,9 +314,7 @@ function createCardElement(ticket, lead, metadata) {
     card.dataset.id = ticket.id;
     card.id = `card-${ticket.id}`;
     
-    // Al hacer clic en la card, vamos al chat en el backoffice
     card.onclick = (e) => {
-        // Evitar que el clic en botones internos dispare esto
         if (e.target.closest('button')) return;
         localStorage.setItem('activeChat', ticket.chat_id);
         window.location.href = '/backoffice';
@@ -168,6 +326,8 @@ function createCardElement(ticket, lead, metadata) {
 
     const phone = ticket.chat_id ? ticket.chat_id.split('@')[0] : 'Desconocido';
     const email = lead?.email || '';
+    const cuit = lead?.cuit_dni || '';
+    const product = lead?.offered_product || ticket.tipo || '';
     const alertDateStr = metadata.alertDate ? formatDate(metadata.alertDate) : 'Sin alerta';
 
     card.innerHTML = `
@@ -179,9 +339,9 @@ function createCardElement(ticket, lead, metadata) {
             </div>
         </div>
         <div class="card-type-badge">
-            <i class="fas fa-tag"></i> ${ticket.tipo || 'Sin tipo'}
+            <i class="fas fa-shopping-bag"></i> ${product}
         </div>
-        <div class="card-title">${ticket.titulo || 'Sin título'}</div>
+        <div class="card-title">${ticket.titulo || 'Sin título'} ${cuit ? `<span style="font-size:0.7rem; opacity:0.6;">(${cuit})</span>` : ''}</div>
         <div class="card-lead-main">
             <i class="fas fa-user-circle"></i> ${lead?.name || 'Lead sin nombre'}
         </div>
@@ -194,7 +354,7 @@ function createCardElement(ticket, lead, metadata) {
                 <i class="fas fa-bell"></i> ${alertDateStr}
             </div>
             <div style="display:flex; gap:8px;">
-                <button class="btn-action btn-action-success" title="Cerrar Lead" onclick="event.stopPropagation(); confirmCloseTicket('${ticket.id}')">
+                <button class="btn-action btn-action-primary" title="Cerrar Lead" onclick="event.stopPropagation(); confirmCloseTicket('${ticket.id}')">
                     <i class="fas fa-check"></i>
                 </button>
                 <button class="btn-action btn-action-primary" title="Ver Detalles/Editar" onclick="event.stopPropagation(); openCardModal('${ticket.id}')">
@@ -220,6 +380,13 @@ function initDragAndDrop() {
                 const newColumnId = evt.to.id.replace('cards-', '');
                 if (!crmData[ticketId]) crmData[ticketId] = {};
                 crmData[ticketId].columnId = newColumnId;
+                
+                // Sincronizar crm_status con el ID de la columna (más robusto para integraciones)
+                const ticket = allTickets.find(t => t.id === ticketId);
+                if (ticket && ticket.chat_id) {
+                    await updateLeadStatus(ticket.chat_id, newColumnId);
+                }
+
                 saveCRMMetadata();
                 updateCounters();
             }
@@ -277,7 +444,7 @@ function openCardModal(ticketId) {
     const ticket = allTickets.find(t => t.id === ticketId);
     const lead = allLeads.find(l => l.id === ticket.chat_id);
     const metadata = crmData[ticketId] || {};
-    const notes = lead?.notes || metadata.customNotes || ''; // Prioridad a la nota del contacto
+    const notes = lead?.notes || metadata.customNotes || '';
     
     document.getElementById('edit-lead-id').value = ticketId;
     const refElement = document.getElementById('modal-ticket-ref');
@@ -288,16 +455,145 @@ function openCardModal(ticketId) {
     document.getElementById('edit-priority').value = metadata.priority || 'Media';
     document.getElementById('edit-custom-notes').value = notes;
     
-    // Nuevos campos del Lead
+    // Campos del Lead Expandidos
     document.getElementById('edit-lead-name').value = lead?.name || '';
     document.getElementById('edit-lead-email').value = lead?.email || '';
     document.getElementById('edit-lead-source').value = lead?.source || '';
     document.getElementById('edit-lead-phone').value = ticket.chat_id ? ticket.chat_id.split('@')[0] : 'Desconocido';
+    document.getElementById('edit-lead-cuit').value = lead?.cuit_dni || '';
+    document.getElementById('edit-lead-address').value = lead?.address || '';
+    document.getElementById('edit-lead-tax-status').value = lead?.tax_status || 'Cons. Final';
+    document.getElementById('edit-lead-offered-product').value = lead?.offered_product || ticket.tipo || '';
 
-    // Limpiar notas adicionales dinámicas al abrir
+    // Carga de asignación
+    if (isAdmin) {
+        const selectAssign = document.getElementById('edit-lead-assignee');
+        if (selectAssign) selectAssign.value = lead?.assigned_to || '';
+    }
+
+    // Cargar opciones de estado basadas en las columnas
+    const selectStatus = document.getElementById('edit-lead-status');
+    if (selectStatus) {
+        selectStatus.innerHTML = columns.map(c => `<option value="${c.id}">${c.title}</option>`).join('');
+        selectStatus.value = metadata.columnId || 'UNASSIGNED';
+    }
+
+    window.applyCRMConfig(); // Aplicar orden y visibilidad
+    renderLeadTags(); // Renderizar etiquetas
+
     document.getElementById('additional-notes-list').innerHTML = '';
-
     document.getElementById('card-modal').classList.add('active');
+}
+
+// --- Tag Management CRM ---
+async function fetchTags() {
+    try {
+        const res = await fetch(`/api/backoffice/tags?token=${activeToken}`);
+        botTags = await res.json();
+    } catch (e) {
+        console.error('[fetchTags] Error:', e);
+    }
+}
+
+function renderLeadTags() {
+    const ticket = allTickets.find(t => t.id === currentEditId);
+    if (!ticket) return;
+    const lead = allLeads.find(l => l.id === ticket.chat_id);
+    const assignedTagIds = (lead?.tags || []).map(t => typeof t === 'string' ? t : t.id);
+
+    const currentList = document.getElementById('current-lead-tags');
+    const availableList = document.getElementById('available-tags-to-assign');
+    if (!currentList || !availableList) return;
+
+    // Etiquetas actuales
+    currentList.innerHTML = (lead?.tags || []).map(t => {
+        const tag = typeof t === 'string' ? botTags.find(bt => bt.id === t) : t;
+        if (!tag) return '';
+        return `
+            <div class="tag-pill" style="background:${tag.color || '#6366f1'}">
+                ${tag.name} <i class="fas fa-times" onclick="removeTagFromLead('${tag.id}')" style="margin-left:5px; cursor:pointer;"></i>
+            </div>
+        `;
+    }).join('');
+
+    // Gestión de etiquetas
+    availableList.innerHTML = botTags.map(t => {
+        const isAssigned = assignedTagIds.includes(t.id);
+        return `
+            <div onclick="${isAssigned ? 'removeTagFromLead' : 'addTagToLead'}('${t.id}')" 
+                 class="tag-pill" 
+                 style="background:${t.color || '#6366f1'}; cursor:pointer; opacity:${isAssigned ? 1 : 0.6}; transform:${isAssigned ? 'scale(1.05)' : 'scale(1)'}; border:${isAssigned ? '2px solid white' : '1px solid transparent'}">
+                ${t.name} ${isAssigned ? '✓' : '+'}
+            </div>
+        `;
+    }).join('');
+}
+
+window.addTagToLead = async (tagId) => {
+    const ticket = allTickets.find(t => t.id === currentEditId);
+    if (!ticket) return;
+    
+    try {
+        const res = await fetch(`/api/backoffice/chat/${encodeURIComponent(ticket.chat_id)}/tags/${tagId}?token=${activeToken}`, {
+            method: 'POST'
+        });
+        if (res.ok) {
+            // Actualizar localmente el lead
+            const lead = allLeads.find(l => l.id === ticket.chat_id);
+            if (lead) {
+                if (!lead.tags) lead.tags = [];
+                const tag = botTags.find(t => t.id === tagId);
+                if (tag) lead.tags.push(tag);
+            }
+            renderLeadTags();
+            renderBoard();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+window.removeTagFromLead = async (tagId) => {
+    const ticket = allTickets.find(t => t.id === currentEditId);
+    if (!ticket) return;
+
+    try {
+        const res = await fetch(`/api/backoffice/chat/${encodeURIComponent(ticket.chat_id)}/tags/${tagId}?token=${activeToken}`, {
+            method: 'DELETE'
+        });
+        if (res.ok) {
+            // Actualizar localmente el lead
+            const lead = allLeads.find(l => l.id === ticket.chat_id);
+            if (lead) {
+                lead.tags = lead.tags.filter(t => (typeof t === 'string' ? t : t.id) !== tagId);
+            }
+            renderLeadTags();
+            renderBoard();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+window.syncStatusToColumn = (statusName) => {
+    const col = columns.find(c => c.title === statusName);
+    if (col && currentEditId) {
+        if (!crmData[currentEditId]) crmData[currentEditId] = {};
+        crmData[currentEditId].columnId = col.id;
+        console.log(`[CRM] Sincronizando estado ${statusName} con columna ${col.id}`);
+    }
+};
+
+async function updateLeadStatus(chatId, status) {
+    try {
+        await fetch(`/api/backoffice/chat/${chatId}/contact?token=${activeToken}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ crm_status: status })
+        });
+    } catch (e) {
+        console.error('[CRM] Error actualizando status:', e);
+    }
 }
 
 window.addNewNoteUI = () => {
@@ -335,6 +631,8 @@ document.getElementById('card-edit-form').onsubmit = async (e) => {
 
     const ticket = allTickets.find(t => t.id === currentEditId);
     const chatId = ticket?.chat_id;
+    const metadata = crmData[currentEditId] || { columnId: 'UNASSIGNED' };
+    const columnTitle = columns.find(c => c.id === metadata.columnId)?.title || 'CRM';
 
     // 1. Datos de Contacto (Lead)
     let mainNotes = document.getElementById('edit-custom-notes').value;
@@ -342,48 +640,108 @@ document.getElementById('card-edit-form').onsubmit = async (e) => {
         .map(box => box.value.trim())
         .filter(val => val !== '');
 
-    // Consolidar notas adicionales al final de la principal
     if (additionalNotes.length > 0) {
         const date = new Date().toLocaleDateString();
-        mainNotes += '\n\n--- Notas Añadidas Hoy (' + date + ') ---\n' + additionalNotes.join('\n');
+        mainNotes += `\n\n--- [${columnTitle}] Added on ${date} ---\n` + additionalNotes.join('\n');
     }
 
     const leadData = {
         name: document.getElementById('edit-lead-name').value,
         email: document.getElementById('edit-lead-email').value,
         source: document.getElementById('edit-lead-source').value,
+        cuit_dni: document.getElementById('edit-lead-cuit').value,
+        address: document.getElementById('edit-lead-address').value,
+        tax_status: document.getElementById('edit-lead-tax-status').value,
+        offered_product: document.getElementById('edit-lead-offered-product').value,
+        crm_status: document.getElementById('edit-lead-status').value,
+        crm_due_date: document.getElementById('edit-alert-date').value || null,
+        priority: document.getElementById('edit-priority').value || 'Media',
         notes: mainNotes
     };
 
     // 2. Metadatos del CRM (Tablero)
-    const metadata = crmData[currentEditId] || { columnId: 'UNASSIGNED' };
     metadata.alertDate = document.getElementById('edit-alert-date').value;
     metadata.priority = document.getElementById('edit-priority').value;
-    metadata.customNotes = leadData.notes; // Sincronizamos para retrocompatibilidad
+    metadata.customNotes = leadData.notes;
+    metadata.columnId = leadData.crm_status; 
     
     crmData[currentEditId] = metadata;
+
+    const ticketTitle = document.getElementById('edit-ticket-title').value;
 
     showToast('💾 Guardando...', 'success');
 
     try {
-        // Guardar metadatos (Tablero)
         await saveCRMMetadata();
         
-        // Guardar datos de contacto (Lead)
-        if (chatId) {
-            await fetch(`/api/backoffice/chat/${chatId}/contact?token=${activeToken}`, {
-                method: 'PUT',
+        // Usar el endpoint unificado para actualizar Ticket y Lead
+        await fetch(`/api/backoffice/crm/ticket/${currentEditId}?token=${activeToken}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                titulo: ticketTitle,
+                priority: leadData.priority,
+                notas: mainNotes,
+                contact: leadData
+            })
+        });
+
+        if (chatId && isAdmin) {
+            // Guardar asignación si es admin
+            const assignee = document.getElementById('edit-lead-assignee').value;
+            await fetch(`/api/backoffice/chat/assign?token=${activeToken}`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(leadData)
+                body: JSON.stringify({ chatId, userId: assignee || null })
             });
         }
         
         closeCardModal();
-        await syncCRM(); // Recargar todo para reflejar cambios
-        showToast('Cambios guardados con éxito');
+        await syncCRM();
+        showToast('Ficha de cliente actualizada');
     } catch (e) {
         console.error('Error al guardar:', e);
-        showToast('Error al guardar algunos datos', 'error');
+        showToast('Error al guardar ficha', 'error');
+    }
+};
+
+// --- Creación Manual de Leads ---
+function openNewLeadModal() { document.getElementById('new-lead-modal').classList.add('active'); }
+function closeNewLeadModal() { document.getElementById('new-lead-modal').classList.remove('active'); }
+window.openNewLeadModal = openNewLeadModal;
+window.closeNewLeadModal = closeNewLeadModal;
+
+document.getElementById('new-lead-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const chatId = document.getElementById('new-lead-id').value.trim();
+    const name = document.getElementById('new-lead-name').value.trim();
+    const product = document.getElementById('new-lead-product').value.trim();
+
+    showToast('🚀 Creando Lead Card...', 'success');
+    try {
+        const res = await fetch(`/api/backoffice/chat/manual-lead?token=${activeToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chatId,
+                details: {
+                    name,
+                    offered_product: product,
+                    source: 'Manual CRM',
+                    notes: `Lead creado manualmente: ${product}`
+                }
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeNewLeadModal();
+            await syncCRM();
+            showToast('✅ Lead Card creada con éxito');
+            // Abrir automáticamente la ficha para completar datos
+            if (data.ticket?.id) setTimeout(() => openCardModal(data.ticket.id), 500);
+        } else throw new Error(data.error);
+    } catch (err) {
+        showToast('❌ Error: ' + err.message, 'error');
     }
 };
 
@@ -589,3 +947,207 @@ window.closeClosedLeadsModal = () => {
     document.getElementById('closed-leads-modal').classList.remove('active');
 };
 
+// --- Gestión de Usuarios (Equipo) ---
+
+async function loadTeam() {
+    if (!isAdmin) return;
+    try {
+        const res = await fetch(`/api/backoffice/users?token=${activeToken}`);
+        teamUsers = await res.json();
+        renderUsersList();
+        renderAssigneeSelect();
+    } catch (e) {
+        console.error('Error al cargar equipo:', e);
+    }
+}
+
+function renderUsersList() {
+    const list = document.getElementById('users-list');
+    if (!list) return;
+    list.innerHTML = teamUsers.map(u => `
+        <div style="padding: 12px 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div style="width:32px; height:32px; background:var(--bg); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--accent);">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div>
+                    <strong style="color:var(--text); font-size: 0.95rem;">${u.username}</strong>
+                    <div style="font-size: 11px; color: var(--text-dim);">${u.role === 'admin' ? 'Administrador' : 'Operador'}</div>
+                </div>
+            </div>
+            <span class="status-badge" style="background: ${u.role === 'admin' ? '#6366f1' : '#059669'}; color: white; border: none; font-size: 10px; padding: 4px 8px;">
+                ${u.role.toUpperCase()}
+            </span>
+        </div>
+    `).join('') || '<div style="padding: 30px; text-align: center; color: var(--text-dim);">No hay usuarios registrados</div>';
+}
+
+function renderAssigneeSelect() {
+    const select = document.getElementById('edit-lead-assignee');
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Sin asignar (Libre)</option>' + 
+        teamUsers.map(u => `<option value="${u.id}">${u.username} (${u.role})</option>`).join('');
+    select.value = currentVal;
+}
+
+window.openNewUserModal = () => {
+    document.getElementById('modal-users').classList.add('active');
+    loadTeam();
+};
+
+window.saveNewUser = async () => {
+    const username = document.getElementById('new-user-name').value.trim();
+    const password = document.getElementById('new-user-pass').value.trim();
+    const role = document.getElementById('new-user-role').value;
+    const status = document.getElementById('user-creation-status') || { textContent: '' };
+
+    if (!username || !password) {
+        showToast('⚠️ Completa usuario y contraseña', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/backoffice/users?token=${activeToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, role })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('✅ Usuario creado con éxito');
+            document.getElementById('new-user-name').value = '';
+            document.getElementById('new-user-pass').value = '';
+            await loadTeam();
+        } else {
+            showToast('❌ Error: ' + data.error, 'error');
+        }
+    } catch (e) {
+        showToast('❌ Error de conexión', 'error');
+    }
+};
+
+// --- Configuración Dinámica del CRM ---
+window.toggleCRMConfigModal = () => {
+    const modal = document.getElementById('crm-config-modal');
+    modal.classList.toggle('active');
+    if (modal.classList.contains('active')) {
+        renderCRMConfigFields();
+    }
+};
+
+// fetchCRMConfig ahora está en crm-common.js
+
+window.saveCRMConfig = async () => {
+    try {
+        const res = await fetch(`/api/backoffice/save-setting?token=${activeToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                key: 'CRM_FIELDS_CONFIG',
+                value: JSON.stringify(window.crmConfig)
+            })
+        });
+        if (res.ok) {
+            showToast('✅ Configuración guardada');
+            window.toggleCRMConfigModal();
+            window.applyCRMConfig();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// applyCRMConfig ahora está en crm-common.js
+
+function renderCRMConfigFields() {
+    const list = document.getElementById('crm-fields-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+    window.crmConfig.sort((a, b) => a.order - b.order).forEach((field, index) => {
+        const item = document.createElement('div');
+        item.className = 'sortable-item';
+        item.draggable = true;
+        item.dataset.id = field.id;
+        item.dataset.index = index;
+        
+        item.innerHTML = `
+            <i class="fas fa-grip-lines sort-handle"></i>
+            <div style="flex:1; display:flex; align-items:center; gap:10px;">
+                <input type="checkbox" ${field.visible ? 'checked' : ''} onchange="updateFieldVisibility('${field.id}', this.checked)">
+                <span style="font-size:0.9rem; font-weight:600;">${field.label}</span>
+            </div>
+        `;
+
+        item.addEventListener('dragstart', handleDragStart);
+        item.addEventListener('dragover', handleDragOver);
+        item.addEventListener('drop', handleDrop);
+        item.addEventListener('dragend', () => item.classList.remove('dragging'));
+
+        list.appendChild(item);
+    });
+}
+
+window.updateFieldVisibility = (id, visible) => {
+    const field = window.crmConfig.find(f => f.id === id);
+    if (field) field.visible = visible;
+};
+
+let dragSrcEl = null;
+function handleDragStart(e) {
+    e.currentTarget.classList.add('dragging');
+    dragSrcEl = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) e.preventDefault();
+    return false;
+}
+
+function handleDrop(e) {
+    if (e.stopPropagation) e.stopPropagation();
+    
+    if (dragSrcEl !== e.currentTarget) {
+        const fromId = dragSrcEl.getAttribute('data-id');
+        const toId = e.currentTarget.getAttribute('data-id');
+        
+        const fromIndex = window.crmConfig.findIndex(f => f.id === fromId);
+        const toIndex = window.crmConfig.findIndex(f => f.id === toId);
+        
+        if (fromIndex !== -1 && toIndex !== -1) {
+            const [movedItem] = window.crmConfig.splice(fromIndex, 1);
+            window.crmConfig.splice(toIndex, 0, movedItem);
+            
+            // Re-asignar órdenes
+            window.crmConfig.forEach((f, idx) => f.order = idx);
+            renderCRMConfigFields();
+        }
+    }
+    return false;
+}
+
+// --- Tasks Dashboard Logic ---
+
+// --- Real-time Updates via Socket.IO ---
+/* global io */
+if (typeof io !== 'undefined') {
+    const socket = io();
+    console.log('📡 [Socket] Conectado para actualizaciones en tiempo real');
+
+    socket.on('contact_updated', (payload) => {
+        console.log('📡 [Socket] Contacto actualizado:', payload.chatId);
+        // Si el contacto actualizado es uno de los que estamos viendo, resincronizar
+        syncCRM();
+    });
+
+    socket.on('ticket_updated', (payload) => {
+        console.log('📡 [Socket] Ticket actualizado o nuevo');
+        syncCRM();
+    });
+
+    socket.on('new_message', (payload) => {
+        // Opcional: mostrar una notificación visual si llega un mensaje nuevo a un lead activo
+    });
+}

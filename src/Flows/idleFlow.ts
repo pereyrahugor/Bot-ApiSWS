@@ -6,7 +6,7 @@ import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
 import path from 'path';// Import the new logic
 import { ReconectionFlow } from './reconectionFlow';
-import { HistoryHandler } from '../utils/historyHandler'; // Integración con CRM
+import { HistoryHandler } from '../utils/historyHandler'; // IntegraciÃ³n con CRM
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
@@ -14,12 +14,31 @@ const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? '';
 const ID_GRUPO_RESUMEN_2 = process.env.ID_GRUPO_RESUMEN_2 ?? '';
 const msjCierre: string = process.env.msjCierre as string;
 
-// Función auxiliar para reenviar media
+function formatSummary(resumen: string, data: GenericResumenData, userId?: string): string {
+    let cleanText = resumen;
+    try {
+        const parsed = typeof resumen === 'string' ? JSON.parse(resumen) : resumen;
+        if (typeof parsed === 'object') {
+            cleanText = Object.entries(parsed)
+                .filter(([k]) => k.toLowerCase() !== 'tipo' && k.toLowerCase() !== 'type')
+                .map(([k, v]) => `*${k}:* ${v}`)
+                .join('\n');
+        }
+    } catch (_err) {
+        cleanText = resumen.replace(/Tipo:\s*\w+/i, '').replace(/###\s*BLOQUE:\s*GET_RESUMEN/i, '').trim();
+    }
+
+    const phone = (data.from || userId || '').replace(/[^0-9]/g, '');
+    const linkWS = data.linkWS || `https://wa.me/${phone}`;
+    return `ðŸ“ *RESUMEN DE CONVERSACIÃ“N*\n\n${cleanText}\n\nðŸ”— *Chat del usuario:* ${linkWS}`;
+}
+
+// FunciÃ³n auxiliar para reenviar media
 async function sendMediaToGroup(provider: any, state: any, targetGroup: string, data: any) {
-    // Detectar variaciones de "si" (si, sí, sii, si., Si, YES, etc - aunque el json suele ser español)
-    // Usamos regex flexible que busca "s" seguido de "i" o "í"
+    // Detectar variaciones de "si" (si, sÃ­, sii, si., Si, YES, etc - aunque el json suele ser espaÃ±ol)
+    // Usamos regex flexible que busca "s" seguido de "i" o "Ã­"
     const fotoOVideoRaw = data["Foto o video"] || '';
-    const debeEnviar = /s[ií]+/i.test(fotoOVideoRaw);
+    const debeEnviar = /s[iÃ­]+/i.test(fotoOVideoRaw);
 
     if (debeEnviar) {
         const lastImage = state.get('lastImage');
@@ -28,9 +47,9 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
         if (lastImage && typeof lastImage === 'string') {
             if (fs.existsSync(lastImage)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                // console.log(`📡 Intentando enviar imagen: ${lastImage} a ${targetGroup}`);
+                // console.log(`ðŸ“¡ Intentando enviar imagen: ${lastImage} a ${targetGroup}`);
                 await provider.sendImage(targetGroup, lastImage, "");
-                // console.log(`✅ Imagen reenviada al grupo ${targetGroup}`);
+                // console.log(`âœ… Imagen reenviada al grupo ${targetGroup}`);
                 try {
                     fs.unlinkSync(lastImage);
                     await state.update({ lastImage: null });
@@ -41,13 +60,13 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
         if (lastVideo && typeof lastVideo === 'string') {
             if (fs.existsSync(lastVideo)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                // console.log(`📡 Intentando enviar video: ${lastVideo} a ${targetGroup}`);
+                // console.log(`ðŸ“¡ Intentando enviar video: ${lastVideo} a ${targetGroup}`);
                 if (provider.sendVideo) {
                     await provider.sendVideo(targetGroup, lastVideo, "");
                 } else {
                     await provider.sendImage(targetGroup, lastVideo, "");
                 }
-                // console.log(`✅ Video reenviado al grupo ${targetGroup}`);
+                // console.log(`âœ… Video reenviado al grupo ${targetGroup}`);
                 try {
                     fs.unlinkSync(lastVideo);
                     await state.update({ lastVideo: null });
@@ -57,7 +76,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
     }
 }
 
-//** Flow para cierre de conversación, generación de resumen y envio a grupo de WS */
+//** Flow para cierre de conversaciÃ³n, generaciÃ³n de resumen y envio a grupo de WS */
 const idleFlow = addKeyword(EVENTS.ACTION).addAction(
     async (ctx, { endFlow, provider, state, flowDynamic, gotoFlow }) => {
         const userId = ctx.from;
@@ -87,50 +106,64 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
             try {
                 data = JSON.parse(resumen);
             } catch (error) {
-                // console.warn("⚠️ El resumen no es JSON. Se extraerán los datos manualmente.");
+                // console.warn("El resumen no es JSON. Se extraerán los datos manualmente.");
                 data = extraerDatosResumen(resumen);
             }
 
-            // --- LÓGICA DE AUTOMATIZACIÓN DE NUEVO LEAD ---
+                        // --- LOGICA DE AUTOMATIZACION DE NUEVO LEAD ---
             try {
                 const cleanNombre = (data.Nombre || data.nombre || data.contactName || '').trim();
                 const cleanEmail = (data.Correo || data.correo || data.Email || data.email || '').trim();
                 const cleanSource = (data.Origen || data.origen || data.Source || data.source || 'Asistente AI').trim();
+                const cleanStatus = (data.Estado || data.estado || data.Status || data.status || '').trim();
+                const rawTags = (data.Etiqueta || data.etiqueta || data.Tags || data.tag || data.Etiquetas || data.etiquetas || '').trim();
+                const tagsList = rawTags ? rawTags.split(',').map(t => t.trim()).filter(t => t !== '' && t !== '-') : [];
 
-                // 1. Actualizar detalles del contacto en el CRM
-                if (cleanNombre || cleanEmail || resumen) {
-                    await HistoryHandler.updateContactDetails(userId, {
-                        name: cleanNombre || null,
-                        email: cleanEmail || null,
-                        source: cleanSource,
-                        notes: resumen // Guardamos el resumen en las notas principales del Lead
-                    });
-                    // console.log(`✅ CRM Actualizado para ${userId}: ${cleanNombre}`);
+                if (cleanNombre || cleanEmail || resumen || cleanStatus || tagsList.length > 0) {
+                    const existingChat = await HistoryHandler.getChat(userId);
+                    const previousNotes = existingChat?.notes ? `${existingChat.notes}\n\n---\n\n` : '';
+                    const summaryForNotes = formatSummary(resumen, data, userId);
+
+                    const updateData: any = {
+                        notes: previousNotes + summaryForNotes,
+                        is_lead: true
+                    };
+
+                    if (cleanNombre && cleanNombre !== '-') updateData.name = cleanNombre;
+                    if (cleanEmail && cleanEmail !== '-') updateData.email = cleanEmail;
+                    if (cleanSource && cleanSource !== '-') updateData.source = cleanSource;
+                    if (cleanStatus && cleanStatus !== '-') {
+                        updateData.crm_status = await HistoryHandler.mapStatusToId(cleanStatus);
+                    }
+
+                    await HistoryHandler.updateContactDetails(userId, updateData);
+
+                    if (tagsList.length > 0) {
+                        await HistoryHandler.assignTagsToContact(userId, tagsList);
+                    }
                 }
 
-                // 2. Crear Ticket de "Nuevo Lead" automáticamente
+                const summaryForTicket = formatSummary(resumen, data, userId);
                 await HistoryHandler.createTicket(
-                    userId, 
-                    `Nuevo Lead: ${cleanNombre || userId}`, 
-                    resumen, 
-                    'Nuevo Lead', 
+                    userId,
+                    `Nuevo Lead: ${cleanNombre || userId}`,
+                    summaryForTicket,
+                    'Nuevo Lead',
                     'Alta'
                 );
-                // console.log(`🚀 Ticket "Nuevo Lead" creado automáticamente para ${userId}`);
-
             } catch (leadError) {
-                // console.error("❌ Error en automatización de Nuevo Lead:", leadError.message);
+                // console.error("Error en automatizacion de Nuevo Lead:", leadError.message);
             }
             // ----------------------------------------------
 
-            // Log para depuración del valor real de tipo
+            // Log para depuraciÃ³n del valor real de tipo
             // console.log('Valor de tipo:', JSON.stringify(data.tipo), '| Longitud:', data.tipo?.length);
-            // Limpieza robusta de caracteres invisibles y espacios, preservando números y guiones bajos
+            // Limpieza robusta de caracteres invisibles y espacios, preservando nÃºmeros y guiones bajos
             const tipo = (data.tipo ?? '').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
 
             if (tipo === 'NO_REPORTAR_BAJA') {
                 // No seguimiento, no enviar resumen al grupo ws, envia resumen a sheet, envia msj de cierre
-                // console.log('NO_REPORTAR_BAJA: No se realiza seguimiento ni se envía resumen al grupo.');
+                // console.log('NO_REPORTAR_BAJA: No se realiza seguimiento ni se envÃ­a resumen al grupo.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
                 // Limpieza de imagen o video si existe
@@ -149,7 +182,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 return endFlow(); //("BNI, cambiando la forma en que el mundo hace negocios\nGracias por su contacto.");
             } else if (tipo === 'NO_REPORTAR_SEGUIR') {
                 // Solo este activa seguimiento
-                // console.log('NO_REPORTAR_SEGUIR: Se realiza seguimiento, pero no se envía resumen al grupo.');
+                // console.log('NO_REPORTAR_SEGUIR: Se realiza seguimiento, pero no se envÃ­a resumen al grupo.');
                 const reconFlow = new ReconectionFlow({
                     ctx,
                     state,
@@ -175,23 +208,23 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     }
                 });
                 return await reconFlow.start();
-                // No cerrar el hilo aquí, dejar abierto para que el usuario pueda responder
+                // No cerrar el hilo aquÃ­, dejar abierto para que el usuario pueda responder
                 // Bloque SI_RESUMEN_G2
             } else if (tipo === 'SI_REPORTAR_SEGUIR') {
-                // Se envía resumen al grupo y se activa seguimiento
-                // console.log('SI_REPORTAR_SEGUIR: Se envía resumen al grupo y se realiza seguimiento.');
+                // Se envÃ­a resumen al grupo y se activa seguimiento
+                // console.log('SI_REPORTAR_SEGUIR: Se envÃ­a resumen al grupo y se realiza seguimiento.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
                 const resumenLimpio = resumen.replace(/https:\/\/wa\.me\/[0-9]+/g, '').trim();
-                const resumenConLink = `${resumenLimpio}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                const resumenConLink = `${resumenLimpio}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
 
                 try {
                         await provider.sendMessage(ID_GRUPO_RESUMEN, resumenConLink, {});
-                        // console.log(`✅ SI_REPORTAR_SEGUIR: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
+                        // console.log(`âœ… SI_REPORTAR_SEGUIR: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
                         await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ SI_REPORTAR_SEGUIR Error:`, err?.message || err);
+                    // console.error(`âŒ SI_REPORTAR_SEGUIR Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
@@ -220,39 +253,39 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     }
                 });
                 return await reconFlow.start();
-                // No cerrar el hilo aquí, dejar abierto para que el usuario pueda responder
+                // No cerrar el hilo aquÃ­, dejar abierto para que el usuario pueda responder
                 // Bloque SI_RESUMEN_G2
             } else if (tipo === 'SI_RESUMEN_G2') {
-                // console.log('SI_RESUMEN_G2: Solo se envía resumen al grupo y sheets.');
+                // console.log('SI_RESUMEN_G2: Solo se envÃ­a resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
-                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                const resumenConLink = `${resumen}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
                 try {
                     await provider.sendText(ID_GRUPO_RESUMEN_2, resumenConLink);
-                    // console.log(`✅ SI_RESUMEN_G2: Resumen enviado a ${ID_GRUPO_RESUMEN_2}`);
+                    // console.log(`âœ… SI_RESUMEN_G2: Resumen enviado a ${ID_GRUPO_RESUMEN_2}`);
 
                     await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN_2, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ SI_RESUMEN_G2 Error:`, err?.message || err);
+                    // console.error(`âŒ SI_RESUMEN_G2 Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
                 return;
 
             } else if (tipo === 'SI_RESUMEN') {
-                // console.log('SI_RESUMEN: Solo se envía resumen al grupo y sheets.');
+                // console.log('SI_RESUMEN: Solo se envÃ­a resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
-                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                const resumenConLink = `${resumen}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
                 try {
                     await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
-                    // console.log(`✅ SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
+                    // console.log(`âœ… SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
 
                     await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ SI_RESUMEN Error:`, err?.message || err);
+                    // console.error(`âŒ SI_RESUMEN Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
@@ -263,15 +296,15 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 // console.log('Tipo desconocido, procesando como SI_RESUMEN por defecto.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
-                const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                const resumenConLink = `${resumen}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
                 try {
                     await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
-                    // console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
+                    // console.log(`âœ… DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
 
                     await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
 
                 } catch (err: any) {
-                    // console.error(`❌ DEFAULT Error:`, err?.message || err);
+                    // console.error(`âŒ DEFAULT Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);

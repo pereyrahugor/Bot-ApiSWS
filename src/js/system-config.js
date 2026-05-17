@@ -6,15 +6,12 @@ window.checkAdminAccess = () => {
     const overlay = document.getElementById('config-auth-overlay');
     const content = document.getElementById('main-config-content');
     
-    // LA CLAVE HARDCODEADA
     if (passInput.value === 'neuroadmin25') {
         overlay.style.display = 'none';
         content.style.display = 'flex';
         setTimeout(() => content.style.opacity = '1', 10);
-        // Guardar en local storage para persistencia persistente (entre reinicios de navegador)
         localStorage.setItem('config_authenticated', 'true');
-        
-        // Disparar refresh si el editor ya existe
+        localStorage.setItem('system_config_token', 'neuroadmin25');
         if (window.cmEditor) window.cmEditor.refresh();
     } else {
         passInput.style.borderColor = '#ef4444';
@@ -25,9 +22,8 @@ window.checkAdminAccess = () => {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Variables panel loaded');
+    console.log('Unified System Config with 5 Assistant Prompts loaded');
 
-    // Verificar si ya está autenticado en este dispositivo
     if (localStorage.getItem('config_authenticated') === 'true') {
         const overlay = document.getElementById('config-auth-overlay');
         const content = document.getElementById('main-config-content');
@@ -39,7 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Inicialización de CodeMirror
-    const promptTextarea = document.getElementById('ASSISTANT_PROMPT');
+    const promptTextarea = document.getElementById('prompt-editor-textarea');
     let editor = null;
     
     if (promptTextarea) {
@@ -50,258 +46,249 @@ document.addEventListener('DOMContentLoaded', async () => {
             lineWrapping: true,
             scrollbarStyle: "native"
         });
-        window.cmEditor = editor; // Hacerlo accesible globalmente para refrescarlo
+        window.cmEditor = editor;
     }
 
-    // Lógica del Panel Lateral (Hot-update)
-    window.togglePromptPanel = () => {
-        const panel = document.getElementById('prompt-panel');
-        const overlay = document.getElementById('panel-overlay');
-        const isActive = panel.classList.toggle('active');
-        overlay.classList.toggle('active');
-
-        // IMPORTANTE: Refrescar CodeMirror cuando el panel se abre
-        // de lo contrario, puede no renderizar correctamente si estaba oculto.
-        if (isActive && editor) {
-            setTimeout(() => {
-                editor.refresh();
-                editor.focus();
-            }, 300); // Dar tiempo a la animación de entrada
-        }
-    };
-
-    const cancelBtn = document.getElementById('cancel-btn');
     const variablesForm = document.getElementById('variables-form');
     const updateBtn = document.getElementById('update-btn');
-    
+    const assistantSelect = document.getElementById('assistant-select');
     let initialVariables = {};
 
     // Cargar variables actuales
     async function loadVariables() {
         const token = localStorage.getItem('system_config_token');
         try {
-            const response = await fetch(`/api/variables?token=${token}`);
+            const response = await fetch(`/api/backoffice/config?token=${token}`);
             if (response.status === 401) return logout();
             const data = await response.json();
             
             if (data.success && data.variables) {
                 initialVariables = data.variables;
-                // Poblar el formulario
                 Object.keys(initialVariables).forEach(key => {
-                    const input = document.getElementById(key) || document.getElementsByName(key)[0];
+                    // Mapeo especial para prompts
+                    let elementId = key;
+                    if (key === 'ASSISTANT_PROMPT') elementId = 'ASSISTANT_PROMPT_VAL';
+                    else if (key.startsWith('ASSISTANT_PROMPT_')) elementId = key + '_VAL';
+
+                    const input = document.getElementById(elementId) || document.getElementsByName(key)[0];
                     if (input) {
-                        input.value = initialVariables[key];
+                        if (input.tagName === 'SELECT') {
+                            input.value = String(initialVariables[key]);
+                        } else {
+                            input.value = initialVariables[key];
+                        }
                     }
                 });
 
-                // Actualizar editor si existe valor en variables de entorno inicialmente
-                if (initialVariables['ASSISTANT_PROMPT'] && editor) {
-                    editor.setValue(initialVariables['ASSISTANT_PROMPT']);
-                }
-            } else {
-                alert('Error al cargar variables: ' + (data.error || 'Error desconocido'));
+                // Cargar el prompt inicial en el editor
+                loadEditorFromHidden();
             }
         } catch (err) {
             console.error('Error fetching variables:', err);
-            alert('Error de conexión al obtener variables.');
         }
     }
 
+    function loadEditorFromHidden() {
+        const index = assistantSelect.value;
+        const hiddenId = index === '1' ? 'ASSISTANT_PROMPT_VAL' : `ASSISTANT_PROMPT_${index}_VAL`;
+        const hiddenInput = document.getElementById(hiddenId);
+        if (hiddenInput && editor) {
+            editor.setValue(hiddenInput.value || '');
+        }
+    }
+
+    // Al cambiar el asistente en el select del panel
+    assistantSelect.addEventListener('change', () => {
+        loadEditorFromHidden();
+    });
+
+    // Cada vez que el editor cambie, actualizamos el input oculto correspondiente
+    if (editor) {
+        editor.on('change', () => {
+            const index = assistantSelect.value;
+            const hiddenId = index === '1' ? 'ASSISTANT_PROMPT_VAL' : `ASSISTANT_PROMPT_${index}_VAL`;
+            const hiddenInput = document.getElementById(hiddenId);
+            if (hiddenInput) {
+                hiddenInput.value = editor.getValue();
+            }
+        });
+    }
+
     await loadVariables();
+
+    // Lógica del Panel Lateral
+    window.togglePromptPanel = () => {
+        const panel = document.getElementById('prompt-panel');
+        const overlay = document.getElementById('panel-overlay');
+        const isActive = panel.classList.toggle('active');
+        overlay.classList.toggle('active');
+
+        if (isActive && editor) {
+            setTimeout(() => {
+                editor.refresh();
+                editor.focus();
+            }, 300);
+        }
+    };
 
     // Lógica para mostrar/ocultar contraseñas
     document.querySelectorAll('.toggle-password').forEach(button => {
         button.addEventListener('click', () => {
             const wrapper = button.closest('.input-wrapper');
             const input = wrapper.querySelector('input, textarea');
-            
-            if (input.tagName.toLowerCase() === 'input') {
-                const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
-                input.setAttribute('type', type);
-            } else {
-                // Para textarea (GOOGLE_PRIVATE_KEY)
-                input.classList.toggle('hidden-content');
-            }
-            
-            // Cambiar el icono (opcional)
+            const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+            input.setAttribute('type', type);
             button.textContent = button.textContent === '👁️' ? '🙈' : '👁️';
         });
     });
 
-    // Botón Cancelar: vuelve al dashboard
-    cancelBtn.addEventListener('click', () => {
+    document.getElementById('cancel-btn').addEventListener('click', () => {
         window.location.href = '/dashboard';
     });
 
-    // Manejo del formulario
+    // Manejo del formulario UNIFICADO (Bulk Save)
     variablesForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const formData = new FormData(variablesForm);
-        const changedVariables = {};
-        const changedKeys = [];
+        const settingsToSave = {};
+        let hasChanges = false;
         
         formData.forEach((value, key) => {
-            // Caso especial para CodeMirror
-            if (key === 'ASSISTANT_PROMPT' && editor) {
-                value = editor.getValue();
-            }
-
-            // Solo agregar si el valor es diferente al inicial
-            if (value !== initialVariables[key]) {
-                changedVariables[key] = value;
-                changedKeys.push(key);
+            // Solo guardamos si es diferente al inicial
+            if (String(value) !== String(initialVariables[key] || '')) {
+                settingsToSave[key] = value;
+                hasChanges = true;
             }
         });
 
-        if (changedKeys.length === 0) {
-            alert('No se detectaron cambios en las variables.');
-            return;
-        }
-
-        const confirmMsg = `Se han modificado las siguientes variables:\n\n${changedKeys.join('\n')}\n\nEl bot se reiniciará automáticamente para aplicar los cambios. ¿Deseas continuar?`;
-        
-        if (!confirm(confirmMsg)) {
+        if (!hasChanges) {
+            alert('No se detectaron cambios para guardar.');
             return;
         }
 
         updateBtn.disabled = true;
-        updateBtn.textContent = 'Actualizando...';
+        updateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
         
-        // Incluimos explícitamente el prompt si existe CodeMirror
-        if (editor) {
-             changedVariables['ASSISTANT_PROMPT'] = editor.getValue();
-        }
-
         try {
             const token = localStorage.getItem('system_config_token');
-            const response = await fetch(`/api/update-variables?token=${token}`, {
+            const response = await fetch(`/api/backoffice/save-settings-bulk?token=${token}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ variables: changedVariables })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ settings: settingsToSave })
             });
 
             if (response.status === 401) return logout();
             const data = await response.json();
 
             if (data.success) {
-                alert('✅ Variables actualizadas correctamente. El bot se está reiniciando...');
-                // Redirigir al dashboard después de un momento
-                setTimeout(() => {
-                    window.location.href = '/dashboard';
-                }, 3000);
+                alert('✅ Configuración guardada correctamente.');
+                Object.assign(initialVariables, settingsToSave);
+                
+                // Sincronizar prompts cambiados con OpenAI si corresponde
+                for (let i = 1; i <= 5; i++) {
+                    const key = i === 1 ? 'ASSISTANT_PROMPT' : `ASSISTANT_PROMPT_${i}`;
+                    if (settingsToSave[key]) {
+                        await syncPromptWithOpenAI(settingsToSave[key], String(i));
+                    }
+                }
             } else {
                 alert('❌ Error: ' + (data.error || 'Error desconocido'));
-                updateBtn.disabled = false;
-                updateBtn.textContent = 'Actualizar y Reiniciar';
             }
         } catch (err) {
-            console.error('Error updating variables:', err);
-            alert('Error de conexión al actualizar variables.');
+            console.error('Error saving settings:', err);
+            alert('Error de conexión al guardar.');
+        } finally {
             updateBtn.disabled = false;
-            updateBtn.textContent = 'Actualizar y Reiniciar';
+            updateBtn.innerHTML = '<i class="fas fa-save" style="margin-right:8px;"></i> Guardar (Sin reiniciar)';
         }
     });
 
-    // --- Sincronizar Prompt ---
+    async function syncPromptWithOpenAI(prompt, index) {
+        try {
+            const token = localStorage.getItem('system_config_token');
+            await fetch(`/api/backoffice/update-prompt?token=${token}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, index })
+            });
+        } catch (e) {
+            console.error(`Error syncing prompt ${index} with OpenAI:`, e);
+        }
+    }
+
+    // --- Sincronizar Prompt desde OpenAI (Botón Individual) ---
     const syncBtn = document.getElementById('sync-prompt-btn');
     const syncStatus = document.getElementById('sync-status');
-    const assistantIdInput = document.getElementById('ASSISTANT_ID');
 
     syncBtn.addEventListener('click', async () => {
-        const assistantId = assistantIdInput.value;
+        const index = assistantSelect.value;
+        const envKey = index === '1' ? 'ASSISTANT_ID' : `ASSISTANT_${index}`;
+        const assistantIdInput = document.getElementById(envKey);
+        const assistantId = assistantIdInput ? assistantIdInput.value : '';
+
         if (!assistantId) {
-            alert('Debes ingresar un ASSISTANT_ID para sincronizar.');
+            alert(`Debes ingresar un ID para el Asistente ${index} para sincronizar.`);
             return;
         }
 
         syncBtn.disabled = true;
-        syncStatus.textContent = '⏳ Obteniendo instrucciones...';
-        syncStatus.style.color = 'inherit';
+        syncStatus.textContent = '⏳ Sincronizando...';
 
         try {
             const token = localStorage.getItem('system_config_token');
             const response = await fetch(`/api/backoffice/sync-assistant-prompt?token=${token}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assistantId })
             });
 
             const data = await response.json();
             if (data.success) {
                 if (editor) editor.setValue(data.instructions);
-                syncStatus.textContent = '✅ Sincronizado correctamente.';
+                syncStatus.textContent = '✅ Sincronizado.';
                 syncStatus.style.color = '#10b981';
             } else {
-                syncStatus.textContent = '❌ Error sincronizando.';
-                syncStatus.style.color = '#ef4444';
                 alert('Error: ' + data.error);
             }
         } catch (err) {
             console.error('Error syncing prompt:', err);
-            syncStatus.textContent = '❌ Error de conexión.';
-            syncStatus.style.color = '#ef4444';
         } finally {
             syncBtn.disabled = false;
         }
     });
 
-    // --- Guardar Prompt sin reiniciar (Hot-update) ---
+    // Guardar Prompt individualmente
     const hotSaveBtn = document.getElementById('save-prompt-hot-btn');
     hotSaveBtn.addEventListener('click', async () => {
-        const prompt = editor ? editor.getValue() : promptTextarea.value;
+        const prompt = editor.getValue();
+        const index = assistantSelect.value;
         hotSaveBtn.disabled = true;
-        syncStatus.textContent = '⏳ Guardando en base de datos...';
-        syncStatus.style.color = 'inherit';
+        syncStatus.textContent = `⏳ Guardando...`;
 
         try {
             const token = localStorage.getItem('system_config_token');
-            const response = await fetch(`/api/backoffice/update-prompt?token=${token}`, {
+            const settingKey = index === '1' ? 'ASSISTANT_PROMPT' : `ASSISTANT_PROMPT_${index}`;
+            
+            const response = await fetch(`/api/backoffice/save-settings-bulk?token=${token}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ prompt })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ settings: { [settingKey]: prompt } })
             });
 
             const data = await response.json();
             if (data.success) {
-                syncStatus.textContent = '✅ Guardado correctamente (Hot-update).';
+                await syncPromptWithOpenAI(prompt, index);
+                syncStatus.textContent = `✅ Guardado.`;
                 syncStatus.style.color = '#10b981';
-                // Actualizar initialVariables para evitar que el form principal crea que hay cambios
-                initialVariables['ASSISTANT_PROMPT'] = prompt;
+                initialVariables[settingKey] = prompt;
             } else {
-                syncStatus.textContent = '❌ Error al guardar.';
-                syncStatus.style.color = '#ef4444';
                 alert('Error: ' + data.error);
             }
         } catch (err) {
-            console.error('Error saving hot prompt:', err);
-            syncStatus.textContent = '❌ Error de conexión.';
+            console.error('Error saving prompt:', err);
         } finally {
             hotSaveBtn.disabled = false;
         }
     });
-
-    // --- Cargar Prompt actual desde DB ---
-    async function loadAssistantPrompt() {
-        try {
-            const token = localStorage.getItem('system_config_token');
-            const response = await fetch(`/api/backoffice/get-prompt?token=${token}`);
-            const data = await response.json();
-            if (data.success && data.prompt) {
-                if (editor) editor.setValue(data.prompt);
-                initialVariables['ASSISTANT_PROMPT'] = data.prompt;
-            }
-        } catch (err) {
-            console.error('Error loading stored prompt:', err);
-        }
-    }
-    
-    // Llamar a la carga del prompt
-    await loadAssistantPrompt();
 });

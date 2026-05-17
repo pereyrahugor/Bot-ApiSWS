@@ -90,7 +90,7 @@ export class ClientesApi {
       }
       
       // Sub-filtro si la búsqueda es claramente por número de ID (1-7 dígitos) y arroja múltiples
-      let resultData = response.data?.data || [];
+      const resultData = response.data?.data || [];
       if (resultData.length > 1 && /^\d{1,7}$/.test(datosCliente)) {
           console.log(`[ClientesApi] Múltiples resultados devueltos para ID numérico '${datosCliente}'. Aplicando sub-filtro estricto por ID...`);
           const subFilter = resultData.filter((c: any) => String(c.id) === datosCliente || String(c.cliente_id) === datosCliente);

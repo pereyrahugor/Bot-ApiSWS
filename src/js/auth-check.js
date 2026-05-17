@@ -1,20 +1,18 @@
 (function() {
     const path = window.location.pathname;
     
-    // Solo protegemos las áreas designadas
-    if (path.startsWith('/backoffice') || path.startsWith('/crm')) {
+    // 1. Protección de Backoffice y CRM (Lectura de datos y chats)
+    if (path.startsWith('/backoffice') || path.startsWith('/crm') || path.startsWith('/documentacion')) {
         const token = localStorage.getItem('backoffice_token');
-        if (!token) {
-            // No redirigir si ya estamos en login
-            if (path !== '/login') window.location.href = '/login';
-        }
+        if (!token) window.location.href = '/login';
     }
     
-    // Configuración Crítica (System-Config)
+    // 2. Protección de Configuración Crítica (Dashboard de Configuración)
     if (path.startsWith('/system-config')) {
         const configToken = localStorage.getItem('system_config_token');
         if (!configToken) {
-            if (path !== '/login') window.location.href = '/login?target=system-config';
+            // Si no hay token de config, enviar a login pero indicando que es para config
+            window.location.href = '/login?target=system-config';
         }
     }
 })();
