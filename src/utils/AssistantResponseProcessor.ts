@@ -1568,7 +1568,7 @@ export class AssistantResponseProcessor {
             console.error('[Processor Error] Error crítico en analizarYProcesarRespuestaAsistente:', error);
             // Intentar informar al usuario o al menos no crashear
             try {
-                const errorMsg = "Hubo un problema técnico al procesar la respuesta del sistema. Por favor, intenta de nuevo en unos instantes.";
+                const errorMsg = "Ups! 🥹 he tenido un pequeño inconveniente para encontrarte ¿podemos volver a intentarlo ? pasame tus datos nuevamente por favor.";
                 if (ctx && ctx.from) await HistoryHandler.saveMessage(ctx.from, 'assistant', errorMsg, 'text');
                 await flowDynamic([{ body: errorMsg }]);
             } catch (innerError) {
