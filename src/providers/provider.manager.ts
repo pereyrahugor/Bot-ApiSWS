@@ -224,9 +224,29 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 }
             }
 
+            const { HistoryHandler, recentBotSentMessages, normalizeTextForCache } = await import('../utils/historyHandler');
+            
+            // Si el mensaje está en el caché de enviados por el bot/asistente, no es una intervención manual
+            const normalizedBody = normalizeTextForCache(ctx.body || '');
+            let isBotSent = recentBotSentMessages.has(normalizedBody);
+
+            if (!isBotSent && normalizedBody.length >= 15) {
+                // Si no hay coincidencia exacta pero el cuerpo es largo, buscar si es una subcadena de algún mensaje en caché
+                for (const cachedMsg of recentBotSentMessages) {
+                    if (cachedMsg.includes(normalizedBody)) {
+                        isBotSent = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isBotSent) {
+                console.log(`${prefix} 🤖 Eco de mensaje enviado por el bot detectado (no es manual): "${ctx.body.substring(0, 40)}..."`);
+                return; // Evitar duplicar en la base de datos y en el Backoffice ya que el procesador del bot ya guardó la respuesta completa
+            }
+
             const isManual = ctx.isManualIntervention;
             console.log(`${prefix} 📤 Mensaje saliente manual detectado. ID: ${from}. Body: ${ctx.body}${isManual ? ' [INTERVENCIÓN DESDE APP WHATSAPP]' : ''}`);
-            const { HistoryHandler } = await import('../utils/historyHandler');
             
             const chatId = isGroup ? (from.includes('@') ? from : `${from}@g.us`) : (from.includes('@') ? from.split('@')[0] : from);
             const externalId = ctx.key?.id || ctx.payload?.id || ctx.id;

@@ -432,6 +432,12 @@ function limpiarBloquesJSON(texto: string): string {
     // 2d. Filtrar SYSTEM_DB_RESULT o SYSTEM_API_RESULT filtrados por error del asistente
     limpio = limpio.replace(/\[?\s*SYSTEM_(DB|API)_RESULT[\s\S]*?(?:\]|$)/gi, "");
 
+    // 2e. Filtrar bloques técnicos de derivación y resumen (procedentes de OpenAI)
+    limpio = limpio.replace(/GET_RESUMEN[\s\S]+/gi, "");
+    limpio = limpio.replace(/RESUMEN GENERADO[\s\S]+/gi, "");
+    limpio = limpio.replace(/Tipo:\s*(SI_RESUMEN|SI_RESUMEN_G2|SI_REPORTAR_SEGUIR|NO_REPORTAR_SEGUIR|NO_REPORTAR_BAJA)[\s\S]+/gi, "");
+    limpio = limpio.replace(/(?:derivar|derivando|derivo)(?:\s+(?:a|al|el|a\s+la))?\s+(?:asistente\s*[1-5]|asesor\s+humano|agente\s+humano|atencion\s+humano|soporte\s+humano)(?:\.|\b|$)/gim, "");
+
     // 3. Restaurar bloques especiales
     specialBlocks.forEach((block, index) => {
         limpio = limpio.replace(`___SPECIAL_BLOCK_${index}___`, block);
@@ -1623,19 +1629,23 @@ export class AssistantResponseProcessor {
                 }
             }
 
-            // --- DETECCION DE GET_RESUMEN ---
-            const hasSummary = /GET_RESUMEN/i.test(textResponse);
+            // --- DETECCION DE GET_RESUMEN / RESUMEN GENERADO ---
+            const hasSummary = /GET_RESUMEN/i.test(textResponse) || /RESUMEN GENERADO/i.test(textResponse) || /Tipo:\s*(SI_RESUMEN|SI_RESUMEN_G2|SI_REPORTAR_SEGUIR|NO_REPORTAR_SEGUIR|NO_REPORTAR_BAJA)/i.test(textResponse);
             if (hasSummary) {
                 console.log(`[AssistantResponseProcessor] 📋 Resumen detectado en la respuesta.`);
                 
-                // Extraer el bloque del JSON/Texto posterior al comando GET_RESUMEN
+                // Extraer el bloque del JSON/Texto posterior al comando GET_RESUMEN si existe, o tomar todo el texto si no está presente
                 let resumenText = '';
-                const match = textResponse.match(/GET_RESUMEN[\s\S]*?(?:BLOQUE:|:)?\s*([\s\S]+)/i);
-                if (match) {
-                    resumenText = match[1].trim();
+                if (/GET_RESUMEN/i.test(textResponse)) {
+                    const match = textResponse.match(/GET_RESUMEN[\s\S]*?(?:BLOQUE:|:)?\s*([\s\S]+)/i);
+                    if (match) {
+                        resumenText = match[1].trim();
+                    } else {
+                        const index = textResponse.toLowerCase().indexOf('get_resumen');
+                        resumenText = textResponse.substring(index + 11).trim();
+                    }
                 } else {
-                    const index = textResponse.toLowerCase().indexOf('get_resumen');
-                    resumenText = textResponse.substring(index + 11).trim();
+                    resumenText = textResponse.trim();
                 }
                 
                 // Limpiar delimitadores markdown si los hay

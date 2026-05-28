@@ -14,6 +14,16 @@ export { supabase };
 // Emitter para notificar cambios en tiempo real a otros módulos (como el de WebSockets)
 export const historyEvents = new EventEmitter();
 
+// Cache en memoria para evitar que ecos de mensajes enviados por el bot via Meta/YCloud API
+// sean detectados como intervención manual (Atención Humana) por el socket de Baileys.
+export const recentBotSentMessages = new Set<string>();
+
+export const normalizeTextForCache = (text: string): string => {
+    return (text || '')
+        .toLowerCase()
+        .replace(/[\s\p{P}]/gu, ''); // Elimina espacios y puntuación de cualquier tipo
+};
+
 // Identificador único para este bot específico
 const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "local-dev";
 const PROJECT_IDENTIFIER = PROJECT_ID; // Unificamos para evitar discrepancias entre tablas
@@ -160,6 +170,30 @@ export class HistoryHandler {
     }
 
     static async saveMessage(rawChatId: string, role: 'user' | 'assistant' | 'system', content: string, type: string = 'text', contactName: string | null = null, userId: string | null = null, messageId: string | null = null) {
+        // Registrar en cache si es respuesta del bot/operador para evitar falsas intervenciones manuales
+        if (role === 'assistant' && content) {
+            const normalized = normalizeTextForCache(content);
+            recentBotSentMessages.add(normalized);
+            setTimeout(() => {
+                recentBotSentMessages.delete(normalized);
+            }, 30000); // 30 segundos es tiempo de sobra para recibir el eco del socket
+
+            // También registrar los chunks individuales si el mensaje se envía fragmentado (por ejemplo, separado por dos o más saltos de línea)
+            const chunks = content.split(/\n\n+/);
+            if (chunks.length > 1) {
+                for (const chunk of chunks) {
+                    const trimmed = chunk.trim();
+                    if (trimmed.length > 0) {
+                        const normalizedChunk = normalizeTextForCache(trimmed);
+                        recentBotSentMessages.add(normalizedChunk);
+                        setTimeout(() => {
+                            recentBotSentMessages.delete(normalizedChunk);
+                        }, 30000);
+                    }
+                }
+            }
+        }
+
         try {
             const chatId = this.normalizeId(rawChatId);
             await this.getOrCreateChat(chatId, 'webchat', contactName, userId);
