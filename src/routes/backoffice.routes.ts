@@ -94,6 +94,12 @@ export const processSendMessage = async (
             // Capturar ID de WhatsApp para deduplicación
             const waId = result?.key?.id || result?.id;
             if (waId) {
+                try {
+                    const { trackSentMessage } = await import('../providers/provider.manager');
+                    trackSentMessage(waId);
+                } catch (e) {
+                    console.error('[BACKOFFICE] Error registrando trackSentMessage:', e);
+                }
                 console.log(`[BACKOFFICE] Mensaje enviado con ID: ${waId}. Guardando en historial...`);
                 await HistoryHandler.saveMessage(chatId, 'assistant', finalContent, finalType, null, null, waId);
             } else {

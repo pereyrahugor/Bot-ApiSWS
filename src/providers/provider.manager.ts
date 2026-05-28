@@ -7,6 +7,19 @@ import { obtenerTextoDelMensaje, obtenerMensajeUnwrapped } from "../utils/messag
 
 
 /**
+ * Cache temporal para IDs de mensajes enviados desde el backoffice.
+ * Evita procesar los "ecos" (message_from_me) de lo que nosotros mismos mandamos.
+ */
+const sentMessageCache = new Set<string>();
+
+export const trackSentMessage = (id: string) => {
+    if (!id) return;
+    sentMessageCache.add(id);
+    // Limpiar después de 10 segundos
+    setTimeout(() => sentMessageCache.delete(id), 10000);
+};
+
+/**
  * Registra los listeners de los proveedores (YCloud/Baileys) para QR, fallos y mensajes entrantes.
  */
 export const registerProviderEvents = (provider: any, isGroupProvider: boolean = false) => {
@@ -63,13 +76,25 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
 
     provider.on('message', async (ctx: any) => {
         try {
-            const isGroup = ctx.key?.remoteJid?.endsWith('@g.us') || ctx.from?.includes('@g.us');
+            const from = ctx.from || '';
+            const isGroup = ctx.key?.remoteJid?.endsWith('@g.us') || from.includes('@g.us');
             if (isGroupProvider && !isGroup) {
                 console.log(`${prefix} 🤫 Ignorando mensaje directo en el proveedor de grupos para evitar duplicados.`);
                 return;
             }
 
-            console.log(`${prefix} 📩 Mensaje entrante - Tipo: ${ctx.type}, De: ${ctx.from}`);
+            if (isGroup) {
+                // Filtro estricto: solo procedemos si es uno de los grupos de reportes oficiales
+                const groupResumenId = process.env.ID_GRUPO_RESUMEN || '';
+                const groupResumenId2 = process.env.ID_GRUPO_RESUMEN_2 || '';
+                const cleanFrom = from.includes('@') ? from : `${from}@g.us`;
+                
+                if (cleanFrom !== groupResumenId && cleanFrom !== groupResumenId2) {
+                    return; // Ignorar cualquier otro grupo
+                }
+            }
+
+            console.log(`${prefix} 📩 Mensaje entrante - Tipo: ${ctx.type}, De: ${from}`);
             
             // Si el mensaje es una nota de voz, forzamos el log específico para confirmar detección
             if (ctx.type === 'voice' || ctx.type === EVENTS.VOICE_NOTE) {
@@ -160,18 +185,83 @@ export const registerProviderEvents = (provider: any, isGroupProvider: boolean =
                 const senderNumber = (chatId || '').replace(/\D/g, '');
                 const isFromMe = ctx.key?.fromMe || (botNumber && senderNumber === botNumber);
 
+                let contactName = null;
+                if (isGroup) {
+                    const groupResumenId = process.env.ID_GRUPO_RESUMEN || '';
+                    const cleanFrom = from.includes('@') ? from : `${from}@g.us`;
+                    contactName = (cleanFrom === groupResumenId) ? 'Grupo de Reportes 1' : 'Grupo de Reportes 2';
+                }
+
                 await HistoryHandler.saveMessage(
                     chatId, 
                     isFromMe ? 'assistant' : 'user', 
                     ctx.body, 
                     ctx.type || 'text', 
-                    null, 
+                    contactName, 
                     null, 
                     messageId
                 );
             }
         } catch (err) {
             console.error(`❌ ${prefix} Error en el logger de mensajes entrantes:`, err);
+        }
+    });
+
+    // --- CAPTURA DE MENSAJES SALIENTES ---
+    provider.on('message_from_me', async (ctx: any) => {
+        try {
+            const from = ctx.from || '';
+            const isGroup = from.includes('@g.us');
+
+            if (isGroup) {
+                // Filtro estricto: solo procedemos si es uno de los grupos de reportes oficiales
+                const groupResumenId = process.env.ID_GRUPO_RESUMEN || '';
+                const groupResumenId2 = process.env.ID_GRUPO_RESUMEN_2 || '';
+                const cleanFrom = from.includes('@') ? from : `${from}@g.us`;
+                
+                if (cleanFrom !== groupResumenId && cleanFrom !== groupResumenId2) {
+                    return; // Ignorar cualquier otro grupo
+                }
+            }
+
+            const isManual = ctx.isManualIntervention;
+            console.log(`${prefix} 📤 Mensaje saliente manual detectado. ID: ${from}. Body: ${ctx.body}${isManual ? ' [INTERVENCIÓN DESDE APP WHATSAPP]' : ''}`);
+            const { HistoryHandler } = await import('../utils/historyHandler');
+            
+            const chatId = isGroup ? (from.includes('@') ? from : `${from}@g.us`) : (from.includes('@') ? from.split('@')[0] : from);
+            const externalId = ctx.key?.id || ctx.payload?.id || ctx.id;
+
+            // DEDUPLICACIÓN: Si el ID está en el caché, es un eco de algo que enviamos desde el backoffice
+            if (externalId && sentMessageCache.has(externalId)) {
+                return;
+            }
+
+            let contactName = null;
+            if (isGroup) {
+                const groupResumenId = process.env.ID_GRUPO_RESUMEN || '';
+                contactName = (chatId === groupResumenId) ? 'Grupo de Reportes 1' : 'Grupo de Reportes 2';
+            }
+
+            // Guardamos como 'assistant' para que aparezca en el lado derecho del chat en el backoffice
+            await HistoryHandler.saveMessage(
+                chatId, 
+                'assistant', 
+                ctx.body, 
+                ctx.type || 'text', 
+                contactName, 
+                null,
+                externalId
+            );
+
+            // Si fue una intervención manual desde la app de WhatsApp (y no es grupo),
+            // activar automáticamente el modo "Atención Humana"
+            if (isManual && !isGroup) {
+                console.log(`${prefix} 🛑 Activando modo Atención Humana para ${chatId} (operador escribió desde la app)`);
+                await HistoryHandler.toggleBot(chatId, false);
+                await HistoryHandler.updateLastHumanMessage(chatId);
+            }
+        } catch (err) {
+            console.error(`❌ ${prefix} Error guardando mensaje saliente manual:`, err);
         }
     });
 

@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import OpenAI from "openai";
 import moment from "moment-timezone";
 import { JsonBlockFinder } from "../API_SWS/JsonBlockFinder";
@@ -42,6 +44,62 @@ function toDDMMYYYY(fecha: string): string {
     }
     return fecha;
 }
+
+function formatSummary(resumen: string, data: any, userId?: string): string {
+    let cleanText = resumen;
+    try {
+        const parsed = typeof resumen === 'string' ? JSON.parse(resumen) : resumen;
+        if (typeof parsed === 'object') {
+            cleanText = Object.entries(parsed)
+                .filter(([k]) => k.toLowerCase() !== 'tipo' && k.toLowerCase() !== 'type')
+                .map(([k, v]) => `*${k}:* ${v}`)
+                .join('\n');
+        }
+    } catch (_err) {
+        cleanText = resumen.replace(/Tipo:\s*\w+/i, '').replace(/###\s*BLOQUE:\s*GET_RESUMEN/i, '').trim();
+    }
+
+    const phone = (data.from || userId || '').replace(/[^0-9]/g, '');
+    const linkWS = data.linkWS || `https://wa.me/${phone}`;
+    return `📝 *RESUMEN DE CONVERSACIÓN*\n\n${cleanText}\n\n🔗 *Chat del usuario:* ${linkWS}`;
+}
+
+async function sendMediaToGroup(provider: any, state: any, targetGroup: string, data: any) {
+    const fotoOVideoRaw = data["Foto o video"] || '';
+    const debeEnviar = /s[ií]+/i.test(fotoOVideoRaw);
+
+    if (debeEnviar) {
+        const lastImage = await state.get('lastImage');
+        const lastVideo = await state.get('lastVideo');
+
+        if (lastImage && typeof lastImage === 'string') {
+            if (fs.existsSync(lastImage)) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                await provider.sendImage(targetGroup, lastImage, "");
+                try {
+                    fs.unlinkSync(lastImage);
+                    await state.update({ lastImage: null });
+                } catch (e: any) { console.error('Error borrando img:', e.message); }
+            }
+        }
+
+        if (lastVideo && typeof lastVideo === 'string') {
+            if (fs.existsSync(lastVideo)) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                if (provider.sendVideo) {
+                    await provider.sendVideo(targetGroup, lastVideo, "");
+                } else {
+                    await provider.sendImage(targetGroup, lastVideo, "");
+                }
+                try {
+                    fs.unlinkSync(lastVideo);
+                    await state.update({ lastVideo: null });
+                } catch (e: any) { console.error('Error borrando video:', e.message); }
+            }
+        }
+    }
+}
+
 
 /**
  * Convierte un string DD/MM/YYYY a un objeto Date (local)
@@ -1562,6 +1620,225 @@ export class AssistantResponseProcessor {
                             console.error('[WhatsApp Debug] Error en flowDynamic:', err);
                         }
                     }
+                }
+            }
+
+            // --- DETECCION DE GET_RESUMEN ---
+            const hasSummary = /GET_RESUMEN/i.test(textResponse);
+            if (hasSummary) {
+                console.log(`[AssistantResponseProcessor] 📋 Resumen detectado en la respuesta.`);
+                
+                // Extraer el bloque del JSON/Texto posterior al comando GET_RESUMEN
+                let resumenText = '';
+                const match = textResponse.match(/GET_RESUMEN[\s\S]*?(?:BLOQUE:|:)?\s*([\s\S]+)/i);
+                if (match) {
+                    resumenText = match[1].trim();
+                } else {
+                    const index = textResponse.toLowerCase().indexOf('get_resumen');
+                    resumenText = textResponse.substring(index + 11).trim();
+                }
+                
+                // Limpiar delimitadores markdown si los hay
+                resumenText = resumenText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+
+                let data: any;
+                try {
+                    data = JSON.parse(resumenText);
+                } catch (error) {
+                    console.warn("[AssistantResponseProcessor] El resumen no es JSON válido. Extrayendo manualmente...");
+                    const { extraerDatosResumen } = await import('./extractJsonData');
+                    data = extraerDatosResumen(resumenText);
+                }
+
+                // Ejecutar automatización de nuevo lead y ticket en Supabase CRM
+                const userId = ctx.from;
+                try {
+                    const cleanNombre = (data.Nombre || data.nombre || data.contactName || '').trim();
+                    const cleanEmail = (data.Correo || data.correo || data.Email || data.email || '').trim();
+                    const cleanSource = (data.Origen || data.origen || data.Source || data.source || 'Asistente AI').trim();
+                    const cleanStatus = (data.Estado || data.estado || data.Status || data.status || '').trim();
+                    const rawTags = (data.Etiqueta || data.etiqueta || data.Tags || data.tag || data.Etiquetas || data.etiquetas || '').trim();
+                    const tagsList = rawTags ? rawTags.split(',').map((t: string) => t.trim()).filter((t: string) => t !== '' && t !== '-') : [];
+
+                    if (cleanNombre || cleanEmail || resumenText || cleanStatus || tagsList.length > 0) {
+                        const existingChat = await HistoryHandler.getChat(userId);
+                        const previousNotes = existingChat?.notes ? `${existingChat.notes}\n\n---\n\n` : '';
+                        const summaryForNotes = formatSummary(resumenText, data, userId);
+
+                        const updateData: any = {
+                            notes: previousNotes + summaryForNotes,
+                            is_lead: true
+                        };
+
+                        if (cleanNombre && cleanNombre !== '-') updateData.name = cleanNombre;
+                        if (cleanEmail && cleanEmail !== '-') updateData.email = cleanEmail;
+                        if (cleanSource && cleanSource !== '-') updateData.source = cleanSource;
+                        if (cleanStatus && cleanStatus !== '-') {
+                            updateData.crm_status = await HistoryHandler.mapStatusToId(cleanStatus);
+                        }
+
+                        await HistoryHandler.updateContactDetails(userId, updateData);
+
+                        if (tagsList.length > 0) {
+                            await HistoryHandler.assignTagsToContact(userId, tagsList);
+                        }
+                    }
+
+                    const summaryForTicket = formatSummary(resumenText, data, userId);
+                    await HistoryHandler.createTicket(
+                        userId,
+                        `Nuevo Lead: ${cleanNombre || userId}`,
+                        summaryForTicket,
+                        'Nuevo Lead',
+                        'Alta'
+                    );
+                } catch (leadError: any) {
+                    console.error("[AssistantResponseProcessor] Error en automatización de Nuevo Lead (CRM):", leadError.message || leadError);
+                }
+
+                // Sincronizar configuraciones dinámicas vía process.env
+                const groupResumenId = process.env.ID_GRUPO_RESUMEN || '';
+                const groupResumenId2 = process.env.ID_GRUPO_RESUMEN_2 || '';
+
+                const tipo = (data.tipo ?? '').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
+                console.log(`[AssistantResponseProcessor] Procesando tipo de resumen: ${tipo}`);
+
+                if (tipo === 'NO_REPORTAR_BAJA') {
+                    data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
+                    
+                    const lastImage = await state.get('lastImage');
+                    if (lastImage && typeof lastImage === 'string' && fs.existsSync(lastImage)) {
+                        fs.unlinkSync(lastImage);
+                        await state.update({ lastImage: null });
+                    }
+                    const lastVideo = await state.get('lastVideo');
+                    if (lastVideo && typeof lastVideo === 'string' && fs.existsSync(lastVideo)) {
+                        fs.unlinkSync(lastVideo);
+                        await state.update({ lastVideo: null });
+                    }
+
+                    const { addToSheet } = await import('./googleSheetsResumen');
+                    await addToSheet(data);
+                    
+                    // Resetear el agente a asistente1 si corresponde
+                    await state.update({ assistantName: 'asistente1' });
+
+                } else if (tipo === 'NO_REPORTAR_SEGUIR') {
+                    const { ReconectionFlow } = await import('../Flows/reconectionFlow');
+                    const reconFlow = new ReconectionFlow({
+                        ctx,
+                        state,
+                        provider,
+                        flowDynamic,
+                        gotoFlow,
+                        maxAttempts: 3,
+                        onSuccess: async (newData: any) => {
+                            if (typeof gotoFlow === 'function') {
+                                if (ctx.type === 'voice_note' || ctx.type === 'VOICE_NOTE') {
+                                    const mod = await import('../Flows/welcomeFlowVoice');
+                                    return gotoFlow(mod.welcomeFlowVoice);
+                                } else {
+                                    const mod = await import('../Flows/welcomeFlowTxt');
+                                    return gotoFlow(mod.welcomeFlowTxt);
+                                }
+                            }
+                        },
+                        onFail: async () => {
+                            data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
+                            const { addToSheet } = await import('./googleSheetsResumen');
+                            await addToSheet(data);
+                        }
+                    });
+                    await reconFlow.start();
+
+                } else if (tipo === 'SI_REPORTAR_SEGUIR') {
+                    data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
+                    const resumenLimpio = resumenText.replace(/https:\/\/wa\.me\/[0-9]+/g, '').trim();
+                    const resumenConLink = `${resumenLimpio}\n\n👉 [Chat del usuario](${data.linkWS})`;
+
+                    try {
+                        await provider.sendMessage(groupResumenId, resumenConLink, {});
+                        await sendMediaToGroup(provider, state, groupResumenId, data);
+                    } catch (err: any) {
+                        console.error(`[AssistantResponseProcessor] Error enviando a grupo 1:`, err.message || err);
+                    }
+
+                    const { addToSheet } = await import('./googleSheetsResumen');
+                    await addToSheet(data);
+
+                    const { ReconectionFlow } = await import('../Flows/reconectionFlow');
+                    const reconFlow = new ReconectionFlow({
+                        ctx,
+                        state,
+                        provider,
+                        flowDynamic,
+                        gotoFlow,
+                        maxAttempts: 3,
+                        onSuccess: async (newData: any) => {
+                            if (typeof gotoFlow === 'function') {
+                                if (ctx.type === 'voice_note' || ctx.type === 'VOICE_NOTE') {
+                                    const mod = await import('../Flows/welcomeFlowVoice');
+                                    return gotoFlow(mod.welcomeFlowVoice);
+                                } else {
+                                    const mod = await import('../Flows/welcomeFlowTxt');
+                                    return gotoFlow(mod.welcomeFlowTxt);
+                                }
+                            }
+                        },
+                        onFail: async () => {
+                            // No-op
+                        }
+                    });
+                    await reconFlow.start();
+
+                } else if (tipo === 'SI_RESUMEN_G2') {
+                    data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
+                    const resumenConLink = `${resumenText}\n\n👉 [Chat del usuario](${data.linkWS})`;
+                    try {
+                        await provider.sendText(groupResumenId2, resumenConLink);
+                        await sendMediaToGroup(provider, state, groupResumenId2, data);
+                    } catch (err: any) {
+                        console.error(`[AssistantResponseProcessor] Error enviando a grupo 2 (SI_RESUMEN_G2):`, err.message || err);
+                    }
+
+                    const { addToSheet } = await import('./googleSheetsResumen');
+                    await addToSheet(data);
+                    
+                    // Resetear el agente a asistente1
+                    await state.update({ assistantName: 'asistente1' });
+
+                } else if (tipo === 'SI_RESUMEN') {
+                    data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
+                    const resumenConLink = `${resumenText}\n\n👉 [Chat del usuario](${data.linkWS})`;
+                    try {
+                        await provider.sendText(groupResumenId, resumenConLink);
+                        await sendMediaToGroup(provider, state, groupResumenId, data);
+                    } catch (err: any) {
+                        console.error(`[AssistantResponseProcessor] Error enviando a grupo 1 (SI_RESUMEN):`, err.message || err);
+                    }
+
+                    const { addToSheet } = await import('./googleSheetsResumen');
+                    await addToSheet(data);
+                    
+                    // Resetear el agente a asistente1
+                    await state.update({ assistantName: 'asistente1' });
+
+                } else {
+                    // DEFAULT
+                    data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
+                    const resumenConLink = `${resumenText}\n\n👉 [Chat del usuario](${data.linkWS})`;
+                    try {
+                        await provider.sendText(groupResumenId, resumenConLink);
+                        await sendMediaToGroup(provider, state, groupResumenId, data);
+                    } catch (err: any) {
+                        console.error(`[AssistantResponseProcessor] Error enviando a grupo 1 (DEFAULT):`, err.message || err);
+                    }
+
+                    const { addToSheet } = await import('./googleSheetsResumen');
+                    await addToSheet(data);
+                    
+                    // Resetear el agente a asistente1
+                    await state.update({ assistantName: 'asistente1' });
                 }
             }
         } catch (error) {
