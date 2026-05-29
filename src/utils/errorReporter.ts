@@ -37,7 +37,11 @@ class ErrorReporter {
 
             // 3. Intento de envío con fallback
             try {
-                if ((this.provider as any).sendText) {
+                const sock = (this.provider as any).vendor || (this.provider as any).globalVendorArgs?.sock;
+                if (sock) {
+                    console.log(`📡 [ErrorReporter] Usando socket directo de Baileys para enviar reporte a grupo.`);
+                    await sock.sendMessage(this.groupId, { text: errorMessage });
+                } else if ((this.provider as any).sendText) {
                     await (this.provider as any).sendText(this.groupId, errorMessage);
                 } else {
                     await this.provider.sendMessage(this.groupId, errorMessage, {});

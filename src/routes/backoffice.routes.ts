@@ -66,29 +66,51 @@ export const processSendMessage = async (
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
             let result: any = null;
 
-            if (file) {
-                const absolutePath = path.resolve(file.path);
-                if (finalType === 'image') {
-                    if (typeof providerToSend.sendImage === 'function') {
-                        result = await providerToSend.sendImage(jid, absolutePath, message || '');
+            const sock = providerToSend.vendor || providerToSend.globalVendorArgs?.sock;
+            if (isGroup && sock) {
+                console.log(`[BACKOFFICE] Usando socket directo de Baileys para evitar groupMetadata a ${jid}`);
+                if (file) {
+                    const absolutePath = path.resolve(file.path);
+                    if (finalType === 'image') {
+                        result = await sock.sendMessage(jid, { image: { url: absolutePath }, caption: message || '' });
+                    } else if (finalType === 'video') {
+                        result = await sock.sendMessage(jid, { video: { url: absolutePath }, caption: message || '' });
                     } else {
-                        result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
-                    }
-                } else if (finalType === 'video') {
-                    if (typeof (providerToSend as any).sendVideo === 'function') {
-                        result = await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
-                    } else {
-                        result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                        result = await sock.sendMessage(jid, { 
+                            document: { url: absolutePath }, 
+                            mimetype: file.mimetype, 
+                            fileName: file.originalname, 
+                            caption: message || '' 
+                        });
                     }
                 } else {
-                    if (typeof (providerToSend as any).sendFile === 'function') {
-                        result = await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
-                    } else {
-                        result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
-                    }
+                    result = await sock.sendMessage(jid, { text: message });
                 }
             } else {
-                result = await providerToSend.sendMessage(jid, message, {});
+                if (file) {
+                    const absolutePath = path.resolve(file.path);
+                    if (finalType === 'image') {
+                        if (typeof providerToSend.sendImage === 'function') {
+                            result = await providerToSend.sendImage(jid, absolutePath, message || '');
+                        } else {
+                            result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                        }
+                    } else if (finalType === 'video') {
+                        if (typeof (providerToSend as any).sendVideo === 'function') {
+                            result = await (providerToSend as any).sendVideo(jid, absolutePath, message || '');
+                        } else {
+                            result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath });
+                        }
+                    } else {
+                        if (typeof (providerToSend as any).sendFile === 'function') {
+                            result = await (providerToSend as any).sendFile(jid, absolutePath, message || file.originalname);
+                        } else {
+                            result = await providerToSend.sendMessage(jid, message || '', { media: absolutePath, fileName: file.originalname });
+                        }
+                    }
+                } else {
+                    result = await providerToSend.sendMessage(jid, message, {});
+                }
             }
 
             // Capturar ID de WhatsApp para deduplicación

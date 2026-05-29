@@ -19,7 +19,16 @@ export const sendToGroup = async (target: string, message: string, options: any 
                 return;
             }
             console.log(`📡 [groupSender] Enviando a GRUPO via Baileys: ${target}`);
-            await groupProvider.sendMessage(target, message, options);
+            
+            // Bypass groupMetadata call by using direct Baileys socket if available
+            const sock = groupProvider.vendor || groupProvider.globalVendorArgs?.sock;
+            if (sock) {
+                console.log(`📡 [groupSender] Usando socket directo de Baileys para evitar groupMetadata a ${target}`);
+                await sock.sendMessage(target, { text: message });
+            } else {
+                console.warn(`⚠️ [groupSender] Socket directo no disponible, usando fallback .sendMessage()`);
+                await groupProvider.sendMessage(target, message, options);
+            }
         } else {
             const adapterProvider = getAdapterProvider();
             if (!adapterProvider) {
@@ -44,7 +53,16 @@ export const sendImageToGroup = async (target: string, imagePath: string, captio
         const isGroup = target.includes('@g.us');
         if (isGroup) {
             const groupProvider = getGroupProvider();
-            if (groupProvider) await groupProvider.sendImage(target, imagePath, caption);
+            if (groupProvider) {
+                // Bypass groupMetadata call by using direct Baileys socket if available
+                const sock = groupProvider.vendor || groupProvider.globalVendorArgs?.sock;
+                if (sock) {
+                    console.log(`📡 [groupSender] Enviando imagen a GRUPO via socket directo: ${target}`);
+                    await sock.sendMessage(target, { image: { url: imagePath }, caption: caption });
+                } else {
+                    await groupProvider.sendImage(target, imagePath, caption);
+                }
+            }
         } else {
             const adapterProvider = getAdapterProvider();
             const cleanTarget = target.replace(/[^0-9]/g, '');
@@ -64,8 +82,15 @@ export const sendVideoToGroup = async (target: string, videoPath: string, captio
         if (isGroup) {
             const groupProvider = getGroupProvider();
             if (groupProvider) {
-                if (groupProvider.sendVideo) await groupProvider.sendVideo(target, videoPath, caption);
-                else await groupProvider.sendImage(target, videoPath, caption); // Fallback
+                // Bypass groupMetadata call by using direct Baileys socket if available
+                const sock = groupProvider.vendor || groupProvider.globalVendorArgs?.sock;
+                if (sock) {
+                    console.log(`📡 [groupSender] Enviando video a GRUPO via socket directo: ${target}`);
+                    await sock.sendMessage(target, { video: { url: videoPath }, caption: caption });
+                } else {
+                    if (groupProvider.sendVideo) await groupProvider.sendVideo(target, videoPath, caption);
+                    else await groupProvider.sendImage(target, videoPath, caption); // Fallback
+                }
             }
         } else {
             const adapterProvider = getAdapterProvider();
@@ -79,3 +104,4 @@ export const sendVideoToGroup = async (target: string, videoPath: string, captio
         console.error('❌ [groupSender] Error al enviar video:', error);
     }
 };
+
