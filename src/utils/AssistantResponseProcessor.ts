@@ -13,6 +13,7 @@ import { MovimientosApi } from "../API_SWS/MovimientosApi";
 import { getMapsUbication } from "../addModule/getMapsUbication";
 import { getUsuarioId } from "../API_SWS/SessionApi";
 import { HistoryHandler } from "./historyHandler";
+import { sendToGroup, sendImageToGroup, sendVideoToGroup } from "./groupSender";
 /**
  * Convierte una fecha a formato DD/MM/YYYY
  * @param {string} fecha - Fecha en formato YYYY-MM-DD, YYYY/MM/DD o DD/MM/YYYY
@@ -75,7 +76,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
         if (lastImage && typeof lastImage === 'string') {
             if (fs.existsSync(lastImage)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                await provider.sendImage(targetGroup, lastImage, "");
+                await sendImageToGroup(targetGroup, lastImage, "");
                 try {
                     fs.unlinkSync(lastImage);
                     await state.update({ lastImage: null });
@@ -86,11 +87,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
         if (lastVideo && typeof lastVideo === 'string') {
             if (fs.existsSync(lastVideo)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
-                if (provider.sendVideo) {
-                    await provider.sendVideo(targetGroup, lastVideo, "");
-                } else {
-                    await provider.sendImage(targetGroup, lastVideo, "");
-                }
+                await sendVideoToGroup(targetGroup, lastVideo, "");
                 try {
                     fs.unlinkSync(lastVideo);
                     await state.update({ lastVideo: null });
@@ -1767,7 +1764,7 @@ export class AssistantResponseProcessor {
                     const resumenConLink = `${resumenLimpio}\n\n👉 [Chat del usuario](${data.linkWS})`;
 
                     try {
-                        await provider.sendMessage(groupResumenId, resumenConLink, {});
+                        await sendToGroup(groupResumenId, resumenConLink, {});
                         await sendMediaToGroup(provider, state, groupResumenId, data);
                     } catch (err: any) {
                         console.error(`[AssistantResponseProcessor] Error enviando a grupo 1:`, err.message || err);
@@ -1805,7 +1802,7 @@ export class AssistantResponseProcessor {
                     data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
                     const resumenConLink = `${resumenText}\n\n👉 [Chat del usuario](${data.linkWS})`;
                     try {
-                        await provider.sendText(groupResumenId2, resumenConLink);
+                        await sendToGroup(groupResumenId2, resumenConLink);
                         await sendMediaToGroup(provider, state, groupResumenId2, data);
                     } catch (err: any) {
                         console.error(`[AssistantResponseProcessor] Error enviando a grupo 2 (SI_RESUMEN_G2):`, err.message || err);
@@ -1821,7 +1818,7 @@ export class AssistantResponseProcessor {
                     data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
                     const resumenConLink = `${resumenText}\n\n👉 [Chat del usuario](${data.linkWS})`;
                     try {
-                        await provider.sendText(groupResumenId, resumenConLink);
+                        await sendToGroup(groupResumenId, resumenConLink);
                         await sendMediaToGroup(provider, state, groupResumenId, data);
                     } catch (err: any) {
                         console.error(`[AssistantResponseProcessor] Error enviando a grupo 1 (SI_RESUMEN):`, err.message || err);
@@ -1838,7 +1835,7 @@ export class AssistantResponseProcessor {
                     data.linkWS = `https://wa.me/${userId.replace(/[^0-9]/g, '')}`;
                     const resumenConLink = `${resumenText}\n\n👉 [Chat del usuario](${data.linkWS})`;
                     try {
-                        await provider.sendText(groupResumenId, resumenConLink);
+                        await sendToGroup(groupResumenId, resumenConLink);
                         await sendMediaToGroup(provider, state, groupResumenId, data);
                     } catch (err: any) {
                         console.error(`[AssistantResponseProcessor] Error enviando a grupo 1 (DEFAULT):`, err.message || err);

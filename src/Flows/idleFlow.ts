@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';// Import the new logic
 import { ReconectionFlow } from './reconectionFlow';
 import { HistoryHandler } from '../utils/historyHandler'; // IntegraciÃ³n con CRM
+import { sendToGroup, sendImageToGroup, sendVideoToGroup } from '../utils/groupSender';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
@@ -48,7 +49,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
             if (fs.existsSync(lastImage)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 // console.log(`ðŸ“¡ Intentando enviar imagen: ${lastImage} a ${targetGroup}`);
-                await provider.sendImage(targetGroup, lastImage, "");
+                await sendImageToGroup(targetGroup, lastImage, "");
                 // console.log(`âœ… Imagen reenviada al grupo ${targetGroup}`);
                 try {
                     fs.unlinkSync(lastImage);
@@ -61,11 +62,7 @@ async function sendMediaToGroup(provider: any, state: any, targetGroup: string, 
             if (fs.existsSync(lastVideo)) {
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 // console.log(`ðŸ“¡ Intentando enviar video: ${lastVideo} a ${targetGroup}`);
-                if (provider.sendVideo) {
-                    await provider.sendVideo(targetGroup, lastVideo, "");
-                } else {
-                    await provider.sendImage(targetGroup, lastVideo, "");
-                }
+                await sendVideoToGroup(targetGroup, lastVideo, "");
                 // console.log(`âœ… Video reenviado al grupo ${targetGroup}`);
                 try {
                     fs.unlinkSync(lastVideo);
@@ -179,7 +176,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 }
 
                 await addToSheet(data);
-                return endFlow(); //("BNI, cambiando la forma en que el mundo hace negocios\nGracias por su contacto.");
+                return endFlow(); 
             } else if (tipo === 'NO_REPORTAR_SEGUIR') {
                 // Solo este activa seguimiento
                 // console.log('NO_REPORTAR_SEGUIR: Se realiza seguimiento, pero no se envÃ­a resumen al grupo.');
@@ -208,8 +205,6 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     }
                 });
                 return await reconFlow.start();
-                // No cerrar el hilo aquÃ­, dejar abierto para que el usuario pueda responder
-                // Bloque SI_RESUMEN_G2
             } else if (tipo === 'SI_REPORTAR_SEGUIR') {
                 // Se envÃ­a resumen al grupo y se activa seguimiento
                 // console.log('SI_REPORTAR_SEGUIR: Se envÃ­a resumen al grupo y se realiza seguimiento.');
@@ -219,12 +214,11 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 const resumenConLink = `${resumenLimpio}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
 
                 try {
-                        await provider.sendMessage(ID_GRUPO_RESUMEN, resumenConLink, {});
-                        // console.log(`âœ… SI_REPORTAR_SEGUIR: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
-                        await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
-
+                    await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink, {});
+                    // console.log(`âœ… SI_REPORTAR_SEGUIR: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
+                    await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
                 } catch (err: any) {
-                    // console.error(`âŒ SI_REPORTAR_SEGUIR Error:`, err?.message || err);
+                    // console.error(`â Œ SI_REPORTAR_SEGUIR Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
@@ -253,21 +247,18 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     }
                 });
                 return await reconFlow.start();
-                // No cerrar el hilo aquÃ­, dejar abierto para que el usuario pueda responder
-                // Bloque SI_RESUMEN_G2
             } else if (tipo === 'SI_RESUMEN_G2') {
                 // console.log('SI_RESUMEN_G2: Solo se envÃ­a resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
 
                 const resumenConLink = `${resumen}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
                 try {
-                    await provider.sendText(ID_GRUPO_RESUMEN_2, resumenConLink);
+                    await sendToGroup(ID_GRUPO_RESUMEN_2, resumenConLink, {});
                     // console.log(`âœ… SI_RESUMEN_G2: Resumen enviado a ${ID_GRUPO_RESUMEN_2}`);
 
                     await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN_2, data);
-
                 } catch (err: any) {
-                    // console.error(`âŒ SI_RESUMEN_G2 Error:`, err?.message || err);
+                    // console.error(`â Œ SI_RESUMEN_G2 Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
@@ -279,13 +270,12 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
                 const resumenConLink = `${resumen}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
                 try {
-                    await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
+                    await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink, {});
                     // console.log(`âœ… SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
 
                     await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
-
                 } catch (err: any) {
-                    // console.error(`âŒ SI_RESUMEN Error:`, err?.message || err);
+                    // console.error(`â Œ SI_RESUMEN Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
@@ -298,13 +288,12 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
                 const resumenConLink = `${resumen}\n\nðŸ”— [Chat del usuario](${data.linkWS})`;
                 try {
-                    await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
+                    await sendToGroup(ID_GRUPO_RESUMEN, resumenConLink, {});
                     // console.log(`âœ… DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN}`);
 
                     await sendMediaToGroup(provider, state, ID_GRUPO_RESUMEN, data);
-
                 } catch (err: any) {
-                    // console.error(`âŒ DEFAULT Error:`, err?.message || err);
+                    // console.error(`â Œ DEFAULT Error:`, err?.message || err);
                 }
 
                 await addToSheet(data);
