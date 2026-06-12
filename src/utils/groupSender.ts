@@ -40,8 +40,14 @@ export const sendToGroup = async (target: string, message: string, options: any 
             console.log(`📡 [groupSender] Enviando INDIVIDUAL via YCloud: ${cleanTarget}`);
             await adapterProvider.sendMessage(cleanTarget, message, options);
         }
-    } catch (error) {
-        console.error('❌ [groupSender] Error al enviar mensaje:', error);
+    } catch (error: any) {
+        const errorStr = String(error?.message || error);
+        if (errorStr.includes('forbidden') || errorStr.includes('403')) {
+            console.error(`❌ [groupSender] ERROR 403 (FORBIDDEN): El número del bot NO es participante del grupo o ha sido eliminado del mismo.`);
+            console.error(`👉 ACCIÓN REQUERIDA: Agregue el número de teléfono del bot como participante del grupo en WhatsApp. JID del grupo: ${target}`);
+        } else {
+            console.error('❌ [groupSender] Error al enviar mensaje:', error);
+        }
     }
 };
 
@@ -68,8 +74,14 @@ export const sendImageToGroup = async (target: string, imagePath: string, captio
             const cleanTarget = target.replace(/[^0-9]/g, '');
             if (adapterProvider) await adapterProvider.sendImage(cleanTarget, imagePath, caption);
         }
-    } catch (error) {
-        console.error('❌ [groupSender] Error al enviar imagen:', error);
+    } catch (error: any) {
+        const errorStr = String(error?.message || error);
+        if (errorStr.includes('forbidden') || errorStr.includes('403')) {
+            console.error(`❌ [groupSender] ERROR 403 (FORBIDDEN) al enviar imagen: El bot NO es miembro del grupo o fue eliminado.`);
+            console.error(`👉 ACCIÓN REQUERIDA: Agregue el número de teléfono del bot al grupo: ${target}`);
+        } else {
+            console.error('❌ [groupSender] Error al enviar imagen:', error);
+        }
     }
 };
 
@@ -100,8 +112,15 @@ export const sendVideoToGroup = async (target: string, videoPath: string, captio
                 else await adapterProvider.sendImage(cleanTarget, videoPath, caption);
             }
         }
-    } catch (error) {
-        console.error('❌ [groupSender] Error al enviar video:', error);
+    } catch (error: any) {
+        const errorStr = String(error?.message || error);
+        if (errorStr.includes('forbidden') || errorStr.includes('403')) {
+            console.error(`❌ [groupSender] ERROR 403 (FORBIDDEN) al enviar video: El bot NO es miembro del grupo o fue eliminado.`);
+            console.error(`👉 ACCIÓN REQUERIDA: Agregue el número de teléfono del bot al grupo: ${target}`);
+        } else {
+            console.error('❌ [groupSender] Error al enviar video:', error);
+        }
     }
 };
+
 

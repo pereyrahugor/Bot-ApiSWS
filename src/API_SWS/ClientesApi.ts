@@ -1,9 +1,6 @@
 import { getMapsUbication } from '../addModule/getMapsUbication';
 // Clase para métodos relacionados a clientes
-import axios from 'axios';
-import { getSessionToken, ensureValidToken } from './SessionApi';
-
-const BASE_URL = process.env.SWS_BASE_URL;
+import { swsClient } from './swsClient';
 
 export class ClientesApi {
   /**
@@ -14,15 +11,9 @@ export class ClientesApi {
   // Endpoint: POST /api/Clientes/ObtenerDatosCliente
   // Request: { "cliente_id": 208 }
   static async obtenerDatosCliente(cliente_id: number) {
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    const url = `${BASE_URL}/api/Clientes/ObtenerDatosCliente`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
-    };
+    const url = `/api/Clientes/ObtenerDatosCliente`;
     const data = { cliente_id };
-    return axios.post(url, data, { headers });
+    return swsClient.post(url, data);
   }
 
   /**
@@ -33,20 +24,13 @@ export class ClientesApi {
   // Endpoint: POST /api/Clientes/ObtenerSucursalesJson
   // Request: { "cliente_id": 208 }
   static async obtenerSucursales(cliente_id: number) {
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    const url = `${BASE_URL}/api/Clientes/ObtenerSucursalesJson`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
-    };
+    const url = `/api/Clientes/ObtenerSucursalesJson`;
     const data = { cliente_id };
-    return axios.post(url, data, { headers });
+    return swsClient.post(url, data);
   }
+
   static async busquedaRapida(params: { datosCliente?: string; telefono?: string; dni?: string; domicilio?: string }) {
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    const url = `${BASE_URL}/api/Clientes/BusquedaRapidaResultJson`;
+    const url = `/api/Clientes/BusquedaRapidaResultJson`;
     
     // Sanitizar parámetros para evitar Syntax Error en Full-Text Search del backend SQL
     const sanitizeQuery = (str: string) => str.replace(/[^a-zA-Z0-9\sñÑáéíóúÁÉÍÓÚ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -54,12 +38,6 @@ export class ClientesApi {
     const datosCliente = sanitizeQuery(String(params.datosCliente ?? ""));
     const telefono = sanitizeQuery(String(params.telefono ?? ""));
     const domicilio = sanitizeQuery(String(params.domicilio ?? ""));
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token,
-      'Authorization': `Bearer ${token}` // Agregar Authorization por si acaso
-    };
 
     const body = {
       type: "BUSCAR_CLIENTE",
@@ -71,7 +49,7 @@ export class ClientesApi {
     console.log(`[ClientesApi] Buscando cliente: "${datosCliente || domicilio || telefono}"`);
     
     try {
-      const response = await axios.post(url, body, { headers, timeout: 15000 });
+      const response = await swsClient.post(url, body);
       
       // Si no hay resultados y es búsqueda por nombre, intentar una variación (ej: quitar espacios extras)
       if ((!response.data?.data || response.data.data.length === 0) && datosCliente.includes(' ')) {
@@ -81,7 +59,7 @@ export class ClientesApi {
               // Probar solo con el primer y último elemento (por si el nombre intermedio estorba)
               const variacion = `${partes[0]} ${partes[partes.length - 1]}`;
               const bodyVar = { ...body, datosCliente: variacion };
-              const respVar = await axios.post(url, bodyVar, { headers, timeout: 10000 });
+              const respVar = await swsClient.post(url, bodyVar, { timeout: 10000 });
               if (respVar.data?.data && respVar.data.data.length > 0) {
                   console.log(`[ClientesApi] Éxito con variación de nombre: "${variacion}"`);
                   return respVar;
@@ -170,14 +148,7 @@ export class ClientesApi {
       console.log('[CrearCliente] Domicilio parseado (sin coordenadas):', domicilio);
     }
 
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    console.log('Token usado en crearNuevoCliente:', token);
-    const url = `${BASE_URL}/Clientes/CrearNuevoClientePorChatBot`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
-    };
+    const url = `/Clientes/CrearNuevoClientePorChatBot`;
 
     // Mapear campos del asistente al formato esperado por la API
     // tipoCliente: 'Familia' => tipoDeClienteId (ejemplo: 1 = Familia, 2 = Empresa, etc.)
@@ -200,31 +171,18 @@ export class ClientesApi {
       reparto_id: payload.reparto_id,
       domicilio
     };
-    return axios.post(url, { cliente }, { headers });
+    return swsClient.post(url, { cliente });
   }
 
   static async agregarContacto(modeloContacto: any) {
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    console.log('Token usado en agregarContacto:', token);
-    const url = `${BASE_URL}/api/Clientes/CreateContacto`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
-    };
-    return axios.post(url, { ModeloContacto: modeloContacto }, { headers });
+    const url = `/api/Clientes/CreateContacto`;
+    return swsClient.post(url, { ModeloContacto: modeloContacto });
   }
 
   static async obtenerCredencialesAutogestion(cliente_id: number) {
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    const url = `${BASE_URL}/api/UsuariosClientes/ObtenerUsuarioPorCliente`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
-    };
+    const url = `/api/UsuariosClientes/ObtenerUsuarioPorCliente`;
     // Enviar el campo correcto 'cliente_id' en el body
-    return axios.post(url, { cliente_id }, { headers });
+    return swsClient.post(url, { cliente_id });
   }
 
   /**
@@ -232,14 +190,8 @@ export class ClientesApi {
    * Endpoint: GET /Clientes/BuscarClientePorContacto
    */
   static async buscarClientePorContacto(params: { telefono?: string; email?: string }) {
-    await ensureValidToken();
-    const token = getSessionToken() || '';
-    const url = `${BASE_URL}/Clientes/BuscarClientePorContacto`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'CURRENTTOKENVALUE': token
-    };
-    return axios.get(url, { headers, params });
+    const url = `/Clientes/BuscarClientePorContacto`;
+    return swsClient.get(url, { params });
   }
 }
 

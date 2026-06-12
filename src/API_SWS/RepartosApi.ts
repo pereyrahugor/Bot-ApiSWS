@@ -1,9 +1,6 @@
 import { getMapsUbication } from '../addModule/getMapsUbication';
 // Clase para clientes cercanos por coordenada
-import axios from 'axios';
-import { getSessionToken, ensureValidToken } from './SessionApi';
-
-const BASE_URL = process.env.SWS_BASE_URL;
+import { swsClient } from './swsClient';
 
 export class RepartosApi {
     /**
@@ -11,12 +8,8 @@ export class RepartosApi {
      * @param params { address: string, metros: number }
      */
     static async busquedaClientesCercanosResultJson(params: { address: string, metros: number }) {
-      await ensureValidToken();
-      const url = `${BASE_URL}/Repartos/BusquedaClientesCercanosResultJson`;
-      const headers = {
-        'CURRENTTOKENVALUE': getSessionToken() || ''
-      };
-      return axios.get(url, { headers, params });
+      const url = `/Repartos/BusquedaClientesCercanosResultJson`;
+      return swsClient.get(url, { params });
     }
   /**
    * Busca clientes cercanos a un cliente dado su ID.
@@ -26,17 +19,13 @@ export class RepartosApi {
    * @returns respuesta completa de la API
    */
   static async obtenerClientesCercanosACliente(clienteId: string, radioMetros: number, excluir: boolean = false) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Repartos/ObtenerClientesCercanosACliente`;
-    const headers = {
-      'CURRENTTOKENVALUE': getSessionToken() || ''
-    };
+    const url = `/Repartos/ObtenerClientesCercanosACliente`;
     const params = {
       clienteId,
       excluir,
       radioMetros
     };
-    return axios.get(url, { headers, params });
+    return swsClient.get(url, { params });
   }
   /**
    * Busca clientes cercanos por dirección, aumentando el radio si no hay resultados.
@@ -94,17 +83,13 @@ export class RepartosApi {
     return respuesta;
   }
   static async obtenerClientesCercanos(latitud: string, longitud: string, radioMetros: number, excluir: boolean = false) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Repartos/ObtenerClientesCercanosPorCoordenadas`;
-    const headers = {
-      'CURRENTTOKENVALUE': getSessionToken() || ''
-    };
+    const url = `/Repartos/ObtenerClientesCercanosPorCoordenadas`;
     const params = {
       latitud,
       longitud,
       radioMetros,
       excluir
     };
-    return axios.get(url, { headers, params });
+    return swsClient.get(url, { params });
   }
 }

@@ -78,8 +78,9 @@ export const askWithFunctions = async (assistantId: string, message: string, sta
             // Evaluamos otra vez recursivamente (OpenAI quizás pide otra Tool seguida, o finalmente da el 'completed' con la respuesta de texto informando al usuario)
             return handleRunStatus(newRun);
         } else if (['cancelled', 'failed', 'expired'].includes(run.status)) {
-            console.error(`[askWithFunctions] Run falló o fue cancelado, estado: ${run.status}`);
-            throw new Error(`Execution ended with status: ${run.status}`);
+            const errorDetails = run.last_error ? ` - Detalles: ${JSON.stringify(run.last_error)}` : '';
+            console.error(`[askWithFunctions] Run falló o fue cancelado, estado: ${run.status}${errorDetails}`);
+            throw new Error(`Execution ended with status: ${run.status}${errorDetails}`);
         } else {
             // Espera activa de estado
             await new Promise(r => setTimeout(r, 2000));

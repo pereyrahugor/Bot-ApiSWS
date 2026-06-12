@@ -1,8 +1,5 @@
 // Métodos para endpoints de administración y archivos
-import axios from 'axios';
-import { getSessionToken, ensureValidToken } from './SessionApi';
-
-const BASE_URL = process.env.SWS_BASE_URL;
+import { swsClient } from './swsClient';
 
 export class AdministracionApi {
 
@@ -14,23 +11,19 @@ export class AdministracionApi {
    * @param hasta Fecha de fin (formato DD/MM/YYYY, opcional, default: hoy)
    */
   static async obtenerServiciosTecnicosCliente(clienteId: number, desde: string, hasta?: string) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/UsuariosClientes/ObtenerServiciosTecnicos`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '' };
+    const url = `/UsuariosClientes/ObtenerServiciosTecnicos`;
     const _hasta = hasta || new Date().toLocaleDateString('es-AR');
     const params = { clienteId, desde, hasta: _hasta };
-    return axios.get(url, { headers, params });
+    return swsClient.get(url, { params });
   }
   /**
    * Descarga de remitos de entrega por venta
    * Endpoint: GET /VentasEntregas/ObtenerRemitoPorVenta
    */
   static async descargarRemitoPorVenta(idVenta: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/VentasEntregas/ObtenerRemitoPorVenta`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '' };
+    const url = `/VentasEntregas/ObtenerRemitoPorVenta`;
     const params = { idVenta };
-    return axios.get(url, { headers, params, responseType: 'blob' });
+    return swsClient.get(url, { params, responseType: 'blob' });
   }
   /**
    * Historial de facturas del cliente por fecha
@@ -40,13 +33,11 @@ export class AdministracionApi {
   // Endpoint: POST /Facturacion/ObtenerHistorialDeFacturas
   // Request: { "cliente_id":8, "fechaDesde":"05/12/2022", "fechaHasta":"26/09/2025", "saldoPendiente": false }
   static async historialFacturasCliente(cliente_id: number, fechaDesde: string, fechaHasta: string, saldoPendiente: boolean = false) {
-  await ensureValidToken();
-  const url = `${BASE_URL}/Facturacion/ObtenerHistorialDeFacturas`;
-  const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
-  // Si no se provee fechaHasta, usar la fecha actual en formato dd/MM/yyyy
-  const _fechaHasta = fechaHasta || new Date().toLocaleDateString('es-AR');
-  const data = { cliente_id, fechaDesde, fechaHasta: _fechaHasta, saldoPendiente };
-  return axios.post(url, data, { headers });
+    const url = `/Facturacion/ObtenerHistorialDeFacturas`;
+    // Si no se provee fechaHasta, usar la fecha actual en formato dd/MM/yyyy
+    const _fechaHasta = fechaHasta || new Date().toLocaleDateString('es-AR');
+    const data = { cliente_id, fechaDesde, fechaHasta: _fechaHasta, saldoPendiente };
+    return swsClient.post(url, data);
   }
 
   /**
@@ -57,13 +48,11 @@ export class AdministracionApi {
   // Endpoint: POST /Recibos/ObtenerRecibosDeCobros
   // Request: { "clienteId":8, "fechaReciboDesde":"07/04/2025", "fechaReciboHasta":"26/09/2025", "saldoDisponible": false }
   static async recibosPagoCliente(clienteId: number, fechaReciboDesde: string, fechaReciboHasta: string, saldoDisponible: boolean = false) {
-  await ensureValidToken();
-  const url = `${BASE_URL}/Recibos/ObtenerRecibosDeCobros`;
-  const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
-  // Si no se provee fechaReciboHasta, usar la fecha actual en formato dd/MM/yyyy
-  const _fechaReciboHasta = fechaReciboHasta || new Date().toLocaleDateString('es-AR');
-  const data = { clienteId, fechaReciboDesde, fechaReciboHasta: _fechaReciboHasta, saldoDisponible };
-  return axios.post(url, data, { headers });
+    const url = `/Recibos/ObtenerRecibosDeCobros`;
+    // Si no se provee fechaReciboHasta, usar la fecha actual en formato dd/MM/yyyy
+    const _fechaReciboHasta = fechaReciboHasta || new Date().toLocaleDateString('es-AR');
+    const data = { clienteId, fechaReciboDesde, fechaReciboHasta: _fechaReciboHasta, saldoDisponible };
+    return swsClient.post(url, data);
   }
 
   /**
@@ -74,13 +63,11 @@ export class AdministracionApi {
   // Endpoint: POST /Movimientos/BuscarMovimientos
   // Request: { "clienteId":8, "desde":"07/04/2025", "hasta":"26/09/2025" }
   static async resumenCuentaCliente(clienteId: number, desde: string, hasta: string) {
-  await ensureValidToken();
-  const url = `${BASE_URL}/Movimientos/BuscarMovimientos`;
-  const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
-  // Si no se provee hasta, usar la fecha actual en formato dd/MM/yyyy
-  const _hasta = hasta || new Date().toLocaleDateString('es-AR');
-  const data = { clienteId, desde, hasta: _hasta };
-  return axios.post(url, data, { headers });
+    const url = `/Movimientos/BuscarMovimientos`;
+    // Si no se provee hasta, usar la fecha actual en formato dd/MM/yyyy
+    const _hasta = hasta || new Date().toLocaleDateString('es-AR');
+    const data = { clienteId, desde, hasta: _hasta };
+    return swsClient.post(url, data);
   }
 
 
@@ -91,13 +78,11 @@ export class AdministracionApi {
   // Según documentación: Remitos de entrega
   // Endpoint: POST /Movimientos/ObtenerVentasPorCliente
   static async remitosEntrega(cliente_id: number, fechaDesde: string, fechaHasta: string, consumosSinFacturar: boolean = false) {
-  await ensureValidToken();
-  const url = `${BASE_URL}/Movimientos/ObtenerVentasPorCliente`;
-  const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
-  // Si no se provee fechaHasta, usar la fecha actual en formato dd/MM/yyyy
-  const _fechaHasta = fechaHasta || new Date().toLocaleDateString('es-AR');
-  const data = { cliente_id, fechaDesde, fechaHasta: _fechaHasta, consumosSinFacturar };
-  return axios.post(url, data, { headers });
+    const url = `/Movimientos/ObtenerVentasPorCliente`;
+    // Si no se provee fechaHasta, usar la fecha actual en formato dd/MM/yyyy
+    const _fechaHasta = fechaHasta || new Date().toLocaleDateString('es-AR');
+    const data = { cliente_id, fechaDesde, fechaHasta: _fechaHasta, consumosSinFacturar };
+    return swsClient.post(url, data);
   }
 
   /**
@@ -105,11 +90,9 @@ export class AdministracionApi {
    * Endpoint: GET /Remitos/Descargar
    */
   static async descargarRemito(remito_id: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Remitos/Descargar`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '' };
+    const url = `/Remitos/Descargar`;
     const params = { remito_id };
-    return axios.get(url, { headers, params, responseType: 'blob' });
+    return swsClient.get(url, { params, responseType: 'blob' });
   }
 
   /**
@@ -117,19 +100,15 @@ export class AdministracionApi {
    * Endpoint: GET /Archivos/Descargar
    */
   static async descargarArchivo(archivo_id: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Archivos/Descargar`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '' };
+    const url = `/Archivos/Descargar`;
     const params = { archivo_id };
-    return axios.get(url, { headers, params, responseType: 'blob' });
+    return swsClient.get(url, { params, responseType: 'blob' });
   }
 
   static async reenviarFacturaPorMail(facturaId: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Facturacion/EnviarFacturaPorMail`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
+    const url = `/Facturacion/EnviarFacturaPorMail`;
     const data = { facturaId };
-    return axios.post(url, data, { headers });
+    return swsClient.post(url, data);
   }
 
   /**
@@ -138,11 +117,9 @@ export class AdministracionApi {
    * @param remitoId ID del remito a reenviar
    */
   static async reenviarRemitoPorMail(remitoId: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Facturacion/EnviarRemitoPorMail`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
+    const url = `/Facturacion/EnviarRemitoPorMail`;
     const data = { remitoId };
-    return axios.post(url, data, { headers });
+    return swsClient.post(url, data);
   }
 
   /**
@@ -151,18 +128,14 @@ export class AdministracionApi {
    * @param reciboId ID del recibo a reenviar
    */
   static async reenviarReciboPorMail(reciboId: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Recibos/EnviarPorMail`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
+    const url = `/Recibos/EnviarPorMail`;
     const data = { reciboId };
-    return axios.post(url, data, { headers });
+    return swsClient.post(url, data);
   }
 
   static async obtenerLinkPago(cliente_id: number, monto: number) {
-    await ensureValidToken();
-    const url = `${BASE_URL}/Sync/ObtenerLinkMP`;
-    const headers = { 'CURRENTTOKENVALUE': getSessionToken() || '', 'Content-Type': 'application/json' };
+    const url = `/Sync/ObtenerLinkMP`;
     const data = { cliente_id, monto };
-    return axios.post(url, data, { headers });
+    return swsClient.post(url, data);
   }
 }
