@@ -18,6 +18,14 @@ export const sendToGroup = async (target: string, message: string, options: any 
                 console.error('❌ [groupSender] groupProvider no disponible para enviar a grupo.');
                 return;
             }
+            
+            // Verificar si el bot está conectado y autenticado a WhatsApp Baileys antes de enviar
+            const isReady = !!(groupProvider.vendor?.user || groupProvider.globalVendorArgs?.sock?.user);
+            if (!isReady) {
+                console.warn(`⚠️ [groupSender] Baileys no está conectado/autenticado. Omitiendo envío a grupo ${target}.`);
+                return;
+            }
+
             console.log(`📡 [groupSender] Enviando a GRUPO via Baileys: ${target}`);
             
             // Bypass groupMetadata call by using direct Baileys socket if available
@@ -60,6 +68,13 @@ export const sendImageToGroup = async (target: string, imagePath: string, captio
         if (isGroup) {
             const groupProvider = getGroupProvider();
             if (groupProvider) {
+                // Verificar si el bot está conectado y autenticado a WhatsApp Baileys antes de enviar
+                const isReady = !!(groupProvider.vendor?.user || groupProvider.globalVendorArgs?.sock?.user);
+                if (!isReady) {
+                    console.warn(`⚠️ [groupSender] Baileys no está conectado/autenticado. Omitiendo envío de imagen a grupo ${target}.`);
+                    return;
+                }
+
                 // Bypass groupMetadata call by using direct Baileys socket if available
                 const sock = groupProvider.vendor || groupProvider.globalVendorArgs?.sock;
                 if (sock) {
@@ -94,6 +109,13 @@ export const sendVideoToGroup = async (target: string, videoPath: string, captio
         if (isGroup) {
             const groupProvider = getGroupProvider();
             if (groupProvider) {
+                // Verificar si el bot está conectado y autenticado a WhatsApp Baileys antes de enviar
+                const isReady = !!(groupProvider.vendor?.user || groupProvider.globalVendorArgs?.sock?.user);
+                if (!isReady) {
+                    console.warn(`⚠️ [groupSender] Baileys no está conectado/autenticado. Omitiendo envío de video a grupo ${target}.`);
+                    return;
+                }
+
                 // Bypass groupMetadata call by using direct Baileys socket if available
                 const sock = groupProvider.vendor || groupProvider.globalVendorArgs?.sock;
                 if (sock) {
