@@ -1,25 +1,74 @@
 import OpenAI from 'openai';
 import { withRetry } from '../utils/retryHelper';
 
+import { supabase } from '../utils/historyHandler';
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
- * Obtiene o crea un thread_id para el usuario webchat con reintentos para fallos de red.
- * @param store objeto de sesión por IP
+ * Obtiene o crea un thread_id para el usuario webchat con reintentos para fallos de red y manejo de 404.
+ * @param store objeto de sesión o datos
+ * @param chatId identificador del chat (opcional)
+ * @param projectId identificador del proyecto (opcional)
+ * @param serviceId identificador del servicio (opcional)
  * @returns thread_id
  */
-export async function getOrCreateThreadId(store: { thread_id?: string | null }) {
-  if (store.thread_id) return store.thread_id;
-  
-  const thread = await withRetry(async () => {
-    return await openai.beta.threads.create();
-  }, {
-    maxRetries: 3,
-    onRetry: (err, attempt) => console.log(`[ThreadBridge] Reintento ${attempt} creando thread por error: ${err.message}`)
-  });
+export async function getOrCreateThreadId(
+  store?: { thread_id?: string | null } | null,
+  chatId?: string,
+  projectId: string = process.env.RAILWAY_PROJECT_ID || 'local-dev',
+  serviceId: string = process.env.SERVICE_IDENTIFIER || process.env.RAILWAY_SERVICE_ID || 'default_service'
+) {
+  let threadId = store?.thread_id;
 
-  store.thread_id = thread.id;
-  return thread.id;
+  if (!threadId && chatId) {
+    try {
+      let query = supabase.from('chats').select('thread_id, metadata').eq('id', chatId);
+      if (projectId) query = query.eq('project_id', projectId);
+      if (serviceId) query = query.eq('service_id', serviceId);
+      const { data: chatRecord } = await query.maybeSingle();
+      threadId = chatRecord?.thread_id || chatRecord?.metadata?.thread_id || null;
+    } catch (e) {
+      console.error('[getOrCreateThreadId] Error buscando thread_id en DB:', e);
+    }
+  }
+
+  if (threadId) {
+    try {
+      await openai.beta.threads.retrieve(threadId);
+    } catch (err: any) {
+      if (err.status === 404 || err.code === 404 || err.message?.includes('404')) {
+        console.warn(`[OpenAI] Thread ${threadId} no encontrado (404). Creando nuevo thread...`);
+        const newThread = await openai.beta.threads.create();
+        threadId = newThread.id;
+
+        if (chatId) {
+          let updateQuery = supabase.from('chats').update({ thread_id: threadId }).eq('id', chatId);
+          if (projectId) updateQuery = updateQuery.eq('project_id', projectId);
+          if (serviceId) updateQuery = updateQuery.eq('service_id', serviceId);
+          await updateQuery;
+        }
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    const newThread = await openai.beta.threads.create();
+    threadId = newThread.id;
+
+    if (chatId) {
+      let updateQuery = supabase.from('chats').update({ thread_id: threadId }).eq('id', chatId);
+      if (projectId) updateQuery = updateQuery.eq('project_id', projectId);
+      if (serviceId) updateQuery = updateQuery.eq('service_id', serviceId);
+      await updateQuery;
+    }
+  }
+
+  if (store) {
+    store.thread_id = threadId;
+  }
+
+  return threadId;
 }
 
 /**

@@ -96,7 +96,7 @@ export const registerWebchatRoutes = (app: any, {
                 session.clear();
                 replyText = "🔄 Chat reiniciado.";
             } else {
-                const threadId = await getOrCreateThreadId(session);
+                const threadId = await getOrCreateThreadId(session, ip);
                 session.addUserMessage(message);
 
                 const state = {

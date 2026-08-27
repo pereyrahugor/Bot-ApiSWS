@@ -27,8 +27,9 @@ export const normalizeTextForCache = (text: string): string => {
 // Identificador único para este bot específico
 const PROJECT_ID = process.env.RAILWAY_PROJECT_ID || "local-dev";
 const PROJECT_IDENTIFIER = PROJECT_ID; // Unificamos para evitar discrepancias entre tablas
+const SERVICE_ID = process.env.SERVICE_IDENTIFIER || process.env.RAILWAY_SERVICE_ID || 'default_service';
 
-console.log(`[History] Project ID: ${PROJECT_ID}`);
+console.log(`[History] Project ID: ${PROJECT_ID} | Service ID: ${SERVICE_ID}`);
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
     console.warn("⚠️ [Supabase] Missing SUPABASE_URL or SUPABASE_KEY. History may fail.");
 }
@@ -37,6 +38,7 @@ export interface Chat {
     id: string; // WAID (Teléfono) o identificador de Webchat
     user_id?: string | null; // BSUID (Meta Business-Scoped User ID)
     project_id: string;
+    service_id?: string;
     type: 'whatsapp' | 'webchat';
     name: string | null;
     email: string | null;
@@ -54,6 +56,7 @@ export interface Chat {
     tipo_cliente?: string | null;
     incidencias_ids?: string[] | null;
     is_lead?: boolean;
+    thread_id?: string | null;
 }
 
 export interface Message {
@@ -79,13 +82,15 @@ export class HistoryHandler {
         return chatId.split('@')[0];
     }
 
-    static async getClientContext(chatId: string) {
+    static async getClientContext(chatId: string, serviceId?: string) {
         try {
+            const targetServiceId = serviceId || process.env.SERVICE_IDENTIFIER || process.env.RAILWAY_SERVICE_ID || 'default_service';
             const { data, error } = await supabase
                 .from('chats')
                 .select('*')
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID)
+                .eq('service_id', targetServiceId)
                 .maybeSingle();
 
             if (error) return null;
@@ -114,8 +119,9 @@ export class HistoryHandler {
     }
     
 
-    static async getOrCreateChat(rawChatId: string, type: 'whatsapp' | 'webchat', name: string | null = null, userId: string | null = null): Promise<Chat | null> {
+    static async getOrCreateChat(rawChatId: string, type: 'whatsapp' | 'webchat', name: string | null = null, userId: string | null = null, serviceId?: string): Promise<Chat | null> {
         const chatId = this.normalizeId(rawChatId);
+        const targetServiceId = serviceId || process.env.SERVICE_IDENTIFIER || process.env.RAILWAY_SERVICE_ID || 'default_service';
         try {
             // 1. Intentar recuperación rápida por ID limpio
             const { data: existingChat, error: selectError } = await supabase
@@ -123,6 +129,7 @@ export class HistoryHandler {
                 .select('*')
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID)
+                .eq('service_id', targetServiceId)
                 .maybeSingle();
             
             if (existingChat) {
@@ -138,7 +145,12 @@ export class HistoryHandler {
                     needsUpdate = true;
                 }
                 if (needsUpdate) {
-                    await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID);
+                    await supabase
+                        .from('chats')
+                        .update(updateData)
+                        .eq('id', chatId)
+                        .eq('project_id', PROJECT_ID)
+                        .eq('service_id', targetServiceId);
                 }
                 return { ...existingChat, ...updateData };
             }
@@ -148,16 +160,23 @@ export class HistoryHandler {
                 id: chatId, 
                 user_id: userId, 
                 project_id: PROJECT_ID, 
+                service_id: targetServiceId,
                 type: 'webchat', // Forzado a webchat para compatibilidad con el backoffice según logs previos
                 name: name, 
                 bot_enabled: true, 
                 last_message_at: new Date().toISOString()
-            }, { onConflict: 'id,project_id' }).select().maybeSingle();
+            }, { onConflict: 'id,project_id,service_id' }).select().maybeSingle();
 
             if (upsertError) {
                 // Si aún así falla con 23505, intentamos un último select (otro hilo ganó la carrera)
                 if (upsertError.code === '23505') {
-                    const { data: lastChance } = await supabase.from('chats').select('*').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
+                    const { data: lastChance } = await supabase
+                        .from('chats')
+                        .select('*')
+                        .eq('id', chatId)
+                        .eq('project_id', PROJECT_ID)
+                        .eq('service_id', targetServiceId)
+                        .maybeSingle();
                     return lastChance;
                 }
                 throw upsertError;
@@ -218,7 +237,7 @@ export class HistoryHandler {
             const { error } = await supabase.from('messages').upsert(messageData, { onConflict: 'id,project_id' });
             if (error) throw error;
 
-            await supabase.from('chats').update({ last_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID);
+            await supabase.from('chats').update({ last_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
             historyEvents.emit('new_message', { 
                 id: finalId,
                 chat_id: chatId, 
@@ -251,7 +270,7 @@ export class HistoryHandler {
                 is_lead: true
             };
             
-            const { error } = await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID);
+            const { error } = await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
             if (error) throw error;
         } catch (err) {
             console.error('[HistoryHandler] Error en saveClientContext:', err);
@@ -261,7 +280,7 @@ export class HistoryHandler {
     static async updateContactDetails(chatId: string, details: any) {
         try {
             const normalizedChatId = this.normalizeId(chatId);
-            const { error } = await supabase.from('chats').update(details).eq('id', normalizedChatId).eq('project_id', PROJECT_ID);
+            const { error } = await supabase.from('chats').update(details).eq('id', normalizedChatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
             if (error) throw error;
             return { success: true };
         } catch (err: any) {
@@ -273,8 +292,8 @@ export class HistoryHandler {
     static async createNewLeadManual(chatId: string, details: any) {
         try {
             const { error: chatErr } = await supabase.from('chats').upsert({
-                id: chatId, project_id: PROJECT_ID, ...details, is_lead: true, created_at: new Date().toISOString()
-            }, { onConflict: 'id,project_id' });
+                id: chatId, project_id: PROJECT_ID, service_id: SERVICE_ID, ...details, is_lead: true, created_at: new Date().toISOString()
+            }, { onConflict: 'id,project_id,service_id' });
             if (chatErr) throw chatErr;
             const { data: ticket, error: ticketErr } = await supabase.from('tickets').insert({
                 chat_id: chatId, project_id: PROJECT_ID, titulo: `Lead: ${details.name || chatId}`,
@@ -291,7 +310,7 @@ export class HistoryHandler {
 
     static async isBotEnabled(chatId: string): Promise<boolean> {
         try {
-            const { data } = await supabase.from('chats').select('bot_enabled').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
+            const { data } = await supabase.from('chats').select('bot_enabled').eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID).maybeSingle();
             return data ? data.bot_enabled : true;
         } catch (err) { return true; }
     }
@@ -300,7 +319,7 @@ export class HistoryHandler {
         try {
             const updateData: any = { bot_enabled: enabled };
             if (enabled === false) updateData.last_human_message_at = new Date().toISOString();
-            const { error } = await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID);
+            const { error } = await supabase.from('chats').update(updateData).eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
             if (error) throw error;
             historyEvents.emit('bot_toggled', { chatId, enabled });
             return { success: true };
@@ -357,18 +376,18 @@ export class HistoryHandler {
     }
 
     static async updateLastHumanMessage(chatId: string) {
-        await supabase.from('chats').update({ last_human_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID);
+        await supabase.from('chats').update({ last_human_message_at: new Date().toISOString() }).eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
     }
 
     static async saveThreadId(chatId: string, threadId: string) {
-        const { data } = await supabase.from('chats').select('metadata').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
+        const { data } = await supabase.from('chats').select('metadata').eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID).maybeSingle();
         const updatedMetadata = { ...(data?.metadata || {}), thread_id: threadId };
-        await supabase.from('chats').update({ metadata: updatedMetadata }).eq('id', chatId).eq('project_id', PROJECT_ID);
+        await supabase.from('chats').update({ metadata: updatedMetadata, thread_id: threadId }).eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
     }
 
     static async getThreadId(chatId: string): Promise<string | null> {
-        const { data } = await supabase.from('chats').select('metadata').eq('id', chatId).eq('project_id', PROJECT_ID).maybeSingle();
-        return data?.metadata?.thread_id || null;
+        const { data } = await supabase.from('chats').select('metadata, thread_id').eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID).maybeSingle();
+        return data?.thread_id || data?.metadata?.thread_id || null;
     }
 
     static async getChat(rawChatId: string): Promise<any | null> {
@@ -379,6 +398,7 @@ export class HistoryHandler {
                 .select('*')
                 .eq('id', chatId)
                 .eq('project_id', PROJECT_ID)
+                .eq('service_id', SERVICE_ID)
                 .maybeSingle();
             if (error) throw error;
             return data || null;
@@ -521,7 +541,7 @@ export class HistoryHandler {
         return error ? { success: false, error: error.message } : { success: true, user: data };
     }
     static async assignChatToUser(chatId: string, userId: string | null) {
-        const { error } = await supabase.from('chats').update({ assigned_to: userId }).eq('id', chatId).eq('project_id', PROJECT_ID);
+        const { error } = await supabase.from('chats').update({ assigned_to: userId }).eq('id', chatId).eq('project_id', PROJECT_ID).eq('service_id', SERVICE_ID);
         return { success: !error };
     }
 }

@@ -7,7 +7,22 @@ export const askWithFunctions = async (assistantId: string, message: string, sta
     let threadId = state && typeof state.get === 'function' ? state.get('thread_id') : null;
     
     // 1. Obtiene o crea el Thread
-    if (!threadId) {
+    if (threadId) {
+        try {
+            await openai.beta.threads.retrieve(threadId);
+        } catch (err: any) {
+            if (err.status === 404 || err.code === 404 || err.message?.includes('404')) {
+                console.warn(`[OpenAI] Thread ${threadId} no encontrado (404). Creando nuevo thread...`);
+                const thread = await openai.beta.threads.create();
+                threadId = thread.id;
+                if (state && typeof state.update === 'function') {
+                    await state.update({ thread_id: threadId });
+                }
+            } else {
+                throw err;
+            }
+        }
+    } else {
         const thread = await openai.beta.threads.create();
         threadId = thread.id;
         if (state && typeof state.update === 'function') {
