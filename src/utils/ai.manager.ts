@@ -60,8 +60,6 @@ export class AiManager {
             }
         }
         
-        const finalMessage = systemPrompt + "\n" + message;
-
         if (this.userTimeouts.has(userId)) {
             clearTimeout(this.userTimeouts.get(userId)!);
             this.userTimeouts.delete(userId);
@@ -73,7 +71,7 @@ export class AiManager {
             }, this.TIMEOUT_MS);
             this.userTimeouts.set(userId, timeoutId);
 
-            safeToAsk(assistantId, finalMessage, state, userId, this.errorReporter)
+            safeToAsk(assistantId, message, state, userId, this.errorReporter, 3, systemPrompt)
                 .then(result => {
                     if (this.userTimeouts.has(userId)) {
                         clearTimeout(this.userTimeouts.get(userId)!);

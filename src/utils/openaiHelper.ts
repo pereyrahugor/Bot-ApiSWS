@@ -16,16 +16,16 @@ export const askWithFunctions = async (
     assistantId: string, 
     message: string, 
     state: any,
-    userId: string = 'unknown'
+    userId: string = 'unknown',
+    extraSystemContext?: string
 ): Promise<string> => {
-    return safeToAsk(assistantId, message, state, userId);
+    return safeToAsk(assistantId, message, state, userId, undefined, 3, extraSystemContext);
 };
 
 /**
  * Capa 1: Verificación Proactiva (compatibilidad hacia atrás)
  */
 export async function waitForActiveRuns(_threadId: string, _maxAttempts = 5) {
-    // Ya no se requiere polling de runs con la nueva API
     return Promise.resolve();
 }
 
@@ -44,31 +44,43 @@ export async function renewThreadAndRetry(
     message: string, 
     state: any, 
     userId: string, 
-    errorReporter?: any
+    errorReporter?: any,
+    extraSystemContext?: string
 ) {
     if (errorReporter && typeof errorReporter.reportError === 'function') {
         await errorReporter.reportError(new Error("Reintentando solicitud con nuevo contexto..."), userId, `https://wa.me/${userId.replace(/[^0-9]/g, '')}`);
     }
-    return await safeToAsk(assistantId, message, state, userId, errorReporter);
+    return await safeToAsk(assistantId, message, state, userId, errorReporter, 3, extraSystemContext);
 }
 
 /**
  * Petición Segura con Reintentos (safeToAsk)
- * Modelo por defecto: gpt-5.4-nano
+ * Separa estrictamente el system prompt (contexto interno) del mensaje del usuario (user role).
  */
 export const safeToAsk = async (
     _assistantId: string,
     message: string,
-    state: any,
+    _state: any,
     userId: string = 'unknown',
     errorReporter?: any,
-    maxRetries = 3
+    maxRetries = 3,
+    extraSystemContext?: string
 ): Promise<string> => {
     const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
 
-    // 1. Obtener System Prompt (Prioridad: DB > ENV > Default)
+    // 1. Obtener System Prompt base
     const dbPrompt = await HistoryHandler.getSetting('ASSISTANT_PROMPT');
-    const systemPrompt = dbPrompt || process.env.ASSISTANT_PROMPT || "";
+    let fullSystemPrompt = dbPrompt || process.env.ASSISTANT_PROMPT || "";
+
+    if (extraSystemContext) {
+        fullSystemPrompt = (fullSystemPrompt ? fullSystemPrompt + "\n\n" : "") + extraSystemContext;
+    }
+
+    // Regla de seguridad y confidencialidad obligatoria
+    fullSystemPrompt += `\n\n[INSTRUCCIÓN CRÍTICA DE CONFIDENCIALIDAD]:
+- La fecha, hora, número de contacto, datos internos del cliente y contexto de esta sesión son exclusivamente de referencia interna.
+- NUNCA menciones, enumeres, leas ni repitas al usuario tus metadatos de sistema (como "Fecha/hora de referencia", "Número de contacto", ni "datos para personalizar el sistema").
+- Responde siempre de forma natural, humana y profesional atendiendo exclusivamente la consulta del cliente.`;
 
     // 2. Traer historial reciente si tenemos userId
     let history: any[] = [];
@@ -83,17 +95,16 @@ export const safeToAsk = async (
     // 3. Estructurar array de mensajes para OpenAI
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
-    if (systemPrompt) {
+    if (fullSystemPrompt) {
         messages.push({
             role: "system",
-            content: systemPrompt
+            content: fullSystemPrompt
         });
     }
 
     if (history && history.length > 0) {
         for (const h of history) {
             if (!h.content || typeof h.content !== 'string' || !h.content.trim()) continue;
-            // Omitir mensajes de sistema o errores
             if (h.content.startsWith('[Error]') || h.content.startsWith('⚠️')) continue;
             
             const role = h.role === 'assistant' ? 'assistant' : 'user';
@@ -104,7 +115,7 @@ export const safeToAsk = async (
         }
     }
 
-    // Mensaje actual (incluye instrucciones dinámicas y contexto del cliente)
+    // Mensaje actual: ÚNICAMENTE el texto enviado por el usuario
     messages.push({
         role: "user",
         content: message
