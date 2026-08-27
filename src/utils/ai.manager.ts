@@ -150,17 +150,6 @@ export class AiManager {
 
             const isBotActiveForUser = await HistoryHandler.isBotEnabled(ctx.from);
             if (!isBotActiveForUser) {
-                try {
-                    const threadId = await HistoryHandler.getThreadId(ctx.from);
-                    if (threadId) {
-                        await this.openaiMain.beta.threads.messages.create(threadId, {
-                            role: 'user',
-                            content: body || '[Media]'
-                        });
-                    }
-                } catch (e: any) {
-                    console.error("[AiManager] Error guardando threadId:", e.message);
-                }
                 return state;
             }
 
